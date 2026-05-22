@@ -2,8 +2,8 @@ node_modules/
 images/
 .playwright/
 .playwright-cli/
-.claude/
 dist/
 *.log
 .env
 .env.local
+KNOWLEDGE.md
