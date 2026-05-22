@@ -12,10 +12,15 @@ const PAGE_PATH = process.env.PAGE_PATH || "/home/detail.html";
 const PAGE_URL = `${BASE_ORIGIN}${PAGE_PATH}`;
 // Hash is page logic, not env config (# is comment char in .env)
 const PAGE_HASH = "#wallpaper";
-const IMAGES_DIR = path.resolve(__dirname, "..", process.env.IMAGES_DIR || "images");
+const IMAGES_DIR = path.resolve(
+  __dirname,
+  "..",
+  process.env.IMAGES_DIR || "images",
+);
 const SESSION = process.env.SESSION_NAME || "bluepoch";
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "4", 10);
-const PLAYWRIGHT_CONFIG = process.env.PLAYWRIGHT_CONFIG || ".playwright/config.json";
+const PLAYWRIGHT_CONFIG =
+  process.env.PLAYWRIGHT_CONFIG || ".playwright/config.json";
 function pwc(args: string, timeoutSec = 300): string {
   return execSync(`npx playwright-cli -s=${SESSION} ${args}`, {
     encoding: "utf8",
@@ -233,227 +238,232 @@ function extractNetworkImageUrls(): string[] {
 // ── build run-code script ──────────────────────────────────────────
 
 function buildRunCodeScript(): string {
-  // All browser API calls MUST be inside page.evaluate().
-  // run-code runs in Node.js context with `page` as the Playwright Page object.
-  const browserCode = `
-    async function() {
-      var BASE = "${BASE_ORIGIN}";
-      var PAGE_HASH = "${PAGE_HASH}";
-      var collectedUrls = [];
+  // Network-first architecture:
+  // - page.on("response") captures ALL image requests (Node.js side)
+  // - page.evaluate() only drives DOM interaction: hash, scroll, pagination, click
+  // - Stop condition: 15s no new image + stable scrollHeight + no next page
+  return `async (page) => {
+    // ================================================
+    // Network listener (Node.js side — runs throughout)
+    // ================================================
+    const networkImages = new Set();
+    let lastImageTime = Date.now();
 
-      // Inject hash to trigger SPA wallpaper section
-      if (PAGE_HASH && location.hash !== PAGE_HASH) {
-        location.hash = PAGE_HASH;
-        await new Promise(function(r) { setTimeout(r, 4000); });
+    const onResponse = (response) => {
+      const ct = response.headers()["content-type"] || "";
+      if (ct.includes("image/")) {
+        const url = response.url();
+        const prev = networkImages.size;
+        networkImages.add(url);
+        if (networkImages.size > prev) {
+          lastImageTime = Date.now();
+        }
       }
+    };
+    page.on("response", onResponse);
 
-      function absUrl(url) {
-        try { return new URL(url, BASE).href; } catch(e) { return url; }
-      }
+    // ================================================
+    // DOM helpers (browser side via page.evaluate)
+    // ================================================
 
-      function extractAllImageUrls() {
-        var urlSet = [];
-        var seen = {};
-
-        function add(u) {
-          var resolved = absUrl(u);
-          if (!seen[resolved]) { seen[resolved] = true; urlSet.push(resolved); }
+    async function injectHash() {
+      await page.evaluate((hash) => {
+        if (hash && location.hash !== hash) {
+          location.hash = hash;
         }
+      }, "${PAGE_HASH}");
+      await page.waitForTimeout(4000);
+      console.log("[hash] current URL: " + page.url());
+    }
 
-        // img.src
-        var imgs = document.querySelectorAll("img");
-        for (var i = 0; i < imgs.length; i++) {
-          var src = imgs[i].src;
-          if (src && !src.startsWith("data:") && !src.startsWith("blob:")) add(src);
-        }
-
-        // data-src / data-original (lazy loading)
-        var lazyEls = document.querySelectorAll("[data-src], [data-original]");
-        for (var j = 0; j < lazyEls.length; j++) {
-          var ds = lazyEls[j].getAttribute("data-src") || lazyEls[j].getAttribute("data-original");
-          if (ds && !ds.startsWith("data:") && !ds.startsWith("blob:")) add(ds);
-        }
-
-        // background-image — only scan likely image containers
-        // (scanning ALL elements gets too many false positives)
-        var bgCandidates = document.querySelectorAll(
-          'div[class], section[class], li[class], ' +
-          'div[id], section[id], [style*="background"]'
-        );
-        for (var k = 0; k < bgCandidates.length; k++) {
-          var bg = getComputedStyle(bgCandidates[k]).backgroundImage;
-          if (bg && bg !== "none" && bg.indexOf("url(") !== -1) {
-            var m = bg.match(/url\\(["']?([^"')]+)["']?\\)/);
-            if (m && m[1] && !m[1].startsWith("data:") && !m[1].startsWith("blob:")) add(m[1]);
+    async function scrollPage() {
+      await page.evaluate(async () => {
+        // Scroll wallpaper sections
+        const lists = document.querySelectorAll(".papermask-mid-list");
+        for (const list of lists) {
+          list.scrollIntoView({ behavior: "instant", block: "center" });
+          await new Promise(r => setTimeout(r, 500));
+          const sh = list.scrollHeight;
+          for (let y = 0; y < sh; y += 300) {
+            list.scrollBy(0, 300);
+            await new Promise(r => setTimeout(r, 300));
           }
         }
-
-        // <picture> <source>
-        var sources = document.querySelectorAll("picture source");
-        for (var s = 0; s < sources.length; s++) {
-          var srcset = sources[s].getAttribute("srcset");
-          if (srcset) {
-            var parts = srcset.split(",");
-            for (var p = 0; p < parts.length; p++) {
-              var url = parts[p].trim().split(" ")[0];
-              if (url && !url.startsWith("data:") && !url.startsWith("blob:")) add(url);
-            }
-          }
+        // Full page scroll
+        const total = document.body.scrollHeight;
+        for (let y = 0; y < total; y += 400) {
+          window.scrollTo(0, y);
+          await new Promise(r => setTimeout(r, 300));
         }
+        window.scrollTo(0, 0);
+      });
+      // Wait for network to settle after scrolling
+      try { await page.waitForLoadState("networkidle", { timeout: 10000 }); } catch(e) {}
+    }
 
-        // link preload
-        var links = document.querySelectorAll('link[rel="preload"][as="image"]');
-        for (var l = 0; l < links.length; l++) {
-          var href = links[l].getAttribute("href");
-          if (href && !href.startsWith("data:") && !href.startsWith("blob:")) add(href);
-        }
+    async function clickNextPage() {
+      return await page.evaluate(() => {
+        const btn = document.querySelector('.newsmask-bottom-page[src*="next"]');
+        if (!btn || btn.offsetParent === null) return false;
+        btn.click();
+        return true;
+      });
+    }
 
-        return urlSet;
+    async function goBackToFirstPage() {
+      for (let i = 0; i < 10; i++) {
+        const clicked = await page.evaluate(() => {
+          const btn = document.querySelector('.newsmask-bottom-page[src*="pre"]');
+          if (!btn || btn.offsetParent === null) return false;
+          btn.click();
+          return true;
+        });
+        if (!clicked) break;
+        await page.waitForTimeout(1000);
       }
+    }
 
-      function sleep(ms) {
-        return new Promise(function(r) { setTimeout(r, ms); });
-      }
+    async function clickAllThumbnails() {
+      const count = await page.evaluate(() => {
+        return document.querySelectorAll(".holder-img").length;
+      });
+      console.log("[thumbnails] " + count);
 
-      // Step 1: Click through pagination
-      for (var pageIdx = 0; pageIdx < 10; pageIdx++) {
-        var nextBtn = document.querySelector('.newsmask-bottom-page[src*="next"]');
-        if (!nextBtn) break;
-        var urls = extractAllImageUrls();
-        for (var ui = 0; ui < urls.length; ui++) collectedUrls.push(urls[ui]);
-        nextBtn.click();
-        await sleep(2000);
-      }
-
-      // Step 2: Scroll through each section
-      var midLists = document.querySelectorAll(".papermask-mid-list");
-      for (var li = 0; li < midLists.length; li++) {
-        midLists[li].scrollIntoView({ behavior: "instant", block: "center" });
-        await sleep(1500);
-        midLists[li].scrollTop = 0;
-        var sh = midLists[li].scrollHeight;
-        for (var sy = 0; sy < sh; sy += 300) {
-          midLists[li].scrollBy(0, 300);
-          await sleep(500);
-        }
-      }
-
-      // Full page scroll
-      var totalHeight = document.body.scrollHeight;
-      for (var y = 0; y < totalHeight; y += 400) {
-        window.scrollTo(0, y);
-        await sleep(400);
-      }
-      window.scrollTo(0, 0);
-      await sleep(1000);
-
-      // Step 3: Click thumbnails for high-res
-      var thumbnails = document.querySelectorAll(".holder-img");
-      console.log("[thumbnails] found " + thumbnails.length);
-      for (var ti = 0; ti < thumbnails.length; ti++) {
+      for (let i = 0; i < count; i++) {
         try {
-          thumbnails[ti].scrollIntoView({ behavior: "instant", block: "center" });
-          await sleep(500);
-          thumbnails[ti].click();
-          await sleep(1500);
-
-          var zoomImg = document.querySelector("#papermaskDetailTop-zoom");
-          if (zoomImg && zoomImg.src && !zoomImg.src.startsWith("data:") && !zoomImg.src.startsWith("blob:")) {
-            if (!zoomImg.complete || zoomImg.naturalWidth === 0) {
-              await new Promise(function(r) { zoomImg.onload = r; setTimeout(r, 3000); });
+          await page.evaluate(async (idx) => {
+            const thumbs = document.querySelectorAll(".holder-img");
+            if (idx >= thumbs.length) return;
+            thumbs[idx].scrollIntoView({ behavior: "instant", block: "center" });
+            await new Promise(r => setTimeout(r, 300));
+            thumbs[idx].click();
+            await new Promise(r => setTimeout(r, 1500));
+            const zoom = document.querySelector("#papermaskDetailTop-zoom");
+            if (zoom && !zoom.complete) {
+              await new Promise(r => { zoom.onload = r; setTimeout(r, 3000); });
             }
-            if (zoomImg.src && zoomImg.naturalWidth > 0) {
-              collectedUrls.push(absUrl(zoomImg.src));
-            }
-          }
-
-          var closeBtn = document.querySelector(".papermaskDetailClose");
-          if (closeBtn) closeBtn.click();
-          await sleep(500);
+            const close = document.querySelector(".papermaskDetailClose");
+            if (close) { close.click(); await new Promise(r => setTimeout(r, 300)); }
+          }, i);
+          try { await page.waitForLoadState("networkidle", { timeout: 10000 }); } catch(e) {}
         } catch(e) {}
       }
-
-      // Mobile modal
-      var mobZoom = document.querySelector("#papermaskDetailTop-zoom-mobile");
-      if (mobZoom && mobZoom.src && !mobZoom.src.startsWith("data:") && !mobZoom.src.startsWith("blob:")) {
-        collectedUrls.push(absUrl(mobZoom.src));
-      }
-
-      // Step 4: Go back to first page
-      for (var pi = 0; pi < 10; pi++) {
-        var prevBtn = document.querySelector('.newsmask-bottom-page[src*="pre"]');
-        if (!prevBtn) break;
-        prevBtn.click();
-        await sleep(1500);
-      }
-
-      // Final scroll
-      window.scrollTo(0, 0);
-      await sleep(500);
-      var th2 = document.body.scrollHeight;
-      for (var y2 = 0; y2 < th2; y2 += 400) {
-        window.scrollTo(0, y2);
-        await sleep(300);
-      }
-
-      // Step 5: Stability polling
-      var prevCount = 0;
-      var stableRounds = 0;
-      for (var round = 0; round < 50; round++) {
-        var curUrls = extractAllImageUrls();
-        for (var ci = 0; ci < curUrls.length; ci++) collectedUrls.push(curUrls[ci]);
-        var count = collectedUrls.length;
-
-        if (count !== prevCount) {
-          console.log("[round " + round + "] " + prevCount + " -> " + count);
-          stableRounds = 0;
-        } else {
-          stableRounds++;
-        }
-        prevCount = count;
-
-        if (stableRounds >= 6) {
-          console.log("[stable] " + count + " urls collected");
-          break;
-        }
-
-        window.scrollBy(0, 500);
-        await sleep(3000);
-      }
-
-      // Step 6: Final filter — deduplicate + remove unwanted
-      var uniqueUrls = [];
-      var seen2 = {};
-      var iconNames = ["pre.png","next.png","star.png","hide.png","share.png",
-        "menuc.png","menu.png","v2c.png","b.png","s.png","a.png","d.png",
-        "c.png","pc.png","z.png","log.png","logo.png","wx.png","age.png",
-        "ageword.png","agewordm.png","cha.png","v2.webp","v2c.png"];
-
-      for (var fi = 0; fi < collectedUrls.length; fi++) {
-        var url = collectedUrls[fi];
-        if (seen2[url]) continue;
-        seen2[url] = true;
-
-        var lower = url.toLowerCase();
-        if (url.startsWith("data:") || url.startsWith("blob:")) continue;
-        if (lower.indexOf('.svg') !== -1) continue;
-
-        var filename = lower.split("/").pop().split("?")[0];
-        if (iconNames.indexOf(filename) !== -1) continue;
-
-        uniqueUrls.push(url);
-      }
-
-      console.log("[final] " + uniqueUrls.length + " unique images");
-      window.__wpUrls = uniqueUrls;
     }
-  `.trim();
 
-  // The run-code receives `page` — wrap everything in page.evaluate()
-  return `async (page) => {
-    await page.waitForTimeout(3000);
+    function hasNextPage() {
+      return page.evaluate(() => {
+        const btn = document.querySelector('.newsmask-bottom-page[src*="next"]');
+        return !!(btn && btn.offsetParent !== null);
+      });
+    }
+
+    function getScrollHeight() {
+      return page.evaluate(() => document.body.scrollHeight);
+    }
+
+    // ================================================
+    // Main discovery flow
+    // ================================================
+
+    // Step 1: Inject hash + wait for SPA
     console.log("[run-code] starting on: " + page.url());
-    await page.evaluate(${browserCode});
+    await injectHash();
+    await page.waitForTimeout(3000);
+
+    // Step 2: Refresh to capture initial images via network listener
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForTimeout(3000);
+    await injectHash();
+    await page.waitForTimeout(2000);
+    console.log("[run-code] reloaded, now on: " + page.url());
+
+    // Step 3: Scroll through all pages to trigger lazy loading
+    for (let pageIdx = 0; pageIdx < 10; pageIdx++) {
+      await scrollPage();
+      const clicked = await clickNextPage();
+      if (!clicked) break;
+      await page.waitForTimeout(2000);
+      try { await page.waitForLoadState("networkidle", { timeout: 10000 }); } catch(e) {}
+    }
+
+    // Step 4: Go back to first page, scroll again
+    await goBackToFirstPage();
+    await scrollPage();
+
+    // Step 5: Click thumbnails (triggers high-res image loads)
+    await clickAllThumbnails();
+
+    // Step 6: Final scroll pass
+    await scrollPage();
+
+    // Step 7: Stability loop
+    // Condition: 15s without new image AND stable scrollHeight AND no next page
+    let stableRounds = 0;
+    let prevSH = 0;
+    console.log("[stability] waiting for image requests to stop...");
+    while (stableRounds < 4) {
+      await page.waitForTimeout(5000);
+      const elapsed = (Date.now() - lastImageTime) / 1000;
+      const sh = await getScrollHeight();
+      const next = await hasNextPage();
+      console.log("[stability] " + elapsed.toFixed(0) + "s idle, sh=" + sh + ", next=" + next + ", images=" + networkImages.size);
+
+      if (elapsed > 15 && sh === prevSH && !next) {
+        stableRounds++;
+      } else {
+        stableRounds = 0;
+        // Keep scrolling to trigger more lazy loads if needed
+        if (elapsed < 15) {
+          await page.evaluate(() => window.scrollBy(0, 500));
+        }
+      }
+      prevSH = sh;
+
+      if (stableRounds >= 4) {
+        console.log("[stability] converged after " + elapsed.toFixed(0) + "s");
+        break;
+      }
+    }
+
+    // ================================================
+    // Final collection
+    // ================================================
+    page.removeListener("response", onResponse);
+
+    // Get DOM images for reporting
+    const domUrls = await page.evaluate(() => {
+      const urls = new Set();
+      document.querySelectorAll("img").forEach(img => {
+        if (img.src && !img.src.startsWith("data:") && !img.src.startsWith("blob:")) {
+          urls.add(img.src);
+        }
+      });
+      return [...urls];
+    });
+
+    // Filter helpers (apply same filter as before)
+    const iconNames = ["pre.png","next.png","star.png","hide.png","share.png",
+      "menuc.png","menu.png","v2c.png","b.png","s.png","a.png","d.png",
+      "c.png","pc.png","z.png","log.png","logo.png","wx.png","age.png",
+      "ageword.png","agewordm.png","cha.png","v2.webp","v2c.png"];
+
+    function shouldKeep(url) {
+      const lower = url.toLowerCase();
+      if (url.startsWith("data:") || url.startsWith("blob:")) return false;
+      if (lower.indexOf(".svg") !== -1) return false;
+      const filename = lower.split("/").pop().split("?")[0];
+      if (iconNames.indexOf(filename) !== -1) return false;
+      return true;
+    }
+
+    // Merge network + DOM, apply filter
+    const allUrls = new Set();
+    for (const u of networkImages) if (shouldKeep(u)) allUrls.add(u);
+    for (const u of domUrls) if (shouldKeep(u)) allUrls.add(u);
+
+    const finalUrls = [...allUrls];
+    console.log("[final] DOM=" + domUrls.length + " Network=" + networkImages.size + " Combined=" + finalUrls.length);
+    await page.evaluate((urls) => { window.__wpUrls = urls; }, finalUrls);
   }`;
 }
 
@@ -463,12 +473,14 @@ function printSummary(
   totalFound: number,
   success: DownloadResult[],
   failed: DownloadResult[],
+  skipped: number,
 ) {
   console.log("\n========================================");
   console.log("           DOWNLOAD SUMMARY");
   console.log("========================================");
   console.log(`  Total images found : ${totalFound}`);
   console.log(`  Successfully saved : ${success.length}`);
+  console.log(`  Skipped (existing) : ${skipped}`);
   console.log(`  Failed             : ${failed.length}`);
 
   if (failed.length > 0) {
@@ -582,6 +594,7 @@ async function main() {
 
   if (allUrls.length === 0) {
     console.log("\nNo images found. The page structure may have changed.");
+    printSummary(0, [], [], 0);
     return;
   }
 
@@ -595,15 +608,20 @@ async function main() {
 
   const successResults: DownloadResult[] = [];
   const failedResults: DownloadResult[] = [];
+  let skippedCount = 0;
 
   for (let i = 0; i < allUrls.length; i += BATCH_SIZE) {
     const batch = allUrls.slice(i, i + BATCH_SIZE);
     const results = await Promise.all(
       batch.map(async (url): Promise<DownloadResult> => {
         const absUrl = resolveUrl(url, BASE_ORIGIN);
-        let filename = getFilenameFromUrl(absUrl);
-        filename = uniqueFilename(IMAGES_DIR, filename);
+        const filename = getFilenameFromUrl(absUrl);
         const dest = path.join(IMAGES_DIR, filename);
+
+        if (fs.existsSync(dest)) {
+          process.stdout.write(`  [SKIP] ${filename}\n`);
+          return { url: absUrl, filename, success: false, error: "skipped" };
+        }
 
         try {
           await downloadFile(absUrl, dest, PAGE_URL);
@@ -617,13 +635,15 @@ async function main() {
     );
 
     for (const r of results) {
-      if (r.success) successResults.push(r);
+      if (r.error === "skipped") {
+        skippedCount++;
+      } else if (r.success) successResults.push(r);
       else failedResults.push(r);
     }
   }
 
   // 8. Print summary (browser stays open per requirement #14)
-  printSummary(totalFound, successResults, failedResults);
+  printSummary(totalFound, successResults, failedResults, skippedCount);
 }
 
 main().catch((err) => {
