@@ -5,7 +5,7 @@ import { z } from "zod";
 // ── configuration schema ──────────────────────────────────────────
 
 const configSchema = z.object({
-  BASE_ORIGIN: z.string().url(),
+  BASE_ORIGIN: z.url(),
   PAGE_PATH: z.string().min(1),
   SESSION_NAME: z.string().min(1).default("bluepoch"),
   IMAGES_DIR: z.string().min(1).default("images"),
