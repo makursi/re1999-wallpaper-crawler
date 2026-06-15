@@ -1,22 +1,31 @@
 import "dotenv/config";
 import * as path from "path";
+import { z } from "zod";
 
-// ── configuration from .env ────────────────────────────────────────
+// ── configuration schema ──────────────────────────────────────────
 
-export const BASE_ORIGIN = process.env.BASE_ORIGIN || "https://re.bluepoch.com";
-export const PAGE_PATH = process.env.PAGE_PATH || "/home/detail.html";
+const configSchema = z.object({
+  BASE_ORIGIN: z.string().url(),
+  PAGE_PATH: z.string().min(1),
+  SESSION_NAME: z.string().min(1).default("bluepoch"),
+  IMAGES_DIR: z.string().min(1).default("images"),
+  BATCH_SIZE: z.coerce.number().int().positive().max(20).default(4),
+  PLAYWRIGHT_CONFIG: z.string().min(1).default(".playwright/config.json"),
+});
+
+const parsed = configSchema.parse(process.env);
+
+// ── exports ───────────────────────────────────────────────────────
+
+export const BASE_ORIGIN = parsed.BASE_ORIGIN;
+export const PAGE_PATH = parsed.PAGE_PATH;
 export const PAGE_URL = `${BASE_ORIGIN}${PAGE_PATH}`;
 // Hash is page logic, not env config (# is comment char in .env)
 export const PAGE_HASH = "#wallpaper";
-export const IMAGES_DIR = path.resolve(
-  __dirname,
-  "..",
-  process.env.IMAGES_DIR || "images",
-);
-export const SESSION = process.env.SESSION_NAME || "bluepoch";
-export const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "4", 10);
-export const PLAYWRIGHT_CONFIG =
-  process.env.PLAYWRIGHT_CONFIG || ".playwright/config.json";
+export const IMAGES_DIR = path.resolve(__dirname, "..", parsed.IMAGES_DIR);
+export const SESSION = parsed.SESSION_NAME;
+export const BATCH_SIZE = parsed.BATCH_SIZE;
+export const PLAYWRIGHT_CONFIG = parsed.PLAYWRIGHT_CONFIG;
 
 export const USER_AGENT =
   process.env.USER_AGENT ||

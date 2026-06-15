@@ -2,7 +2,6 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import {
-  BASE_ORIGIN,
   PAGE_URL,
   IMAGES_DIR,
   SESSION,
@@ -12,11 +11,10 @@ import {
 } from "./config";
 import {
   getCookieHeader,
-  downloadFile,
-  getFilenameFromUrl,
-  resolveUrl,
+  downloadBatch,
+  classifyOutcomes,
 } from "./download";
-import type { DownloadResult } from "./download";
+import type { DownloadOutcome, DownloadSummary } from "./download";
 import { buildRunCodeScript, extractNetworkImageUrls } from "./scraper";
 
 // ── Playwright CLI wrapper ─────────────────────────────────────────
@@ -36,25 +34,20 @@ function sleep(ms: number): Promise<void> {
 
 // ── summary ────────────────────────────────────────────────────────
 
-function printSummary(
-  totalFound: number,
-  success: DownloadResult[],
-  failed: DownloadResult[],
-  skipped: number,
-) {
+function printSummary(summary: DownloadSummary) {
   console.log("\n========================================");
   console.log("           DOWNLOAD SUMMARY");
   console.log("========================================");
-  console.log(`  Total images found : ${totalFound}`);
-  console.log(`  Successfully saved : ${success.length}`);
-  console.log(`  Skipped (existing) : ${skipped}`);
-  console.log(`  Failed             : ${failed.length}`);
+  console.log(`  Total images found : ${summary.total}`);
+  console.log(`  Successfully saved : ${summary.ok}`);
+  console.log(`  Skipped (existing) : ${summary.skipped}`);
+  console.log(`  Failed             : ${summary.failed}`);
 
-  if (failed.length > 0) {
+  if (summary.failures.length > 0) {
     console.log("\n  Failed URLs:");
-    for (const f of failed) {
+    for (const f of summary.failures) {
       console.log(`    - ${f.url}`);
-      if (f.error) console.log(`      Reason: ${f.error}`);
+      console.log(`      Reason: ${f.reason}`);
     }
   }
 
@@ -161,7 +154,7 @@ async function main() {
 
   if (allUrls.length === 0) {
     console.log("\nNo images found. The page structure may have changed.");
-    printSummary(0, [], [], 0);
+    printSummary({ ok: 0, skipped: 0, failed: 0, total: 0, failures: [] });
     return;
   }
 
@@ -173,44 +166,20 @@ async function main() {
   console.log("6. Downloading images...");
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-  const successResults: DownloadResult[] = [];
-  const failedResults: DownloadResult[] = [];
-  let skippedCount = 0;
-
-  for (let i = 0; i < allUrls.length; i += BATCH_SIZE) {
-    const batch = allUrls.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(
-      batch.map(async (url): Promise<DownloadResult> => {
-        const absUrl = resolveUrl(url, BASE_ORIGIN);
-        const filename = getFilenameFromUrl(absUrl);
-        const dest = path.join(IMAGES_DIR, filename);
-
-        if (fs.existsSync(dest)) {
-          process.stdout.write(`  [SKIP] ${filename}\n`);
-          return { url: absUrl, filename, success: false, error: "skipped" };
-        }
-
-        try {
-          await downloadFile(absUrl, dest, PAGE_URL);
-          process.stdout.write(`  [OK] ${filename}\n`);
-          return { url: absUrl, filename, success: true };
-        } catch (err: any) {
-          process.stderr.write(`  [FAIL] ${filename}: ${err.message}\n`);
-          return { url: absUrl, filename, success: false, error: err.message };
-        }
-      }),
-    );
-
-    for (const r of results) {
-      if (r.error === "skipped") {
-        skippedCount++;
-      } else if (r.success) successResults.push(r);
-      else failedResults.push(r);
-    }
-  }
+  const outcomes = await downloadBatch(
+    allUrls,
+    IMAGES_DIR,
+    BATCH_SIZE,
+    (o: DownloadOutcome) => {
+      if (o.kind === "ok") process.stdout.write(`  [OK] ${o.filename}\n`);
+      else if (o.kind === "skipped") process.stdout.write(`  [SKIP] ${o.filename}\n`);
+      else process.stderr.write(`  [FAIL] ${o.filename}: ${o.reason}\n`);
+    },
+  );
 
   // 8. Print summary (browser stays open per requirement #14)
-  printSummary(totalFound, successResults, failedResults, skippedCount);
+  const summary = classifyOutcomes(outcomes);
+  printSummary(summary);
 }
 
 main().catch((err) => {

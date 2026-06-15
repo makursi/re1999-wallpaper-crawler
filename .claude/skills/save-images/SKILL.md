@@ -78,16 +78,25 @@ await page.waitForTimeout(4000);  // wait for SPA re-render
 
 ### 4. Deduplication: Skip by Filename
 
-CDN filenames contain content hashes (e.g., `870_1440x2560_fcdf70aa.jpg`). Same filename = same content. Simply skip if file exists:
+CDN filenames contain content hashes (e.g., `870_1440x2560_fcdf70aa.jpg`). Same filename = same content. `downloadOne` returns `{ kind: "skipped" }` without downloading:
 
 ```typescript
+// downloadOne checks existence before attempting download
 if (fs.existsSync(dest)) {
-    process.stdout.write(`  [SKIP] ${filename}\n`);
-    return;
+  return { kind: "skipped", url: absUrl, filename };
 }
 ```
 
-No more `_1`, `_2` suffixes. No need for MD5 hash comparison.
+Download outcomes use a discriminated union for type-safe handling:
+
+```typescript
+export type DownloadOutcome =
+  | { kind: "ok"; url: string; filename: string }
+  | { kind: "skipped"; url: string; filename: string }
+  | { kind: "failed"; url: string; filename: string; reason: string };
+```
+
+No `_1`, `_2` suffixes (removed `uniqueFilename` dead code). No MD5 comparison needed.
 
 ### 5. Windows Shell Escaping: `--filename`
 
@@ -152,7 +161,9 @@ Use `.playwright/config.json`:
 
 `viewport: null` lets the real window size determine layout. SPA correctly detects desktop environment and renders wallpaper content (mobile layout may hide it).
 
-### 8. Environment Configuration (.env)
+### 8. Environment Configuration (.env + zod)
+
+Runtime values from `.env`, validated at startup with `zod` schema:
 
 ```env
 BASE_ORIGIN=https://re.bluepoch.com
@@ -162,28 +173,52 @@ IMAGES_DIR=images
 BATCH_SIZE=4
 ```
 
+```typescript
+// config.ts — startup validation, bad values fail immediately
+const configSchema = z.object({
+  BASE_ORIGIN: z.string().url(),
+  BATCH_SIZE: z.coerce.number().int().positive().max(20).default(4),
+  // ...
+});
+const parsed = configSchema.parse(process.env);
+```
+
 **Pitfall**: `#` is a comment character in `.env`. Never put `PAGE_HASH=#wallpaper` — it reads as empty. Keep hash in code.
 
 ### 9. 403 Retry with Browser Headers
 
-CDN rejects requests lacking proper headers:
+CDN rejects requests lacking proper headers. Uses `undici` fetch (native Cookie header support):
 
 ```typescript
-// First attempt: basic headers
-headers: { "User-Agent": UA, "Referer": referer, "Cookie": cookies }
+// downloadFile with fetch + 403 retry
+async function doRequest(retry: boolean): Promise<void> {
+  const headers: Record<string, string> = {
+    "User-Agent": USER_AGENT,
+    Referer: referer,
+    Cookie: getCookieHeader(),
+  };
 
-// 403 → retry with full browser-mimicking headers
-headers: {
-    ...basic,
-    "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
-    "Accept-Language": "zh-CN,zh;q=0.9",
-    "Sec-Fetch-Dest": "image",
-    "Sec-Fetch-Mode": "no-cors",
-    "Sec-Fetch-Site": "cross-site",
+  if (retry) {
+    // 403 → add full browser-mimicking headers
+    Object.assign(headers, {
+      "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9",
+      "Sec-Fetch-Dest": "image",
+      "Sec-Fetch-Mode": "no-cors",
+      "Sec-Fetch-Site": "cross-site",
+    });
+  }
+
+  const response = await fetch(url, { headers, redirect: "follow" });
+
+  if (response.status === 403 && !retry) return doRequest(true);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  fs.writeFileSync(dest, Buffer.from(await response.arrayBuffer()));
 }
 ```
 
-Extract cookies from browser session: `playwright-cli cookie-list`
+Fetch handles redirects (`redirect: "follow"`) and protocol selection automatically. No more manual `http.get`/`https.get` branching or Promise constructor wrapping.
 
 ### 10. Image Collection Pipeline
 
@@ -217,18 +252,18 @@ page.evaluate()      ──→  DOM interactions only
 | 5 | `--filename` with `module.exports` | `SyntaxError: Unexpected token` | Use plain function expression |
 | 6 | `setViewportSize` removed → mobile layout | No wallpaper content | Use `viewport: null` + `--window-size=1920,1080` |
 | 7 | `background-image` scan too broad | Never stabilizes (57 new/round) | Limit to `[class]`, `[id]`, `[style*="background"]` only |
-| 8 | `uniqueFilename` creates duplicates | `_1`, `_2` files with same content | Skip by filename: `fs.existsSync` → skip |
+| 8 | `BATCH_SIZE=zero` → silent download failure | `NaN` causes 0 downloads, no error | Zod validates at startup: `z.coerce.number().int().positive()` |
 
 ## File Structure
 
 ```
-.env                          # Configuration
+.env                          # Runtime config (validated by zod)
 .playwright/config.json       # Chrome launch + viewport
 src/
-├── config.ts                 # .env constants & shared configuration
-├── download.ts               # HTTP download, cookie cache, URL utilities
-├── scraper.ts                # Browser script (run-code) + network URL extraction
-└── main.ts                   # Orchestration (pwc, main flow, summary)
+├── config.ts                 # zod schema + typed config exports
+├── download.ts               # undici fetch download + DownloadOutcome + batch
+├── scraper.ts                # run-code script generation + network URL extraction
+└── main.ts                   # pwc wrapper + pipeline orchestration + summary
 images/                       # Output directory
 __run_script.js               # Temp: generated run-code (auto-cleaned)
 ```

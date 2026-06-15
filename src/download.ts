@@ -1,16 +1,21 @@
 import * as fs from "fs";
 import * as path from "path";
-import * as http from "http";
-import * as https from "https";
-import { USER_AGENT, IMAGE_EXTENSIONS } from "./config";
+import { fetch } from "undici";
+import { BASE_ORIGIN, IMAGES_DIR, PAGE_URL, USER_AGENT, IMAGE_EXTENSIONS } from "./config";
 
 // ── types ──────────────────────────────────────────────────────────
 
-export interface DownloadResult {
-  url: string;
-  filename: string;
-  success: boolean;
-  error?: string;
+export type DownloadOutcome =
+  | { kind: "ok"; url: string; filename: string }
+  | { kind: "skipped"; url: string; filename: string }
+  | { kind: "failed"; url: string; filename: string; reason: string };
+
+export interface DownloadSummary {
+  ok: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  failures: { url: string; reason: string }[];
 }
 
 // ── cookie extraction ──────────────────────────────────────────────
@@ -43,14 +48,6 @@ export function getCookieHeader(
 
 // ── URL utilities ──────────────────────────────────────────────────
 
-export function getExtFromUrl(url: string): string {
-  const withoutQuery = url.split("?")[0].split("#")[0];
-  const lastDot = withoutQuery.lastIndexOf(".");
-  if (lastDot === -1) return "";
-  const ext = withoutQuery.substring(lastDot).toLowerCase();
-  return IMAGE_EXTENSIONS.includes(ext) ? ext : "";
-}
-
 export function getFilenameFromUrl(url: string): string {
   const withoutQuery = url.split("?")[0].split("#")[0];
   const segments = withoutQuery.split("/");
@@ -68,23 +65,6 @@ export function getFilenameFromUrl(url: string): string {
   return raw;
 }
 
-export function uniqueFilename(dir: string, filename: string): string {
-  if (!fs.existsSync(path.join(dir, filename))) return filename;
-
-  const extIdx = filename.lastIndexOf(".");
-  const base = extIdx !== -1 ? filename.substring(0, extIdx) : filename;
-  const ext = extIdx !== -1 ? filename.substring(extIdx) : "";
-
-  let counter = 1;
-  let candidate: string;
-  do {
-    candidate = `${base}_${counter}${ext}`;
-    counter++;
-  } while (fs.existsSync(path.join(dir, candidate)));
-
-  return candidate;
-}
-
 export function resolveUrl(url: string, base: string): string {
   try {
     return new URL(url, base).href;
@@ -93,92 +73,114 @@ export function resolveUrl(url: string, base: string): string {
   }
 }
 
-// ── download with proper headers ───────────────────────────────────
+// ── download with fetch ────────────────────────────────────────────
 
-export function downloadFile(
+export async function downloadFile(
   url: string,
   dest: string,
   referer: string,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const cookieHeader = getCookieHeader();
+  const cookieHeader = getCookieHeader();
+
+  async function doRequest(retry: boolean): Promise<void> {
     const headers: Record<string, string> = {
       "User-Agent": USER_AGENT,
       Referer: referer,
     };
     if (cookieHeader) headers["Cookie"] = cookieHeader;
 
-    const doRequest = (retryWithExtraHeaders: boolean) => {
-      const opts = {
-        headers: {
-          ...headers,
-          ...(retryWithExtraHeaders
-            ? {
-                Accept:
-                  "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Sec-Fetch-Dest": "image",
-                "Sec-Fetch-Mode": "no-cors",
-                "Sec-Fetch-Site": "cross-site",
-              }
-            : {}),
-        },
-      };
-
-      const file = fs.createWriteStream(dest);
-      const proto = url.startsWith("https") ? https : http;
-      const req = proto.get(url, opts, (res) => {
-        if (
-          res.statusCode &&
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          file.close();
-          try {
-            fs.unlinkSync(dest);
-          } catch {}
-          return downloadFile(res.headers.location, dest, referer).then(
-            resolve,
-            reject,
-          );
-        }
-        if (res.statusCode === 403 && !retryWithExtraHeaders) {
-          file.close();
-          try {
-            fs.unlinkSync(dest);
-          } catch {}
-          return doRequest(true);
-        }
-        if (res.statusCode !== 200) {
-          file.close();
-          try {
-            fs.unlinkSync(dest);
-          } catch {}
-          return reject(new Error(`HTTP ${res.statusCode}`));
-        }
-        res.pipe(file);
-        file.on("finish", () => {
-          file.close();
-          resolve();
-        });
-        file.on("error", (err) => {
-          try {
-            fs.unlinkSync(dest);
-          } catch {}
-          reject(err);
-        });
+    if (retry) {
+      Object.assign(headers, {
+        Accept:
+          "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Sec-Fetch-Dest": "image",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Site": "cross-site",
       });
-      req.on("error", (err) => {
-        file.close();
-        try {
-          fs.unlinkSync(dest);
-        } catch {}
-        reject(err);
-      });
-      req.end();
-    };
+    }
 
-    doRequest(false);
-  });
+    const response = await fetch(url, { headers, redirect: "follow" });
+
+    if (response.status === 403 && !retry) {
+      return doRequest(true);
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs.writeFileSync(dest, buffer);
+  }
+
+  await doRequest(false);
+}
+
+// ── batch download ─────────────────────────────────────────────────
+
+export async function downloadOne(
+  url: string,
+  destDir: string = IMAGES_DIR,
+): Promise<DownloadOutcome> {
+  const absUrl = resolveUrl(url, BASE_ORIGIN);
+  const filename = getFilenameFromUrl(absUrl);
+  const dest = path.join(destDir, filename);
+
+  if (fs.existsSync(dest)) {
+    return { kind: "skipped", url: absUrl, filename };
+  }
+
+  try {
+    await downloadFile(absUrl, dest, PAGE_URL);
+    return { kind: "ok", url: absUrl, filename };
+  } catch (err) {
+    return { kind: "failed", url: absUrl, filename, reason: String(err) };
+  }
+}
+
+export async function downloadBatch(
+  urls: string[],
+  destDir: string,
+  batchSize: number,
+  onProgress?: (outcome: DownloadOutcome) => void,
+): Promise<DownloadOutcome[]> {
+  const outcomes: DownloadOutcome[] = [];
+  for (let i = 0; i < urls.length; i += batchSize) {
+    const batch = urls.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (url) => {
+        const outcome = await downloadOne(url, destDir);
+        onProgress?.(outcome);
+        return outcome;
+      }),
+    );
+    outcomes.push(...results);
+  }
+  return outcomes;
+}
+
+export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadSummary {
+  const summary: DownloadSummary = {
+    ok: 0,
+    skipped: 0,
+    failed: 0,
+    total: outcomes.length,
+    failures: [],
+  };
+  for (const o of outcomes) {
+    switch (o.kind) {
+      case "ok":
+        summary.ok++;
+        break;
+      case "skipped":
+        summary.skipped++;
+        break;
+      case "failed":
+        summary.failed++;
+        summary.failures.push({ url: o.url, reason: o.reason });
+        break;
+    }
+  }
+  return summary;
 }
