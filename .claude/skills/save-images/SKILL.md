@@ -224,7 +224,11 @@ page.evaluate()      ──→  DOM interactions only
 ```
 .env                          # Configuration
 .playwright/config.json       # Chrome launch + viewport
-src/save_wallpapers.ts        # Main script
+src/
+├── config.ts                 # .env constants & shared configuration
+├── download.ts               # HTTP download, cookie cache, URL utilities
+├── scraper.ts                # Browser script (run-code) + network URL extraction
+└── main.ts                   # Orchestration (pwc, main flow, summary)
 images/                       # Output directory
 __run_script.js               # Temp: generated run-code (auto-cleaned)
 ```

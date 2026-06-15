@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "save-wallpapers": "ts-node src/save_wallpapers.ts",
+    "save-wallpapers": "ts-node src/main.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

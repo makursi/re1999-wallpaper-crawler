@@ -46,7 +46,10 @@ Downloaded images are saved under `./images/`.
 
 ```
 ├── src/
-│   └── save_wallpapers.ts   # Main scraper script
+│   ├── config.ts            # .env configuration & constants
+│   ├── download.ts          # HTTP download, cookie extraction, URL utilities
+│   ├── scraper.ts           # Browser script generation & network URL extraction
+│   └── main.ts              # Orchestration & summary
 ├── images/                  # Output directory for downloaded wallpapers
 ├── package.json
 └── tsconfig.json
