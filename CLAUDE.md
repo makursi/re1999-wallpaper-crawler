@@ -1,31 +1,29 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Wallpaper scraper for [Bluepoch](https://re.bluepoch.com) using Playwright CLI (`@playwright/cli`), not Playwright Test.
 
-## Project Overview
-
-This is a Playwright test project (currently uninitialized). No source code, dependencies, or configuration files exist yet.
-
-## Setup
-
-No setup has been performed. To initialize a Playwright project, run:
+## Prerequisites
 
 ```bash
-npm init playwright
+npm install -g @playwright/cli
+npx playwright-cli install
+npm install
 ```
 
-Or install Playwright manually:
+## Commands
 
-```bash
-npm init -y
-npm install -D @playwright/test
-npx playwright install
-```
+- Scrape: `npm run save-wallpapers`
+- Lint: `npx eslint .`
 
-## Tests
+No tests exist (script is a stub).
 
-No tests exist yet. Once configured, run tests with:
+## Key facts
 
-```bash
-npx playwright test
-```
+- **Playwright CLI**, not Playwright Test or the `playwright` library. Uses `npx playwright-cli -s=<session>`.
+- **Windows only**: run-code scripts are passed via `--filename` (temp file), never inline — cmd.exe mangles multi-line strings.
+- `run-code` callback runs in Node.js, receives `page`. Browser APIs only work inside `page.evaluate()`.
+- `.env` `#` is a comment char; `PAGE_HASH=#wallpaper` is hardcoded in `src/config.ts`.
+- Viewport: `viewport: null` + `--window-size=1920,1080` for correct desktop rendering.
+- Image capture is network-first (`page.on("response")`), not DOM-based.
+- Download 403 → retry with full browser headers.
+- ESLint: `@antfu/eslint-config` (single quotes, no semis, 2-space indent).

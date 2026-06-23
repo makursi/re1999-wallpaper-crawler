@@ -1,6 +1,6 @@
 ---
 name: save-images
-description: Save all images from a web page using Playwright CLI. Network-first architecture captures real image requests via page.on("response"), DOM only drives scroll/pagination/thumbnail clicks. Handles SPA hash routing, content-based deduplication, 403 retries, and Windows shell escaping.
+description: Save all images from a web page using Playwright CLI. Network-first architecture captures real image requests via page.on("response"), DOM only drives scroll/pagination/thumbnail clicks. Handles SPA hash routing, content-based deduplication, 403 retries, Windows shell escaping, and structured logging.
 allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(node:*) Bash(ts-node:*) Bash(cd:*) Bash(ls:*) Bash(echo:*) Bash(rm:*) Bash(mkdir:*) Bash(npm:*)
 ---
 
@@ -10,16 +10,20 @@ allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(node:*) Bash(ts-node:*) B
 
 ```
 ┌──────────────────────────────────────────────────────┐
+│  pino Logger (dual-write)                            │
+│  ★ Terminal: pino-pretty (info↑, colored)            │
+│  ★ File: logs/save-wallpapers-{ts}.jsonl (debug↑)    │
+├──────────────────────────────────────────────────────┤
 │  Node.js side (run-code context)                     │
 │  ★ page.on("response") — captures ALL image requests │
 │  ★ page.evaluate() — only drives DOM interaction     │
 │  ★ page.waitForLoadState("networkidle")              │
-│  ★ page.waitForTimeout()                             │
+│  ★ window.__wpLog — diagnostic log (browser-side array) │
 ├──────────────────────────────────────────────────────┤
 │  Browser side (page.evaluate)                        │
 │  ★ inject hash (#wallpaper)                          │
 │  ★ scroll sections + full page                       │
-│  ★ click pagination (next/prev)                      │
+│  ★ scroll virtual container (dynamic scrollHeight)    │
 │  ★ click thumbnails → high-res modal                 │
 │  ★ trigger lazy loading                              │
 └──────────────────────────────────────────────────────┘
@@ -40,6 +44,7 @@ npm run save-wallpapers
 ```javascript
 // ✅ Register BEFORE any page interaction
 const networkImages = new Set();
+let lastImageTime = Date.now();
 page.on("response", (response) => {
     const ct = response.headers()["content-type"] || "";
     if (ct.includes("image/")) {
@@ -58,10 +63,11 @@ await clickThumbnails();
 Old (broken): poll `extractAllImageUrls()` count until stable → fails because SPA unloads images from DOM.
 
 New (correct):
-- 15+ seconds without new `page.on("response")` image capture
-- `document.body.scrollHeight` stable
-- Next-page button not clickable
-- 4 consecutive stable rounds
+- 45+ seconds without new `page.on("response")` image capture
+- `scrollHeight` (body + all `.papermask-mid-list` virtual containers) stable
+- 6 consecutive stable rounds (each round = 5s wait)
+- Lightweight stall on virtual containers while `elapsed < 45` to stimulate lazy loading
+- `getScrollHeight()` MUST include virtual scroll containers — `document.body.scrollHeight` alone is useless on SPA pages
 
 ### 3. Hash Injection for SPA
 
@@ -171,6 +177,8 @@ PAGE_PATH=/home/detail.html
 SESSION_NAME=bluepoch
 IMAGES_DIR=images
 BATCH_SIZE=4
+PLAYWRIGHT_CONFIG=.playwright/config.json
+LOG_DIR=logs
 ```
 
 ```typescript
@@ -178,6 +186,7 @@ BATCH_SIZE=4
 const configSchema = z.object({
   BASE_ORIGIN: z.string().url(),
   BATCH_SIZE: z.coerce.number().int().positive().max(20).default(4),
+  LOG_DIR: z.string().min(1).default("logs"),
   // ...
 });
 const parsed = configSchema.parse(process.env);
@@ -195,8 +204,9 @@ async function doRequest(retry: boolean): Promise<void> {
   const headers: Record<string, string> = {
     "User-Agent": USER_AGENT,
     Referer: referer,
-    Cookie: getCookieHeader(),
   };
+  const cookie = getCookieHeader();
+  if (cookie) headers["Cookie"] = cookie;
 
   if (retry) {
     // 403 → add full browser-mimicking headers
@@ -220,17 +230,118 @@ async function doRequest(retry: boolean): Promise<void> {
 
 Fetch handles redirects (`redirect: "follow"`) and protocol selection automatically. No more manual `http.get`/`https.get` branching or Promise constructor wrapping.
 
-### 10. Image Collection Pipeline
+### 10. Structured Logging (pino) + Run-Code Diagnostic Log
+
+Replaces all `console.log`/`process.stdout.write`/`process.stderr.write` with structured JSON logs.
+
+```
+pino Logger
+├── Terminal: pino-pretty (colorized, info↑)
+└── File: logs/save-wallpapers-{timestamp}.jsonl (debug↑, machine-readable)
+```
+
+**Log levels**:
+| Level | Usage |
+|-------|-------|
+| `info` | Pipeline steps, counts, summary |
+| `debug` | Per-file download OK/SKIP |
+| `warn` | Per-file download FAIL |
+| `error` | Fatal errors (run-code crash) |
+
+**Run-code diagnostic log via `window.__wpLog`**:
+
+The run-code script runs in a separate `playwright-cli` process. Its `console.log` calls go to a playwright-cli console log file — not stdout — making them invisible to `main.ts`. Instead, run-code pushes diagnostic messages to `window.__wpLog` (browser-side array) via a helper:
+
+```javascript
+// run-discovery.js
+async function log(msg) {
+  await page.evaluate((m) => {
+    (window.__wpLog = window.__wpLog || []).push({ t: Date.now(), msg: m });
+  }, msg);
+}
+
+// Usage throughout run-discovery.js:
+await log("[run-code] starting on: " + page.url());
+await log("[pagination] page " + pageIdx);
+await log("[final] DOM=150 Network=300 Combined=320");
+```
+
+`main.ts` step 3b extracts it alongside `window.__wpUrls`:
+
+```typescript
+const rawLog = execSync(
+  `npx playwright-cli -s=${SESSION} --raw eval "JSON.stringify(window.__wpLog || [])"`,
+  { encoding: 'utf8', stdio: 'pipe', timeout: 15_000 },
+).trim();
+
+for (const entry of JSON.parse(rawLog)) {
+  logger.info({ phase: 'run-code' }, entry.msg);
+}
+```
+
+**Pitfall**: Do NOT rely on `console.log` inside run-code for diagnostics. playwright-cli's `run-code` echoes the script source to stdout but does NOT forward the Node.js-side `console.log` calls. Browser-side `console.log` (inside `page.evaluate`) goes to a separate console log file (`console-...log`). The `window.__wpLog` pattern is the only reliable way to get diagnostic data from run-code back to `main.ts`.
+
+### 11. Cookie Extraction (Split Responsibility)
+
+`download.ts` exports two separate concerns:
+
+```typescript
+// main.ts calls once to extract cookies from Playwright session
+export function extractCookies(pwc: (args: string) => string): string
+
+// downloadFile uses internally (no pwc parameter needed)
+function getCookieHeader(): string
+```
+
+Global mutable cache `_cachedCookieHeader` is now an internal implementation detail, not part of the public API.
+
+### 12. Dynamic ScrollHeight for Virtual Scroll Containers
+
+The wallpaper page uses a virtual scroll container (`.papermask-mid-list`) that dynamically grows `scrollHeight` as content renders. A fixed-loop approach misses content:
+
+Old (broken): `const sh = list.scrollHeight; for (let y = 0; y < sh; y += 300)` — sh locked at initial value.
+
+New (correct): while-loop with stall detection re-reads `scrollHeight` each iteration:
+
+```javascript
+let prevSH = 0, stall = 0;
+while (stall < 3) {
+  list.scrollBy(0, 600);
+  await new Promise(r => setTimeout(r, 300));
+  const currSH = list.scrollHeight;
+  if (currSH > prevSH) { prevSH = currSH; stall = 0; }
+  else { stall++; }
+}
+```
+
+Stall counter (3 consecutive no-growth rounds) acts as the stop condition. This pattern replaces the removed pagination logic — the site has no next/prev buttons; all content loads via scroll-triggered virtual rendering.
+
+### 13. Run-Code Script as Separate File
+
+The 180-line run-code JavaScript was embedded as a TypeScript template string in `scraper.ts` → zero syntax validation, no IDE support.
+
+Now lives at `scripts/run-discovery.js` — can be linted, syntax-checked (`node --check`), and IDE-highlighted. `buildRunCodeScript()` just reads the file and replaces the `__PAGE_HASH__` placeholder:
+
+```typescript
+// scraper.ts (11 lines)
+export function buildRunCodeScript(): string {
+  const scriptFile = path.resolve(__dirname, "..", "scripts", "run-discovery.js");
+  const raw = fs.readFileSync(scriptFile, "utf8");
+  return raw.replace("__PAGE_HASH__", PAGE_HASH);
+}
+```
+
+### 14. Image Collection Pipeline
 
 ```
 page.on("response")  ──→  networkImageSet (real-time)
-                              │
-page.evaluate()      ──→  DOM interactions only
-  ├─ inject hash              (scroll, click, paginate)
-  ├─ scroll sections
-  ├─ click pagination
-  ├─ click thumbnails
-  └─ stability loop
+
+page.evaluate()      ──→  DOM interactions + diagnostic log
+  ├─ inject hash              → log("[hash] ...")
+  ├─ scroll containers (dynamic scrollHeight loop)
+  ├─ click thumbnails         → log("[thumbnails] ...")
+  ├─ stability loop           → log("[stability] ...")
+  └─ final merge              → log("[final] ...")
                               │
                     ┌─────────┘
                     ▼
@@ -239,6 +350,11 @@ page.evaluate()      ──→  DOM interactions only
               ├─ Remove .svg files
               ├─ Remove known UI icon filenames
               └─ Deduplicate by filename
+                              │
+                    ┌─────────┘
+                    ▼
+              window.__wpUrls  (URL list)
+              window.__wpLog   (diagnostic log)
 ```
 
 ## Common Pitfalls
@@ -253,17 +369,33 @@ page.evaluate()      ──→  DOM interactions only
 | 6 | `setViewportSize` removed → mobile layout | No wallpaper content | Use `viewport: null` + `--window-size=1920,1080` |
 | 7 | `background-image` scan too broad | Never stabilizes (57 new/round) | Limit to `[class]`, `[id]`, `[style*="background"]` only |
 | 8 | `BATCH_SIZE=zero` → silent download failure | `NaN` causes 0 downloads, no error | Zod validates at startup: `z.coerce.number().int().positive()` |
+| 9 | `execSync` stdio pipe without using return | run-code output lost, can't diagnose issues | Capture return value and log it (see §10) |
+| 10 | `pwc requests` for post-hoc network capture | Only captures ~2 URLs, not useful | Deleted. Trust run-code's `page.on("response")` instead |
+| 11 | `goto` + fixed `sleep(5000)` | May not wait long enough on slow networks | Use `pwc("wait-for load", 30)` with timeout |
+| 12 | Fixed-loop virtual scroll: `for (y < sh)` with stale `scrollHeight` | Content beyond initial height never loads | Dynamic while-loop with per-iteration `scrollHeight` re-read + stall detection |
+| 13 | `resolveUrl` try-catch swallowing errors | Invalid URLs passed silently to fetch | Remove try-catch; let URL constructor throw naturally |
+| 14 | `process` / `Buffer` globals in TypeScript | ESLint `node/prefer-global/*` errors | `import process from 'node:process'`, `import { Buffer } from 'node:buffer'` |
+| 15 | `console.log` in run-code → invisible to main.ts | Diagnostic output lost during the "172 images" mystery | Use `window.__wpLog` pattern (see §10): push messages via `page.evaluate`, extract in main.ts step 3b |
+| 16 | Trailing `;` on `--filename` function expression | `SyntaxError: Unexpected token ';'` | `--filename` expects `async (page) => { ... }` — no trailing semicolon |
+| 17 | Fixed timeouts + `networkidle` + silent `catch(e) {}` couple capture to network speed | Image count fluctuates 67~607 across runs | Replace `networkidle` with fixed `waitForTimeout`; stability 15s→45s, 4→6 rounds; `catch(e) {}`→`catch(e) { await log(...) }`; zoom fallback 3s→10s |
+| 18 | `getScrollHeight()` only reads `document.body.scrollHeight` (fixed viewport = always 720) | Stability check `sh === prevSH` always true — decorative | Sum body + all `.papermask-mid-list` scrollHeights; embed lightweight stall (`stall<2, iter<10`) on virtual containers in stability loop instead of `window.scrollBy` |
 
 ## File Structure
 
 ```
 .env                          # Runtime config (validated by zod)
 .playwright/config.json       # Chrome launch + viewport
+eslint.config.mjs             # @antfu/eslint-config
+scripts/
+  run-discovery.js            # Browser-side discovery script (lintable, separate file)
 src/
-├── config.ts                 # zod schema + typed config exports
-├── download.ts               # undici fetch download + DownloadOutcome + batch
-├── scraper.ts                # run-code script generation + network URL extraction
-└── main.ts                   # pwc wrapper + pipeline orchestration + summary
+├── config.ts                 # zod schema + typed config exports (36 lines)
+├── logger.ts                 # pino factory, dual-write terminal + file (35 lines)
+├── download.ts               # undici fetch + extractCookies + DownloadOutcome + batch (202 lines)
+├── scraper.ts                # Script loader (reads run-discovery.js, replaces __PAGE_HASH__) (11 lines)
+└── main.ts                   # pwc wrapper + pipeline orchestration + run-code stdout capture (185 lines)
 images/                       # Output directory
+logs/                         # pino JSON log files (gitignored)
+  └── save-wallpapers-{timestamp}.jsonl
 __run_script.js               # Temp: generated run-code (auto-cleaned)
 ```

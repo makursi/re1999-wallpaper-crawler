@@ -3,7 +3,9 @@ images/
 .playwright/
 .playwright-cli/
 dist/
+logs/
 *.log
 .env
 .env.local
-KNOWLEDGE.md
+explain/
+WORKLOG.md
