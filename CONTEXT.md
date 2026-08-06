@@ -98,6 +98,27 @@ The cookie header extracted from the Browser session and attached to downloads
 so gated images succeed.
 _Avoid_: auth, login
 
+### Diagnostics
+
+**Run**:
+One invocation of the whole scraper, from session clear through download
+summary, producing one JSONL log and one Run report.
+_Avoid_: execution, session run
+
+**Run 稳定性 (Run stability)**:
+The degree to which a single Run completes both pipelines and produces a
+trustworthy outcome, measured by: discovery convergence, download success
+rate, 403 retry rescue rate, and absence of leak/anomaly signals. Cross-run
+consistency is a future, aggregation-phase signal.
+_Avoid_: reliability, health
+
+**运行缺陷 (Run defect)**:
+An anomaly detectable from the log that shows the crawl deviated from
+expectations. Classes: discovery leak, convergence failure, empty result,
+persistent failure, empty file. Cross-run drift is a future,
+aggregation-phase class.
+_Avoid_: bug, error, failure (as a blanket term)
+
 ## Architecture
 
 ### Network-first capture (the core principle)
