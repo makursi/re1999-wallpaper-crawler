@@ -19,7 +19,7 @@ Then `npm install` for project dependencies.
 
 | Task | Command |
 |------|---------|
-| Scrape wallpapers | `npm run save-wallpapers` (`ts-node src/main.ts`) |
+| Scrape wallpapers | `npm run save-wallpapers` (`tsx src/main.ts`) |
 | Tests | `npm test` (`vitest run`) |
 | Typecheck | `npx tsc --noEmit` |
 | Lint | `npx eslint .` |
@@ -100,5 +100,5 @@ Download first attempt uses cookies + UA + Referer. If 403, retries with full br
 ## Code style
 
 - ESLint: `@antfu/eslint-config` (single quotes, no semicolons, 2-space indent)
-- TypeScript strict mode, CommonJS module system, compiled via `ts-node` at runtime
+- TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
 - Formatting: semicolons are off (`semi: false`), use single quotes

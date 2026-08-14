@@ -1,4 +1,4 @@
-import type { DiscoveryStats, DownloadMetrics, DownloadOutcome, RunMeta } from './report'
+import type { DiscoveryStats, DownloadMetrics, DownloadOutcome, RunMeta } from './report.js'
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -12,13 +12,14 @@ import {
   PAGE_PATH,
   PAGE_URL,
   PLAYWRIGHT_CONFIG,
+  PROJECT_ROOT,
   SESSION,
   USER_AGENT,
-} from './config'
-import { downloadBatch, extractCookies } from './download'
-import { createLogger } from './logger'
-import { buildRunReport, classifyOutcomes, detectLeaks } from './report'
-import { buildRunCodeScript } from './scraper'
+} from './config.js'
+import { downloadBatch, extractCookies } from './download.js'
+import { createLogger } from './logger.js'
+import { buildRunReport, classifyOutcomes, detectLeaks } from './report.js'
+import { buildRunCodeScript } from './scraper.js'
 
 // ── Playwright CLI wrapper ─────────────────────────────────────────
 
@@ -152,7 +153,7 @@ async function main() {
 
   // 1. Open browser with real Chrome, 2560x1440 window, persistent
   logger.info('1. Opening browser...')
-  const configPath = path.resolve(__dirname, '..', PLAYWRIGHT_CONFIG)
+  const configPath = path.resolve(PROJECT_ROOT, PLAYWRIGHT_CONFIG)
   pwc(`open --persistent --config=${configPath}`)
 
   // Navigate to the page and wait for it to load
@@ -170,7 +171,7 @@ async function main() {
   // Write run-code script to temp file, load via --filename.
   // This avoids Windows cmd.exe escaping issues with multi-line strings and # hashes.
   const runScript = buildRunCodeScript()
-  const scriptFile = path.resolve(__dirname, '..', '__run_script.js')
+  const scriptFile = path.resolve(PROJECT_ROOT, '__run_script.js')
   fs.writeFileSync(scriptFile, runScript, 'utf8')
 
   try {

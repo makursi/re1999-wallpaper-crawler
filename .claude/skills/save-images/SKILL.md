@@ -1,7 +1,7 @@
 ---
 name: save-images
 description: Save all images from a web page using Playwright CLI. Network-first architecture captures real image requests via page.on("response"), DOM only drives scroll/pagination/thumbnail clicks. Handles SPA hash routing, content-based deduplication, 403 retries, Windows shell escaping, and structured logging.
-allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(node:*) Bash(ts-node:*) Bash(cd:*) Bash(ls:*) Bash(echo:*) Bash(rm:*) Bash(mkdir:*) Bash(npm:*)
+allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(node:*) Bash(tsx:*) Bash(cd:*) Bash(ls:*) Bash(echo:*) Bash(rm:*) Bash(mkdir:*) Bash(npm:*)
 ---
 
 # Save Images from Web Page (Network-First)
@@ -17,7 +17,7 @@ allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(node:*) Bash(ts-node:*) B
 │  Node.js side (run-code context)                     │
 │  ★ page.on("response") — captures ALL image requests │
 │  ★ page.evaluate() — only drives DOM interaction     │
-│  ★ page.waitForLoadState("networkidle")              │
+│  ★ stability loop (idle time + scrollHeight) — NOT networkidle │
 │  ★ window.__wpLog — diagnostic log (browser-side array) │
 ├──────────────────────────────────────────────────────┤
 │  Browser side (page.evaluate)                        │
@@ -34,8 +34,12 @@ allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(node:*) Bash(ts-node:*) B
 ## Quick Start
 
 ```bash
+npm install          # @playwright/cli must be installed globally (npm i -g @playwright/cli)
 npm run save-wallpapers
 ```
+
+Runs TypeScript source directly via **tsx** (ESM, `"type": "module"` in
+package.json). No build step — `tsc --noEmit` is used for typechecking only.
 
 ## Key Design Decisions
 
@@ -96,10 +100,10 @@ if (fs.existsSync(dest)) {
 Download outcomes use a discriminated union for type-safe handling:
 
 ```typescript
-export type DownloadOutcome =
-  | { kind: "ok"; url: string; filename: string }
-  | { kind: "skipped"; url: string; filename: string }
-  | { kind: "failed"; url: string; filename: string; reason: string };
+export type DownloadOutcome
+  = | { kind: 'ok', url: string, filename: string, status: number, retried: boolean, durationMs: number, bytes: number }
+    | { kind: 'skipped', url: string, filename: string }
+    | { kind: 'failed', url: string, filename: string, reason: string, status?: number, retried?: boolean, durationMs?: number }
 ```
 
 No `_1`, `_2` suffixes (removed `uniqueFilename` dead code). No MD5 comparison needed.
@@ -182,15 +186,19 @@ LOG_DIR=logs
 ```
 
 ```typescript
-// config.ts — startup validation, bad values fail immediately
+// config.ts — startup validation, bad values fail immediately (zod v4)
 const configSchema = z.object({
-  BASE_ORIGIN: z.string().url(),
+  BASE_ORIGIN: z.url(),
   BATCH_SIZE: z.coerce.number().int().positive().max(20).default(4),
   LOG_DIR: z.string().min(1).default("logs"),
   // ...
 });
 const parsed = configSchema.parse(process.env);
 ```
+
+**ESM note**: `config.ts` exports `PROJECT_ROOT = path.resolve(import.meta.dirname, '..')`
+(Node ≥ 20.11, no `__dirname` in ESM). All other modules import `PROJECT_ROOT`
+from `./config.js` instead of recomputing `__dirname` paths.
 
 **Pitfall**: `#` is a comment character in `.env`. Never put `PAGE_HASH=#wallpaper` — it reads as empty. Keep hash in code.
 
@@ -318,16 +326,18 @@ Stall counter (3 consecutive no-growth rounds) acts as the stop condition. This 
 
 ### 13. Run-Code Script as Separate File
 
-The 180-line run-code JavaScript was embedded as a TypeScript template string in `scraper.ts` → zero syntax validation, no IDE support.
+The ~250-line run-code JavaScript was embedded as a TypeScript template string in `scraper.ts` → zero syntax validation, no IDE support.
 
 Now lives at `scripts/run-discovery.js` — can be linted, syntax-checked (`node --check`), and IDE-highlighted. `buildRunCodeScript()` just reads the file and replaces the `__PAGE_HASH__` placeholder:
 
 ```typescript
 // scraper.ts (11 lines)
+import { PAGE_HASH, PROJECT_ROOT } from './config.js'
+
 export function buildRunCodeScript(): string {
-  const scriptFile = path.resolve(__dirname, "..", "scripts", "run-discovery.js");
-  const raw = fs.readFileSync(scriptFile, "utf8");
-  return raw.replace("__PAGE_HASH__", PAGE_HASH);
+  const scriptFile = path.resolve(PROJECT_ROOT, 'scripts', 'run-discovery.js')
+  const raw = fs.readFileSync(scriptFile, 'utf8')
+  return raw.replace('__PAGE_HASH__', PAGE_HASH)
 }
 ```
 
@@ -355,6 +365,7 @@ page.evaluate()      ──→  DOM interactions + diagnostic log
                     ▼
               window.__wpUrls  (URL list)
               window.__wpLog   (diagnostic log)
+              window.__wpStats (structured discovery stats → run_report)
 ```
 
 ## Common Pitfalls
@@ -385,17 +396,43 @@ page.evaluate()      ──→  DOM interactions + diagnostic log
 ```
 .env                          # Runtime config (validated by zod)
 .playwright/config.json       # Chrome launch + viewport
-eslint.config.mjs             # @antfu/eslint-config
+eslint.config.mjs             # @antfu/eslint-config (ESM)
+tsconfig.json                 # module: nodenext, verbatimModuleSyntax, noEmit
+CONTEXT.md                    # Domain glossary (Discovery / Download / Diagnostics)
+CONTEXT-MAP.md                # Context map pointing to each sub-domain
+docs/adr/                     # Architecture decision records (0001-0003)
 scripts/
-  run-discovery.js            # Browser-side discovery script (lintable, separate file)
+  run-discovery.js            # Browser-side discovery script (lintable, separate file, ~250 lines)
 src/
-├── config.ts                 # zod schema + typed config exports (36 lines)
+├── config.ts                 # zod schema + typed config + PROJECT_ROOT (39 lines)
 ├── logger.ts                 # pino factory, dual-write terminal + file (35 lines)
-├── download.ts               # undici fetch + extractCookies + DownloadOutcome + batch (202 lines)
+├── download.ts               # undici fetch + extractCookies + DownloadOutcome + batch (198 lines)
 ├── scraper.ts                # Script loader (reads run-discovery.js, replaces __PAGE_HASH__) (11 lines)
-└── main.ts                   # pwc wrapper + pipeline orchestration + run-code stdout capture (185 lines)
+├── report.ts                 # Pure analysis: detectLeaks, classifyOutcomes, buildRunReport (183 lines)
+├── report.test.ts            # Vitest unit tests for report.ts (10 tests)
+└── main.ts                   # pwc wrapper + pipeline orchestration + run-report (302 lines)
 images/                       # Output directory
 logs/                         # pino JSON log files (gitignored)
   └── save-wallpapers-{timestamp}.jsonl
 __run_script.js               # Temp: generated run-code (auto-cleaned)
 ```
+
+### ESM migration notes (ADR 0003)
+
+- Runs via **tsx** (`npm run save-wallpapers` = `tsx src/main.ts`); ts-node removed.
+- `package.json` has `"type": "module"`; tsconfig uses `module: nodenext` +
+  `verbatimModuleSyntax`, so **all relative imports need `.js` extensions**
+  (`./config` → `./config.js`).
+- No `__dirname` — use `import.meta.dirname` (via `PROJECT_ROOT` in config.ts).
+- `scripts/run-discovery.js` and `__run_script.js` are loaded as **text**, never
+  imported, so they are unaffected by the module system.
+
+### Run report & defects (ADR 0002)
+
+Each run writes one JSONL file in `logs/`. The last record is a structured
+`run_report` (type field) aggregating discovery stats, download metrics, and
+auto-detected defects (`discoveryLeak`, `nonConverged`, `emptyResult`,
+`persistentFailures`, `emptyFiles`). To assess a run: grep `"type":"run_report"`
+(one record), `"type":"run_meta"` (config snapshot), and `"phase":"run-code"`
+(discovery diagnostics). Full analysis workflow: see `AGENTS.md` →
+"Analyzing a run's logs".

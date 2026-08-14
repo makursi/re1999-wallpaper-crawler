@@ -1093,3 +1093,70 @@ npx vitest run      ✅ 10 passed
 3. **真实数据暴露真缺陷** — `detail.html` 泄漏在旧日志里"悄悄被下载"，新报告一眼可判；噪音清除前 run-code 诊断被 60 行源码回显淹没
 4. **run_meta 是跨 run 分析的前提** — 没有配置快照，BATCH_SIZE/UA 变了会让"功能不稳定"误判成爬取缺陷
 5. **ADR 记否决项** — 独立 report.json/.md 是"下一个人会重新提"的方案，ADR 记录选择理由（单一事实来源）比实现本身更值钱
+
+---
+
+## 2026-08-14 — ESM 迁移（ts-node → tsx）
+
+### 背景
+
+项目原为 CommonJS + ts-node（`"type": "commonjs"`，`tsconfig.module=commonjs`，`__dirname` 5 处）。
+决定迁移到原生 ESM + tsx，保证运行质量与前代相同（**Run parity**：run_report 结构契约不变 + 指标不退化）。
+
+### 决策（grill + domain-modeling 会话确定）
+
+| 决策点 | 选择 | 理由 |
+|--------|------|------|
+| 模块系统 | `module: nodenext` | Node 原生 ESM 语义；tsx 只是启动器 |
+| 相对导入 | 全加 `.js` 后缀 | nodenext 要求；tsc/vitest/tsx 语义统一 |
+| `__dirname` | `import.meta.dirname`（Node ≥20.11） | 官方推荐，无需 fileURLToPath |
+| 路径常量 | `config.ts` 抽 `PROJECT_ROOT` | 5 处重复收敛为单点 |
+| 严格性 | `verbatimModuleSyntax: true` | 编译期拦截类型误导入 |
+| 产物配置 | 删 declaration/outDir/sourceMap，显式 `noEmit: true` | 项目无构建/发布需求，tsx 直跑 |
+| 验证 | 跑完整 Run 对比最近日志 run_report | Run parity = 行为等价 + 质量门槛 |
+| ADR | `docs/adr/0003-esm-with-tsx.md` | 三条标准全中（难逆转/惊讶/真取舍） |
+
+**Context 新术语**：CONTEXT.md 增 **Run parity (运行等价)** — 迁移验收标准。
+
+### 实施变更
+
+| 文件 | 变化 |
+|------|------|
+| `package.json` | `type: commonjs`→`module`；`save-wallpapers` 改 `tsx src/main.ts`；devDeps 移除 ts-node、新增 tsx；移除多余的 `allowScripts`（esbuild 0.28 二进制走 optionalDependencies，install script 为空） |
+| `tsconfig.json` | `module/moduleResolution: nodenext`；+ `verbatimModuleSyntax`；删 declaration/declarationMap/outDir/sourceMap；+ `noEmit: true`；sort-keys 修复 |
+| `src/config.ts` | + `PROJECT_ROOT = path.resolve(import.meta.dirname, '..')`；IMAGES_DIR/LOG_DIR 基于它 |
+| `src/main.ts` | `__dirname`→`PROJECT_ROOT`（2 处）；导入全加 `.js` |
+| `src/scraper.ts` | `__dirname`→`PROJECT_ROOT`；导入加 `.js` |
+| `src/download.ts` | 导入加 `.js` |
+| `src/report.test.ts` | 导入加 `.js` |
+| `docs/adr/0003-esm-with-tsx.md`（新） | ADR：ESM + tsx 选型，否决 ts-node ESM 与 bundler resolution |
+| `AGENTS.md` | Commands 表 `ts-node`→`tsx`；Code style 改 ESM 描述 |
+| `eslint.config.mjs` | ignores + `WORKLOG.md`（文档内嵌代码片段不参与 lint） |
+| `.claude/skills/save-images/SKILL.md` | frontmatter ts-node→tsx；Quick Start ESM 说明；DownloadOutcome 类型补全；zod `z.url()`；scraper 示例 `PROJECT_ROOT`；架构图 networkidle→Stability loop；File Structure 行数+report.ts；+ ESM notes / Run report & defects 两节 |
+
+### 验证结果（Run parity）
+
+```
+npx tsc --noEmit    ✅ 零错误
+npm test            ✅ 10 passed（vitest 4.1.10，ESM 下原生支持）
+npx eslint .        ✅ 零错误（含 WORKLOG.md 忽略后）
+```
+
+真跑 `npm run save-wallpapers`（2026-08-14T02-11-52），对照基准 `2026-08-13T04-51-15`：
+
+| 维度 | 迁移后 | 基准 | 结论 |
+|------|--------|------|------|
+| run_report 键集合 | 14 键 | 14 键 | ✅ 结构契约一致 |
+| discovery/download/defects/failures | — | — | ✅ download/defects/failures 深比较相等 |
+| combinedCount | 972 | 972 | ✅ 完全一致 |
+| converged / stableRounds / network / dom | true / 6 / 998 / 995 | 同 | ✅ 完全一致 |
+| thumbnailsClicked | 165 | 135 | 运行时抖动，非行为差异 |
+| 下载 | 972 skipped / 0 fail | 同 | ✅ |
+
+### 经验总结
+
+1. **esbuild 0.28 无需 allowScripts** — 平台二进制走 optionalDependencies、install script 为空，npm approve-scripts 写入的 `allowScripts` 是多余字段；`npm approve-scripts` 是 npm 11 新机制
+2. **PowerShell `Set-Content -Encoding UTF8` 会写 BOM** — 破坏 package.json JSON 解析（`Unexpected token '﻿'`），务必用 `.NET WriteAllText(utf8NoBom)` 或 write 工具
+3. **nodenext 的 .js 后缀是机械改动** — 全项目仅 11 处相对导入，一次改完；`scripts/run-discovery.js` / `__run_script.js` 按文本读取，不受模块系统影响
+4. **Run parity 验收自动化** — 用 PowerShell 深比较 run_report 子对象（download/defects/failures）确认契约，比肉眼看字段更可靠
+5. **迁移只完成一半的文档会咬人** — AGENTS.md 仍写 ts-node 时，review 子代理一针见血；迁移类任务要连带更新技能文件与工作日志

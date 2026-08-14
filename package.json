@@ -1,6 +1,6 @@
 {
   "name": "test-playwirght",
-  "type": "commonjs",
+  "type": "module",
   "version": "1.0.0",
   "description": "",
   "author": "",
@@ -8,7 +8,7 @@
   "keywords": [],
   "main": "index.js",
   "scripts": {
-    "save-wallpapers": "ts-node src/main.ts",
+    "save-wallpapers": "tsx src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -23,7 +23,7 @@
     "@antfu/eslint-config": "^9.0.0",
     "@types/node": "^25.9.1",
     "eslint": "^10.5.0",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }

@@ -1,6 +1,6 @@
-import type { DiscoveryStats, DownloadOutcome, RunMeta } from './report'
+import type { DiscoveryStats, DownloadOutcome, RunMeta } from './report.js'
 import { describe, expect, it } from 'vitest'
-import { buildRunReport, classifyOutcomes, detectLeaks } from './report'
+import { buildRunReport, classifyOutcomes, detectLeaks } from './report.js'
 
 function ok(url: string, filename: string, over: Partial<{ status: number, retried: boolean, durationMs: number, bytes: number }> = {}): DownloadOutcome {
   return {

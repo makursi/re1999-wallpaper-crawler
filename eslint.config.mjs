@@ -17,6 +17,7 @@ export default antfu({
     '.playwright/**',
     'scripts/**',
     '__run_script.js',
+    'WORKLOG.md',
   ],
   gitignore: true,
 })
