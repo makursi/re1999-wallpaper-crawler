@@ -1,23 +1,17 @@
 import type { Logger } from 'pino'
+import type { DownloadOutcome } from './report'
 import { Buffer } from 'node:buffer'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fetch } from 'undici'
 import { BASE_ORIGIN, IMAGE_EXTENSIONS, PAGE_URL, USER_AGENT } from './config'
 
-// ── types ──────────────────────────────────────────────────────────
+// ── error carrying an HTTP status ──────────────────────────────────
 
-export type DownloadOutcome
-  = | { kind: 'ok', url: string, filename: string }
-    | { kind: 'skipped', url: string, filename: string }
-    | { kind: 'failed', url: string, filename: string, reason: string }
-
-export interface DownloadSummary {
-  ok: number
-  skipped: number
-  failed: number
-  total: number
-  failures: { url: string, reason: string }[]
+export class HttpError extends Error {
+  constructor(public status: number) {
+    super(`HTTP ${status}`)
+  }
 }
 
 // ── cookie extraction ──────────────────────────────────────────────
@@ -82,11 +76,10 @@ export async function downloadFile(
   url: string,
   dest: string,
   referer: string,
-  _logger: Logger,
-): Promise<void> {
+): Promise<{ status: number, retried: boolean }> {
   const cookieHeader = getCookieHeader()
 
-  async function doRequest(retry: boolean): Promise<void> {
+  async function doRequest(retry: boolean): Promise<{ status: number, retried: boolean }> {
     const headers: Record<string, string> = {
       'User-Agent': USER_AGENT,
       'Referer': referer,
@@ -112,14 +105,15 @@ export async function downloadFile(
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new HttpError(response.status)
     }
 
     const buffer = Buffer.from(await response.arrayBuffer())
     fs.writeFileSync(dest, buffer)
+    return { status: response.status, retried: retry }
   }
 
-  await doRequest(false)
+  return doRequest(false)
 }
 
 // ── batch download ─────────────────────────────────────────────────
@@ -127,7 +121,7 @@ export async function downloadFile(
 export async function downloadOne(
   url: string,
   destDir: string,
-  logger: Logger,
+  _logger: Logger,
 ): Promise<DownloadOutcome> {
   const absUrl = resolveUrl(url, BASE_ORIGIN)
   const filename = getFilenameFromUrl(absUrl)
@@ -137,12 +131,32 @@ export async function downloadOne(
     return { kind: 'skipped', url: absUrl, filename }
   }
 
+  const start = Date.now()
   try {
-    await downloadFile(absUrl, dest, PAGE_URL, logger)
-    return { kind: 'ok', url: absUrl, filename }
+    const { status, retried } = await downloadFile(absUrl, dest, PAGE_URL)
+    const bytes = fs.statSync(dest).size
+    return {
+      kind: 'ok',
+      url: absUrl,
+      filename,
+      status,
+      retried,
+      durationMs: Date.now() - start,
+      bytes,
+    }
   }
   catch (err) {
-    return { kind: 'failed', url: absUrl, filename, reason: String(err) }
+    const status = err instanceof HttpError ? err.status : undefined
+    return {
+      kind: 'failed',
+      url: absUrl,
+      filename,
+      reason: String(err),
+      status,
+      // a failed 403 means the retry was attempted and still failed
+      retried: status === 403 ? true : undefined,
+      durationMs: Date.now() - start,
+    }
   }
 }
 
@@ -160,13 +174,19 @@ export async function downloadBatch(
         const outcome = await downloadOne(url, destDir, logger)
         switch (outcome.kind) {
           case 'ok':
-            logger.debug({ url: outcome.url }, `[OK] ${outcome.filename}`)
+            logger.debug(
+              { url: outcome.url, status: outcome.status, retried: outcome.retried, bytes: outcome.bytes },
+              `[OK] ${outcome.filename}`,
+            )
             break
           case 'skipped':
             logger.debug({ url: outcome.url }, `[SKIP] ${outcome.filename}`)
             break
           case 'failed':
-            logger.warn({ url: outcome.url, reason: outcome.reason }, `[FAIL] ${outcome.filename}`)
+            logger.warn(
+              { url: outcome.url, status: outcome.status, retried: outcome.retried, reason: outcome.reason },
+              `[FAIL] ${outcome.filename}`,
+            )
             break
         }
         return outcome
@@ -175,29 +195,4 @@ export async function downloadBatch(
     outcomes.push(...results)
   }
   return outcomes
-}
-
-export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadSummary {
-  const summary: DownloadSummary = {
-    ok: 0,
-    skipped: 0,
-    failed: 0,
-    total: outcomes.length,
-    failures: [],
-  }
-  for (const o of outcomes) {
-    switch (o.kind) {
-      case 'ok':
-        summary.ok++
-        break
-      case 'skipped':
-        summary.skipped++
-        break
-      case 'failed':
-        summary.failed++
-        summary.failures.push({ url: o.url, reason: o.reason })
-        break
-    }
-  }
-  return summary
 }

@@ -992,3 +992,104 @@ if (elapsed < 45) {
 4. **轻量 stall 在等待期间持续工作** — 缩略图从 60→75（+25%），说明稳定性循环的 ~70 秒等待期间，内嵌 stall 在不断滚动容器、触发更多懒加载内容渲染
 5. **442 vs 607 的差距进一步缩小** — 从 51% 差距缩小到 27%。607 那次对应网站可能的旧版渲染策略，442 是当前虚拟滚动架构下的完整捕获
 6. **104098 的 scrollHeight 全程稳定** — 在所有 12 轮日志中不变，说明虚拟容器真的推到了上限，这是硬上限而非网络问题
+
+---
+
+## 19. 会话摘要 — 日志可观测性改造（Agent 可分析 + TDD + ADR）
+
+> **日期**: 2026-08-06
+> **分支**: main
+> **最近提交**: 8585bb9 — docs: add diagnostics terms to context map
+> **关联**: 通过 /grill-with-docs + /domain-modeling 技能驱动设计，Vitest TDD 实现，真跑验证，落地 ADR 0002
+
+### 触发背景
+
+用户需求：让 Agent 更好地分析爬取后的日志 —— 基于日志判断爬取功能的**稳定性**、分析**功能缺陷**、提出**优化策略**。经检查现有日志发现 4 类硬伤：
+
+1. run-code stdout 把整个脚本源码回显进日志（每次 ~60 行噪音）
+2. 失败仅记录 `reason: HTTP 403`，无状态码/重试/耗时/字节数，无法算成功率/挽救率
+3. 无 run-id、无配置快照，跨 run 分析会被配置漂移误导
+4. 无任何结构化汇总，稳定性/缺陷全靠人肉阅读；非图片 URL（`detail.html`）泄漏进最终集合却照常"下载"
+
+### Grill 决策树（9 题，一次一题，每题带推荐答案）
+
+| # | 问题 | 选择 |
+|---|------|------|
+| 1 | 消费方与工作流 | JSONL 保留 + 每次运行产出一份结构化 Run 报告 |
+| 2 | "稳定性"信号集 | 收敛性 / 下载成功率 / 403 重试挽救率 / 泄漏异常；跨 run 一致性延后 |
+| 3 | "运行缺陷"分类 | 发现泄漏 / 收敛失败 / 零结果 / 顽固失败 / 空文件；跨 run 漂移延后 |
+| 4 | Run 报告形态 | JSONL 内一条 `type: run_report` 记录（自包含、单事实来源） |
+| 5 | 噪音与元数据 | 停掉 run-code stdout 逐行记录 + 头部写 `run_meta`（runId+配置快照+起止时间） |
+| 6 | 事件字段补充 | 下载事件加 status/retried/durationMs/bytes；run-discovery.js 写 `__wpStats`；保留 `__wpLog` 字符串 |
+| 7 | run_report 字段清单 | 按汇总 schema 落地（discovery/download/defects/failures 四大块） |
+| 8 | Agent 消费方式 | Agent 直接读 run_report 记录 + 分析步骤写进 AGENTS.md |
+| 9 | 验证方式 | 真跑一次 + 用真实日志演练 Agent 分析配方 |
+
+### Domain-modeling 成果
+
+`CONTEXT.md` 新增 **Diagnostics** 词汇（5 个术语，均带 `_Avoid_`）：
+
+| 术语 | 定义要点 |
+|------|----------|
+| **Run** | 一次完整调用（清会话→下载汇总），产出 1 个 JSONL + 1 份报告 |
+| **Run 稳定性** | 收敛成功 ∧ 下载成功率 ≥ 阈值 ∧ 无泄漏异常（跨 run 一致性为未来聚合信号） |
+| **运行缺陷** | 可从日志自动检测的异常：泄漏/非收敛/零结果/顽固失败/空文件 |
+| **Run report** | JSONL 内聚合稳定性信号与缺陷的单条结构化记录 |
+| **run_meta** | 首条记录：runId + 时间戳 + 配置快照，排除配置漂移混淆 |
+
+### 测试基建（TDD，红→绿）
+
+- 安装 **Vitest 4.1.10**，`npm test` = `vitest run`，`npm run test:watch` = `vitest`
+- 按 TDD 纪律先确认 **3 个 seam** 再写测试：
+
+| Seam | 模块 | 职责 | 测试数 |
+|------|------|------|--------|
+| A. `classifyOutcomes` | `src/report.ts` | 成功率/挽救率/状态直方图/失败分组/空文件/耗时 | 3 |
+| B. `detectLeaks` | `src/report.ts` | 从 URL 集筛出非图片 URL（含 query/hash/大小写/data:/blob:） | 4 |
+| C. `buildRunReport` | `src/report.ts` | 时长计算 + 缺陷自动判定（泄漏/非收敛/零结果/顽固失败/空文件） | 3 |
+
+### 实施变更
+
+| 文件 | 变化 |
+|------|------|
+| `src/report.ts`（新） | 纯分析模块：类型 + `classifyOutcomes` + `detectLeaks` + `buildRunReport` |
+| `src/report.test.ts`（新） | 10 个单元测试 |
+| `src/download.ts` | `DownloadOutcome` 补 status/retried/durationMs/bytes；新增 `HttpError`（带状态码）；`downloadOne` 写盘后 stat 字节数、测量耗时、403 判定重试；`classifyOutcomes` 移至 report.ts |
+| `src/main.ts` | 删 run-code stdout 逐行记录；头部写 `run_meta`；提取 `__wpStats`（步骤 3c）；泄漏检测 `detectLeaks`；结束写 `run_report`；缺陷逐条 `warn` 告警 |
+| `scripts/run-discovery.js` | 末尾写 `window.__wpStats`（converged/stableRounds/totalIdleSec/计数/thumbnailsClicked/耗时）；`__wpLog` 保留 |
+| `package.json` | + vitest 依赖；test / test:watch 脚本 |
+| `AGENTS.md` | 新增"分析一次运行日志"配方（run_report/run_meta 读取 + 稳定判定 + 优化线索） |
+| `CONTEXT.md` / `CONTEXT-MAP.md` | Diagnostics 词汇 / report.ts 归属 |
+| `docs/adr/0002-run-report-in-jsonl.md`（新） | ADR：报告作为 JSONL 内一条结构化记录，否决独立 report.json/.md |
+
+### 验证结果
+
+```
+npx tsc --noEmit    ✅ 零错误
+npx eslint .        ✅ 零错误
+npx vitest run      ✅ 10 passed
+
+真跑 npm run save-wallpapers（2026-08-06T13-29-06）:
+  收敛: converged=true, 6 轮稳定, 35s idle, combined=972
+  下载: 972 skipped（历史已全量）, 0 fail
+  缺陷: 自动捕获 discoveryLeak=1（detail.html）✅
+```
+
+**日志质量评估**（新 `logs/save-wallpapers-2026-08-06T13-29-06.jsonl`，1009 条记录）：
+
+| 维度 | 结果 |
+|------|------|
+| run_meta 配置快照 | ✅ 1 条（runId + 9 项配置） |
+| run_report 结构化记录 | ✅ 1 条，含全部稳定信号 + 缺陷 |
+| 噪音清除 | ✅ 0 条脚本源码回显（旧日志 ~60 条） |
+| 级别纪律 | ✅ 972 debug / 34 info / 3 warn |
+| UTF-8 | ✅ 中文文件名完整（控制台乱码只是 PowerShell ANSI 解码假象） |
+| 发现诊断 | ✅ 13 条 run-code（收敛曲线/计数/缩略图） |
+
+### 经验总结
+
+1. **grill 定语义，domain-modeling 落词表** — "稳定性"和"缺陷"是两个不同概念（Discovery 的 Stability loop ≠ Run 稳定性），先界定术语再做实现，报告 schema 一次成型
+2. **测试要选纯逻辑 seam** — 报告的价值全部集中在纯函数（统计/泄漏/汇总），3 个 seam 覆盖了核心逻辑，浏览器侧胶水靠真跑验证，避免 mock 网络/文件系统的脆弱测试
+3. **真实数据暴露真缺陷** — `detail.html` 泄漏在旧日志里"悄悄被下载"，新报告一眼可判；噪音清除前 run-code 诊断被 60 行源码回显淹没
+4. **run_meta 是跨 run 分析的前提** — 没有配置快照，BATCH_SIZE/UA 变了会让"功能不稳定"误判成爬取缺陷
+5. **ADR 记否决项** — 独立 report.json/.md 是"下一个人会重新提"的方案，ADR 记录选择理由（单一事实来源）比实现本身更值钱

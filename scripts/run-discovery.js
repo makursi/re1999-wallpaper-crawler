@@ -4,6 +4,9 @@ async (page) => {
   // ================================================
   const networkImages = new Set();
   let lastImageTime = Date.now();
+  const startTime = Date.now();
+  let thumbnailsClicked = 0;
+  let totalIdleSec = 0;
 
   const onResponse = (response) => {
     const ct = response.headers()["content-type"] || "";
@@ -89,6 +92,7 @@ async (page) => {
       return document.querySelectorAll(".holder-img").length;
     });
     await log("[thumbnails] " + count);
+    thumbnailsClicked = count;
 
     for (let i = 0; i < count; i++) {
       try {
@@ -154,9 +158,11 @@ async (page) => {
   // Condition: 45s without new image AND stable scrollHeight (body + virtual containers)
   let stableRounds = 0;
   let prevSH = 0;
+  let converged = false;
   await log("[stability] waiting for image requests to stop...");
   while (stableRounds < 6) {
     await page.waitForTimeout(5000);
+    totalIdleSec += 5;
     const elapsed = (Date.now() - lastImageTime) / 1000;
     const sh = await getScrollHeight();
     await log("[stability] " + elapsed.toFixed(0) + "s idle, sh=" + sh + ", images=" + networkImages.size);
@@ -188,6 +194,7 @@ async (page) => {
     prevSH = sh;
 
     if (stableRounds >= 6) {
+      converged = true;
       await log("[stability] converged after " + elapsed.toFixed(0) + "s");
       break;
     }
@@ -232,4 +239,16 @@ async (page) => {
   const finalUrls = [...allUrls];
   await log("[final] DOM=" + domUrls.length + " Network=" + networkImages.size + " Combined=" + finalUrls.length);
   await page.evaluate((urls) => { window.__wpUrls = urls; }, finalUrls);
+
+  const discoveryStats = {
+    converged,
+    stableRounds,
+    totalIdleSec,
+    networkCount: networkImages.size,
+    domCount: domUrls.length,
+    combinedCount: finalUrls.length,
+    thumbnailsClicked,
+    discoveryDurationMs: Date.now() - startTime,
+  };
+  await page.evaluate((s) => { window.__wpStats = s; }, discoveryStats);
 }

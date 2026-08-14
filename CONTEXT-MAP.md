@@ -23,6 +23,7 @@
 |----------------------|--------------------------|
 | Configuration (.env) | `src/config.ts`          |
 | Logging              | `src/logger.ts`          |
+| Analysis/report      | `src/report.ts` (+ tests)|
 | Orchestration        | `src/main.ts`            |
 | Discovery script     | `scripts/run-discovery.js` |
 | Script loader        | `src/scraper.ts`         |

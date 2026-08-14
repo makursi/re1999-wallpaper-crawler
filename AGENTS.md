@@ -20,18 +20,50 @@ Then `npm install` for project dependencies.
 | Task | Command |
 |------|---------|
 | Scrape wallpapers | `npm run save-wallpapers` (`ts-node src/main.ts`) |
+| Tests | `npm test` (`vitest run`) |
+| Typecheck | `npx tsc --noEmit` |
 | Lint | `npx eslint .` |
 
-There are no tests (the `test` script is a stub).
+## Analyzing a run's logs
+
+Each run writes one JSONL file in `logs/`: `save-wallpapers-<runId>.jsonl`. To
+assess run stability, find defects, and propose optimizations:
+
+1. Pick the newest file in `logs/`.
+2. Grep `"type":"run_report"` — one structured record with all metrics and
+   detected defects.
+3. Grep `"type":"run_meta"` — runId, start time, and the config snapshot
+   (to rule out config drift).
+4. Grep `"phase":"run-code"` — the discovery diagnostics (`[stability]`,
+   `[final]`, `[thumbnails]`).
+
+How to judge a run:
+
+- **Discovery**: `discovery.converged` (false ⇒ not converged), `stableRounds`,
+  `totalIdleSec`, `combinedCount` (total wallpapers found).
+- **Download**: `download.successRate` = ok / (ok+failed),
+  `download.rescueRate` = 403s rescued by retry, `download.failed`,
+  `download.statusHistogram`, `download.failureGroups`.
+- **Defects** (auto-detected in `defects`): `discoveryLeak`, `nonConverged`,
+  `emptyResult`, `persistentFailures`, `emptyFiles`.
+- **Cross-run trends**: compare `combinedCount` / `successRate` /
+  `defects` across files. A sharp drop in `combinedCount` suggests selector
+  drift. Aggregation across runs is not yet automated.
+
+Optimization leads to look for: low `rescueRate` ⇒ retry/header policy;
+`failureGroups` dominated by one status ⇒ that status's handling;
+high `avgDownloadMs` ⇒ batch-size/parallelism tuning; `nonConverged` ⇒
+stability-loop parameters or missing thumbnails.
 
 ## Architecture
 
 ```
 src/
 ├── config.ts    — zod-validated .env config, re-exports resolved constants
-├── main.ts      — orchestration: clear session → open browser → run discovery → extract URLs → download → summary
+├── main.ts      — orchestration: clear session → open browser → run discovery → extract URLs → download → report
 ├── scraper.ts   — reads scripts/run-discovery.js and injects PAGE_HASH
 ├── download.ts  — parallel batch downloads via undici, cookie auth, 403 retry
+├── report.ts    — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
 └── logger.ts    — pino with pretty console + JSONL file output
 scripts/
 └── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })

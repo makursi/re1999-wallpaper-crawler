@@ -112,12 +112,31 @@ rate, 403 retry rescue rate, and absence of leak/anomaly signals. Cross-run
 consistency is a future, aggregation-phase signal.
 _Avoid_: reliability, health
 
+**Run parity (运行等价)**:
+The standard for accepting a pipeline change: a post-change Run's `run_report`
+structure must be byte-identical in shape to a pre-change baseline (same
+fields, same contract), and its observable metrics — `combinedCount`, success
+rate, convergence — must not materially regress. Used to prove an
+implementation swap (e.g. module system, runtime) kept behavior equivalent.
+_Avoid_: run quality, 运行质量, no regression
+
 **运行缺陷 (Run defect)**:
 An anomaly detectable from the log that shows the crawl deviated from
 expectations. Classes: discovery leak, convergence failure, empty result,
 persistent failure, empty file. Cross-run drift is a future,
 aggregation-phase class.
 _Avoid_: bug, error, failure (as a blanket term)
+
+**Run report**:
+The single structured log record (`type: run_report`) that aggregates one
+Run's stability signals and detected defects, so an Agent can assess the run
+without re-parsing the whole log.
+_Avoid_: summary, dashboard, report file
+
+**run_meta**:
+The first log record of a Run carrying runId, timestamps, and a config
+snapshot, so cross-run analysis is not confounded by config drift.
+_Avoid_: header, preamble
 
 ## Architecture
 

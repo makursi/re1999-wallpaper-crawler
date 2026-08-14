@@ -8,4 +8,3 @@ logs/
 .env
 .env.local
 explain/
-WORKLOG.md
