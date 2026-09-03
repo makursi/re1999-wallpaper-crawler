@@ -24,6 +24,18 @@ Then `npm install` for project dependencies.
 | Typecheck | `npx tsc --noEmit` |
 | Lint | `npx eslint .` |
 
+## Git Conventions (every iteration)
+
+All work lands on `main` only through a merged PR. Every iteration ships via
+this exact flow, in order:
+
+1. `git checkout -b <type>/<short-slug>` — type: `feat` / `fix` / `refactor` / `docs` / `chore`
+2. Commit in English, conventional style (never Chinese in commit messages)
+3. `git push -u origin <branch>`
+4. `gh pr create --base main` (title = commit subject), then after review:
+   `gh pr merge --squash --delete-branch`
+5. `git checkout main && git pull`
+
 ## Analyzing a run's logs
 
 Each run writes one JSONL file in `logs/`: `save-wallpapers-<runId>.jsonl`. To
@@ -46,6 +58,15 @@ How to judge a run:
   `download.statusHistogram`, `download.failureGroups`.
 - **Defects** (auto-detected in `defects`): `discoveryLeak`, `nonConverged`,
   `emptyResult`, `persistentFailures`, `emptyFiles`.
+
+Reading traps:
+- An all-skipped run reads `download.successRate: 0` **by design** — the
+  rate is ok / (ok+failed), and every file already on disk is Content-hash
+  skipped, so 0 ok / 0 failed is a clean re-scrape, not a failure.
+- A `discoveryLeak` whose only URL is the page's own HTML URL (e.g.
+  `re.bluepoch.com/home/detail.html`) is benign — the page's canonical image
+  response is captured by the network listener but is not a Wallpaper and is
+  never downloaded; accept it, don't re-run for it.
 - **Cross-run trends**: compare `combinedCount` / `successRate` /
   `defects` across files. A sharp drop in `combinedCount` suggests selector
   drift. Aggregation across runs is not yet automated.
