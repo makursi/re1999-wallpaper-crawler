@@ -1160,3 +1160,59 @@ npx eslint .        ✅ 零错误（含 WORKLOG.md 忽略后）
 3. **nodenext 的 .js 后缀是机械改动** — 全项目仅 11 处相对导入，一次改完；`scripts/run-discovery.js` / `__run_script.js` 按文本读取，不受模块系统影响
 4. **Run parity 验收自动化** — 用 PowerShell 深比较 run_report 子对象（download/defects/failures）确认契约，比肉眼看字段更可靠
 5. **迁移只完成一半的文档会咬人** — AGENTS.md 仍写 ts-node 时，review 子代理一针见血；迁移类任务要连带更新技能文件与工作日志
+
+## 2026-09-03 — save-images 技能 mattpocock 重构 + 跨 agent 迁移 + 实跑验证
+
+### 背景
+
+把 `.claude/skills/save-images/SKILL.md`（468 行知识倾倒、模型调用）按 mattpocock 风格
+（`writing-for-agents` / `SKILL-MECHANICS.md`，本地权威副本在 `~/.pi/agent/skills/writing-for-agents/`）
+重构为 71 行操作 runbook；随后按需求变更迁至 `.agents/skills/save-images/`（PR #1，`b179d06`），
+放开为任意 agent 调用；最后用该技能实跑一次全量爬取验证。
+
+### 决策
+
+| 决策点 | 选择 | 理由 |
+|--------|------|------|
+| 目录 | `.agents/skills/save-images/`（删 `.claude` 副本与 `.pi/`） | 跨 agent 约定目录：pi / Codex / Gemini CLI / Cursor 原生读；**Claude Code 例外**（仍只读 `.claude/skills`，`.agents` 支持在 feature request 中） |
+| 调用方式 | 去除 `disable-model-invocation: true` → 模型可自主触发 | 需求变更：任何 agent 在本项目可调用；用户仍可 `/skill:save-images` 指名调用 |
+| 前置检查 | playwright-cli 可用性，而非 session eval 探测 | 管线自管 session（main.ts 步骤 0/1），运行前 `eval` 必报 "not open"，属预期非故障 |
+| 内容组织 | 决策历史 → `docs/adr/`；词汇 → `CONTEXT.md`；运行分析 → `AGENTS.md` | 单一事实源；技能只留算子流程 + 完成标准（\*Done when\*） |
+| 验证 | 真跑一次 + run_report 缺陷判定 | Run parity + 技能可用性实测 |
+| 提交流程固化 | `AGENTS.md` 增 Git Conventions 节 | 每次迭代统一走 branch → commit → push → PR → merge → pull，跨会话可复用 |
+
+### 实施变更
+
+| 文件 | 变化 |
+|------|------|
+| `.agents/skills/save-images/SKILL.md`（新） | mattpocock 重构（71 行）：Preflight / Run / Verify 三步 + 完成标准；读报陷阱两条 |
+| `.claude/skills/save-images/SKILL.md`（删） | 旧副本移除，单一事实源（438 行删除） |
+| `.pi/` + `.pi/settings.json`（删） | 取消 pi 目录设计；pi 原生发现项目 `.agents/skills/`，无需配置 |
+| `AGENTS.md` | "How to judge a run" 增读报陷阱两条（successRate=0 语义、页面自身 URL 良性 leak） |
+| `WORKLOG.md` | + 本条会话记录 |
+
+### 验证结果（实跑 2026-09-03T09-44-33，302s）
+
+```
+discovery: converged=true, stableRounds=6, totalIdleSec=60, combinedCount=502, thumbnails=75
+download : 502 skipped / 0 ok / 0 failed（全 Content-hash skip，磁盘 1963.9 MB，共 971 文件）
+defects  : discoveryLeak=1（页面自身 URL home/detail.html，判定 accept）；其余全部无
+config   : run_meta 与 .env 一致，无漂移
+```
+
+### 经验总结
+
+1. **技能 Preflight 不应探测 session** — 管线自管 session（`main.ts`：close-all + delete-data +
+   open --persistent），运行前 `eval` 探测必报 `Browser 'bluepoch' is not open`，极易被误判为前置
+   失败而浪费排查时间。改措辞为"确认 playwright-cli 可用"；顺带明确了登录态随 persistent profile 传递。
+2. **`download.successRate: 0` 是全跳过语义，不是失败** — 口径为 ok / (ok+failed)；重抓全命中
+   Content-hash skip 时 "0 ok / 0 failed" 属干净重抓。已写入 AGENTS.md（规范源）+ 技能 Verify（点-of-use 保险句）。
+3. **`discoveryLeak` 含页面自身 HTML URL 属良性** — 网络层把页面的 canonical image 响应也计入候选集，
+   但它不是 Wallpaper、不触发下载；判定 accept 而非重跑。同样收入 AGENTS.md。
+4. **`.agents/skills/` 是跨 agent 约定目录，但 Claude Code 只读 `.claude/skills`** — 迁移前先查目标
+   harness 的扫描路径；跨 harness 共享走 `.agents`，Claude Code 需求另配置或同步。
+5. **技能是"指向文档的指针"，不是"项目记忆"** — 决策/词汇/运行分析分别指向 ADR / CONTEXT.md /
+   AGENTS.md，避免双写漂移；点-of-use 的保险句（读报陷阱）与 AGENTS.md 规范源存在受控重复，后续若
+   发现漂移以 AGENTS.md 为准。
+6. **错误排查优先读工具全量输出** — probe 首次只见堆栈尾部（误判为故障），读完整错误才定位到
+   `Browser 'bluepoch' is not open` 的提示文案；工具报错应先看 head 而非 tail。

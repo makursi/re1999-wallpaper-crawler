@@ -16,15 +16,19 @@ when you name it.
 
 A scrape is three steps; each ends on a state you can check.
 
-**Preflight — session and machine.** Confirm the Browser session answers:
-`npx playwright-cli -s=<SESSION_NAME> eval "location.host"` must return a
-value — and it must be logged in; an anonymous session yields `emptyResult`
-or 403s on every Wallpaper. `.env` needs nothing from you: zod validates
-every key at startup and fails fast. The scrape drives a real headed Chrome
-for several minutes, so clear the machine first: a stray click or keystroke
+**Preflight — machinery and machine.** Confirm playwright-cli itself is
+installed: `npx playwright-cli --version` returns a version. Do **not** probe
+an existing Browser session first — the pipeline owns it (`src/main.ts`
+clears and reopens its own session: close-all + delete-data +
+open --persistent), so `Browser 'bluepoch' is not open` from an `eval` probe
+is the **expected** pre-run state, not a blocker. Login state rides in the
+persistent profile; an anonymous session would yield `emptyResult` or 403s
+on every Wallpaper. `.env` needs nothing from you: zod validates every key
+at startup and fails fast. The scrape drives a real headed Chrome for
+several minutes, so clear the machine first: a stray click or keystroke
 disturbs Discovery.
 
-_Done when the session answers and the machine is clear._
+_Done when playwright-cli answers and the machine is clear._
 
 **Run — one command.** `npm run save-wallpapers` (tsx runs `src/main.ts`).
 Watch the terminal as hash injection, the Stability loop's rounds, and the
@@ -45,6 +49,15 @@ project baseline (earlier runs' `combinedCount` and `download.successRate`):
 - `persistentFailures` / `emptyFiles` — Download-side. A
   `download.statusHistogram` full of 403s points at the session Cookie
   header, not the CDN.
+
+Reading traps — two numbers misread easily:
+
+- A re-scrape where every file already exists reports `download.successRate:
+  0` with 502 skipped / 0 failed — that is by design (ok / (ok+failed),
+  Content-hash skip), not a defect.
+- A `discoveryLeak` whose only URL is the page's own HTML URL
+  (`re.bluepoch.com/home/detail.html`) is benign: it was never downloaded
+  and never failed; accept it, do not re-run for it.
 
 Accept the Run when no defect is reported, or record the decision for every
 defect (accept / re-run / investigate) so the log stays the audit trail.
