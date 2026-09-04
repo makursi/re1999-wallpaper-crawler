@@ -89,12 +89,16 @@ stability-loop parameters or missing thumbnails.
 
 ```
 src/
-├── config.ts    — zod-validated .env config, re-exports resolved constants
-├── main.ts      — orchestration: clear session → open browser → run discovery → extract URLs → download → report
-├── scraper.ts   — reads scripts/run-discovery.js and injects PAGE_HASH
-├── download.ts  — parallel batch downloads via undici, cookie auth, 403 retry
-├── report.ts    — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
-└── logger.ts    — pino with pretty console + JSONL file output
+├── config.ts                — zod-validated .env config, shared constants
+├── logger.ts                — pino with pretty console + JSONL file output
+├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → download → report
+├── discovery/
+│   └── discovery-loader.ts  — reads scripts/run-discovery.js and injects PAGE_HASH
+├── download/
+│   └── download.ts          — parallel batch downloads via undici, cookie auth, 403 retry
+└── report/
+    ├── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
+    └── report.test.ts       — unit tests for report.ts
 scripts/
 └── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 ```

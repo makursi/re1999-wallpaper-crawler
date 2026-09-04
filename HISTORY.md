@@ -156,6 +156,24 @@
 
 ---
 
+### 2026-09-04 — src 目录按领域轴重组（Discovery / Download / Report）
+
+**触因**：src 平铺 7 文件（936 行），模块归属靠读 import 才能看出；CONTEXT-MAP 已定义领域边界（Discovery/Download/Diagnostics），目录却没跟随。
+
+**决策**（grill 两轮，全部按推荐）：
+- **领域轴**（跟随 CONTEXT-MAP）：新增 `src/discovery/`、`src/download/`、`src/report/`；否决技术层轴（browser/analysis/core）——层是技术术语，与领域词表冲突
+- `main.ts` 保持 `src/main.ts` 根入口（`tsx src/main.ts` 不动）；`config.ts`/`logger.ts` 留根（合计 74 行，单开目录是"一目录一文件"，等涨到 3+ 文件再收）
+- 接受单文件目录（`discovery/` 只有 11 行 loader——目录是领域信标不是仓库）
+- **`scraper.ts` 改名 `discovery-loader.ts`**：CONTEXT.md 词表明确 _Avoid: scraper script_，文件名是 agent 会 grep 的词，Avoid 词永久误导
+- 不写 ADR（可回滚、非惊讶、无僵化收益），HISTORY.md 记录即可；main.ts 内 helpers 不拆（本次=纯目录移动，零逻辑变更，与函数重构分账）
+- 文档同步：AGENTS.md 架构树、CONTEXT-MAP.md 的 Owns/Where-things-live 一并更新（单一事实源）
+
+**验证**：`npx tsc --noEmit` 零错误；`npm test` 10 passed；`npx eslint .` 零错误。
+
+**教训**：目录结构应照抄已有领域词表（CONTEXT-MAP），人类读文档和 agent 读目录得到同一张图；重构与函数拆分是两笔账，混在一起出问题难定位；文件名里的 Avoid 词会永久误导 grep。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |

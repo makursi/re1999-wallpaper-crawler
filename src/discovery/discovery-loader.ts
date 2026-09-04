@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { PAGE_HASH, PROJECT_ROOT } from './config.js'
+import { PAGE_HASH, PROJECT_ROOT } from '../config.js'
 
 // ── build run-code script ──────────────────────────────────────────
 
