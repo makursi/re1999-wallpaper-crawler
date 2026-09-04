@@ -124,6 +124,26 @@ async (page) => {
     });
   }
 
+  // Wait until the SPA actually renders the virtual scroll lists.
+  // On slow networks the bundle can take >30s to boot after reload; scrolling
+  // or clicking thumbnails before that runs on an empty DOM (all queries return 0).
+  async function waitForList(timeoutMs = 90000) {
+    const deadline = Date.now() + timeoutMs;
+    await log("[list] waiting for virtual list to render...");
+    while (Date.now() < deadline) {
+      const present = await page.evaluate(
+        () => document.querySelectorAll(".papermask-mid-list").length > 0,
+      );
+      if (present) {
+        await log("[list] rendered");
+        return true;
+      }
+      await page.waitForTimeout(2000);
+    }
+    await log("[list] NOT rendered within " + timeoutMs + "ms — continuing anyway");
+    return false;
+  }
+
   // ================================================
   // Main discovery flow
   // ================================================
@@ -140,6 +160,12 @@ async (page) => {
   await page.waitForTimeout(2000);
   await log("[run-code] reloaded, now on: " + page.url());
 
+  // Slow-network guard: do not scroll/click until the virtual list exists.
+  // Previously the flow waited a fixed ~9s then scrolled, which on slow
+  // networks hit an unrendered SPA: [thumbnails] 0 and both scroll passes
+  // ran on an empty DOM.
+  await waitForList();
+
   // Scroll to trigger initial lazy loading (before main scroll pass)
   await scrollPage();
 
@@ -155,7 +181,12 @@ async (page) => {
   await scrollPage();
 
   // Step 6: Stability loop
-  // Condition: 45s without new image AND stable scrollHeight (body + virtual containers)
+  // Convergence: no new image for 45s AND total scrollHeight unchanged —
+  // after every round probes the virtual lists by scrolling again.
+  // The probe runs unconditionally: gating it on `elapsed < 45` froze
+  // discovery on slow networks (once idle exceeded 45s the list was never
+  // scrolled again, lazy loads never fired, and the loop converged early
+  // on a partially-loaded list — combinedCount collapsed ~500 to 22).
   let stableRounds = 0;
   let prevSH = 0;
   let converged = false;
@@ -163,6 +194,26 @@ async (page) => {
   while (stableRounds < 6) {
     await page.waitForTimeout(5000);
     totalIdleSec += 5;
+
+    // Probe: keep scrolling the virtual containers every round to trigger
+    // any still-pending lazy loads, regardless of how long we have been idle.
+    await page.evaluate(async () => {
+      const lists = document.querySelectorAll(".papermask-mid-list");
+      for (const list of lists) {
+        let stall = 0;
+        let prev = list.scrollHeight;
+        let iter = 0;
+        while (stall < 2 && iter < 10) {
+          list.scrollBy(0, 600);
+          await new Promise(r => setTimeout(r, 200));
+          const curr = list.scrollHeight;
+          if (curr > prev) { prev = curr; stall = 0; }
+          else { stall++; }
+          iter++;
+        }
+      }
+    });
+
     const elapsed = (Date.now() - lastImageTime) / 1000;
     const sh = await getScrollHeight();
     await log("[stability] " + elapsed.toFixed(0) + "s idle, sh=" + sh + ", images=" + networkImages.size);
@@ -171,25 +222,6 @@ async (page) => {
       stableRounds++;
     } else {
       stableRounds = 0;
-      // Lightweight stall on virtual containers to trigger more lazy loads
-      if (elapsed < 45) {
-        await page.evaluate(async () => {
-          const lists = document.querySelectorAll(".papermask-mid-list");
-          for (const list of lists) {
-            let stall = 0;
-            let prev = list.scrollHeight;
-            let iter = 0;
-            while (stall < 2 && iter < 10) {
-              list.scrollBy(0, 600);
-              await new Promise(r => setTimeout(r, 200));
-              const curr = list.scrollHeight;
-              if (curr > prev) { prev = curr; stall = 0; }
-              else { stall++; }
-              iter++;
-            }
-          }
-        });
-      }
     }
     prevSH = sh;
 
