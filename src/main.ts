@@ -1,4 +1,4 @@
-import type { DiscoveryStats, DownloadMetrics, DownloadOutcome, RunMeta } from './report.js'
+import type { DiscoveryStats, DownloadMetrics, DownloadOutcome, RunMeta } from './report/report.js'
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -16,10 +16,10 @@ import {
   SESSION,
   USER_AGENT,
 } from './config.js'
-import { downloadBatch, extractCookies } from './download.js'
+import { buildRunCodeScript } from './discovery/discovery-loader.js'
+import { downloadBatch, extractCookies } from './download/download.js'
 import { createLogger } from './logger.js'
-import { buildRunReport, classifyOutcomes, detectLeaks } from './report.js'
-import { buildRunCodeScript } from './scraper.js'
+import { buildRunReport, classifyOutcomes, detectLeaks } from './report/report.js'
 
 // ── Playwright CLI wrapper ─────────────────────────────────────────
 

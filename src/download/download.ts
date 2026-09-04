@@ -1,10 +1,10 @@
 import type { Logger } from 'pino'
-import type { DownloadOutcome } from './report.js'
+import type { DownloadOutcome } from '../report/report.js'
 import { Buffer } from 'node:buffer'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fetch } from 'undici'
-import { BASE_ORIGIN, IMAGE_EXTENSIONS, PAGE_URL, USER_AGENT } from './config.js'
+import { BASE_ORIGIN, IMAGE_EXTENSIONS, PAGE_URL, USER_AGENT } from '../config.js'
 
 // ── error carrying an HTTP status ──────────────────────────────────
 
