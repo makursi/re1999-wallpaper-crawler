@@ -36,6 +36,15 @@ this exact flow, in order:
    `gh pr merge --squash --delete-branch`
 5. `git checkout main && git pull`
 
+## Project history (read before changing pipeline internals)
+
+`HISTORY.md` records **why the code is shaped the way it is** — each iteration's
+trigger, decision (including rejected approaches), verification numbers, and
+lessons. Scan it before modifying discovery/download internals or re-proposing
+any approach listed there as rejected; it keeps prior dead ends from being
+re-walked. It does not repeat current facts — those live above, in `src/`, in
+CONTEXT.md, and in `docs/adr/`.
+
 ## Analyzing a run's logs
 
 Each run writes one JSONL file in `logs/`: `save-wallpapers-<runId>.jsonl`. To
