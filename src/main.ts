@@ -180,7 +180,7 @@ async function main() {
       {
         encoding: 'utf8',
         stdio: 'pipe',
-        timeout: 600_000,
+        timeout: 900_000, // slow networks: discovery can take >10min (425s observed)
         maxBuffer: 50 * 1024 * 1024,
       },
     )
