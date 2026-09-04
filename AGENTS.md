@@ -72,6 +72,12 @@ Reading traps:
 - An all-skipped run reads `download.successRate: 0` **by design** — the
   rate is ok / (ok+failed), and every file already on disk is Content-hash
   skipped, so 0 ok / 0 failed is a clean re-scrape, not a failure.
+- A `combinedCount` far below baseline is **not automatically a defect**: if
+  `images/` already holds everything the site exposes (all downloads hitch
+  Content-hash skip) and a page probe shows only a handful of `.holder-img`
+  with no tabs/load-more, the official gallery is simply exhausted — the
+  run is clean, don't re-run for it. (Confirmed 2026-09-04: 971 files =
+  full site.)
 - A `discoveryLeak` whose only URL is the page's own HTML URL (e.g.
   `re.bluepoch.com/home/detail.html`) is benign — the page's canonical image
   response is captured by the network listener but is not a Wallpaper and is

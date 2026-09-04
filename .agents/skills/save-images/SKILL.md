@@ -50,7 +50,7 @@ project baseline (earlier runs' `combinedCount` and `download.successRate`):
   `download.statusHistogram` full of 403s points at the session Cookie
   header, not the CDN.
 
-Reading traps — two numbers misread easily:
+Reading traps — three numbers misread easily:
 
 - A re-scrape where every file already exists reports `download.successRate:
   0` with 502 skipped / 0 failed — that is by design (ok / (ok+failed),
@@ -58,6 +58,13 @@ Reading traps — two numbers misread easily:
 - A `discoveryLeak` whose only URL is the page's own HTML URL
   (`re.bluepoch.com/home/detail.html`) is benign: it was never downloaded
   and never failed; accept it, do not re-run for it.
+- A `combinedCount` far below baseline is **not automatically a defect**.
+  Before re-running, check whether the site simply has nothing new left:
+  does `images/` disk count match the run's downloads (everything
+  Content-hash skipped)? Does a static page probe show only a handful of
+  `.holder-img` with no tabs / load-more? The official gallery was fully
+  crawled (971 files, 2026-09-04 confirmed) — a low count on a site whose
+  resources are already exhausted is a clean run, not a regression.
 
 Accept the Run when no defect is reported, or record the decision for every
 defect (accept / re-run / investigate) so the log stays the audit trail.
