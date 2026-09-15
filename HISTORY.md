@@ -254,12 +254,22 @@
 - **钩子：simple-git-hooks 接管，`.githooks/` 删除**。分支门禁的逻辑搬进 `scripts/check-branch.mjs`（原 shell 钩子的等价物：拦 `main` / `master` / detached HEAD），作为 pre-commit 第一步，之后接 `lint-staged`（`oxlint --fix --deny-warnings`）；pre-push = `typecheck && test`。否决「只留 lint-staged、放弃门禁」——`AGENTS.md` 明写这条是 "enforced, not just asked"；否决「两套钩子并存」——机制重复且 `core.hooksPath` 会让 simple-git-hooks 静默失效。
 - **npm → pnpm 12.3.4**（删 `package-lock.json`，加 `packageManager` + `engines.node >=22.22.1`）。理由：工作区所有兄弟仓都是 pnpm，且 CI 的参考实现（toolbox）与 `sxzz/workflows` 都按 pnpm 设计。
 - **CI：手写 `.github/workflows/ci.yml`**（`pnpm/setup@v2` + `runtime: node@24` + `cache` + `require-lockfile`，跑 lint → typecheck → test）。否决直接用 `sxzz/workflows` 的 `unit-test.yml` reusable：其 test job 会无条件跑 `pnpm run build`，本仓无 build 脚本，绕过要传 `build: ''` 这种 hack；30 行手写 CI 更可控、可读。
-- **顺手修掉 oxlint 报出的真问题**（不是补规则）：`main.ts` 4 处不安全类型断言改成运行时校验（`errorMessage()` 收 Narrowing、`window.__wpUrls` / `__wpLog` 的 JSON 加数组+字符串校验）、`wallpaper-url.ts` 的 `matchesRule` 补 `never` 穷尽守卫、`download.ts` 的 `_cachedCookieHeader` 去掉下划线前缀、`report.ts` 的 `.sort()` → `.toSorted()`（`lib` 提到 ES2023）。
-- **oxfmt 全量重排留到单独一轮**：实测 21 个文件里 16 个要改，src+tests ≈ +280/-180 行，光 `scripts/run-discovery.js`（无 lint、无类型、无测试的浏览器脚本）就 +189/-140。一次性重排会淹没本轮真正的逻辑改动。
+- **顺手修掉 oxlint 报出的真问题**（不是补规则，具体行为差异见下方「行为差异」）：`main.ts` 4 处不安全类型断言改成运行时校验（`errorMessage()` 收窄、`window.__wpUrls` / `__wpLog` 的 JSON 加数组+字符串校验）、`wallpaper-url.ts` 的 `matchesRule` 补 `never` 穷尽守卫、`download.ts` 的 `_cachedCookieHeader` 去掉下划线前缀、`report.ts` 的 `.sort()` → `.toSorted()`（`lib` 提到 ES2023）。自审后又补了 `parseStats` 的逐字段校验（`numberOr` / `booleanOr` / `isRecord`）与 `parseJsonPayload`（三处重复的双层 `JSON.parse` 收成一个），因为原先还留着一处 `as Partial<DiscoveryStats>`——它不在 oxlint 的报错里，但会让脏数据直接进 `run_report.discovery`。
+- **oxlint 忽略名单只放 `scripts/run-discovery.js`**（不是整个 `scripts/`）：自审指出新写的 `scripts/check-branch.mjs` 被误伤；实测 type-aware 对它是干净通过的（该浏览器脚本仍在名单外，因为它不在 tsconfig 的 `include` 里，纳入需先开 `allowJs`）。这是对 Q4「忽略 `scripts/**`」的**有意偏离**，理由如上。
+- **oxfmt 全量重排留到单独一轮**：实测 `oxfmt --check` 报 21 个文件里 16 个要改；其中 `src` + `tests` 共 11 个文件 +237/-169 行，`scripts/run-discovery.js`（无 lint、无类型、无测试的浏览器脚本）一个文件就 +189/-140。一次性重排会淹没本轮真正的逻辑改动。
 - 加 `.editorconfig`（仅编辑器默认：UTF-8 / 2 空格 / 末行换行，**不写 `end_of_line`**）与 `.vscode/extensions.json`（`oxc.oxc-vscode`）；`TRASH.md` 写进 `.gitignore`（本地保留、永不提交）。
 - **行尾政策本轮不碰**：本来加了 `.gitattributes`（`* text=auto eol=lf`），实做时发现本仓 **git 历史存的就是 CRLF**（`git cat-file blob HEAD:src/main.ts` 有 374 个 CR，而 `git ls-files --eol` 因属性归一化而报 `i/lf`，是误导信号），而 `git add` 并不会把它重写成 LF。所以 `.gitattributes` 一旦提交就会在后续 checkout 上悄悄翻转全仓行尾；与 oxfmt 同因，退出本轮，留待专门一轮（见开放问题）。本次提交对行尾保持中性。
 
-**验证**：`pnpm typecheck` 零错误；`pnpm test` 33 passed（与基线同数）；`pnpm lint` 零 error 零 warning，并用 `oxlint --debug files .` 确认真的 lint 了 12 个文件（不是空跑）；`pnpm install` 退出 0，`--frozen-lockfile` 报 "Lockfile passes supply-chain policies"；**钩子实做演练**——把 `scripts/check-branch.mjs` 拿到临时仓里对三种真实 git 状态各跑一次（`main` → 拒；detached HEAD → 拒；feature 分支 → 通过），再在真仓里直接执行 `.git/hooks/pre-commit`，看到 guard 先跑、lint-staged 对 5 个 staged 文件跑 `oxlint --fix`、退出 0；CI 在 PR 上真实跑绿。**未真跑爬虫**：纯工具链改动，不触碰 `run_report` 键集合与语义，Run parity 不适用（沿用同日「测试移出 src」的先例）；但注意这次动了 `src/main.ts` / `report.ts` / `download.ts` 的实现细节（断言改写、`sort`→`toSorted`、重命名），行为等价但**没有真跑背书**。
+**行为差异**（本轮唯一不是「配置搬运」的部分，逐条列出供真跑时对账；均只影响畸形输入，正常 payload 下逐字节等价）：
+- `window.__wpUrls`：非数组 payload 以前会当作数组继续用（`.length` 为 `undefined`），现在归为 `[]`；数组里的非字符串元素现在被过滤掉。
+- `window.__wpLog`：同上，且逐条要求 `msg` 为字符串。
+- `window.__wpStats`：以前是 `{ ...fallback, ...parsed }`（脏值直入 + 多余键透传），现在逐字段校验（非 number / 非 boolean / `NaN` → fallback），**多余键不再进 report**。
+- `.sort()` → `.toSorted()`：少了原地改动，排序结果相同。
+- `_cachedCookieHeader` 重命名：纯内部符号。
+
+**验证**：`pnpm typecheck` 零错误；`pnpm test` 33 passed（与基线同数）；`pnpm lint` 零 error 零 warning（`--deny-warnings` 全仓退 0），并用 `oxlint --debug files .` 确认真的 lint 了 13 个文件（不是空跑）；`pnpm install` 退出 0，`--frozen-lockfile` 报 "Lockfile passes supply-chain policies"；**门禁“真会拦”也验了**——拿一个含 `debugger` 的文件试：`pnpm lint` 退 1、pre-commit 被 lint-staged 拦下；再拿一个 floating promise 试，type-aware 规则确实报错（证明 tsgolint 真的接上了）；**钩子实做演练**——把 `scripts/check-branch.mjs` 拿到临时仓里对三种真实 git 状态各跑一次（`main` → 拒；detached HEAD → 拒；feature 分支 → 通过），再在真仓里走一次真提交，看到 guard 先跑、lint-staged 对 staged 文件跑 `oxlint --fix`。CI 在 PR #12 上真实跑绿。
+
+提交前跑了双轴自审（standards / spec 两个独立子 agent，延续 09-15 先例）：standards 轴指出 `parseStats` 残留 `as` 断言、三处重复的双层 `JSON.parse`、`scripts/check-branch.mjs` 被忽略名单误伤，均已采纳修复；spec 轴指出 `.gitignore` 里 `TRASH.md` 写重复与 HISTORY 里 oxfmt 实测数字自相矛盾（已修正），并把「工具链轮里改了运行时代码」列为已声明的范围偏移。**未真跑爬虫**：不触碰 `run_report` 键集合与语义，Run parity 不适用（沿用同日「测试移出 src」的先例）；但上面的「行为差异」清单就是没有真跑背书的部分，下一次真跑时应拿 `run_report.discovery` 对照。
 
 **教训**：
 - linter 换代是「新规则重新审旧代码」的机会：首轮 10 条诊断里 6 条是真缺陷，只有 2 条该用配置豁免；一律 `off` 掉报错规则等于白换工具。
@@ -302,8 +312,7 @@
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - **过滤逻辑分两道**：`scripts/run-discovery.js` 的 `shouldKeep` 里还留着旧的「精确文件名」黑名单（约 25 个 UI 图标名），它是第一道、不可单测、丢弃量不进 `siteAssets`；第二道才是 `src/wallpaper-url.ts` 的结构化规则。合并成一道的代价是那些 URL 会重新计入 `combinedCount`（改变字段语义），留待单独一轮。
-- **oxfmt 全量重排待做**：配置与实测数据见 2026-09-15 条目（`.oxfmtrc.json` 需 `semi: false` / `singleQuote: true` / `printWidth: 100` / `sortImports: true`，`**/*.md` 与 `scripts/` 的取舍要在那一轮定）。做之前先决定 `scripts/run-discovery.js`（无测试）是否纳入重排。
-- **行尾政策待定**：git 历史存的是 CRLF（见本次教训），而 oxfmt 写 LF。两条路——全仓归一到 LF（`git add --renormalize .`，diff 里看不见但会写满 blame）或让 formatter 跟随 CRLF（不推荐，Linux CI 与 Windows 会分叉）。必须先定这个，再谈接 formatter。
+- **oxfmt 全量重排待做**：配置与实测数据见 2026-09-15 条目（`.oxfmtrc.json` 需 `semi: false` / `singleQuote: true` / `printWidth: 100` / `sortImports: true`，`**/*.md` 与 `scripts/` 的取舍要在那一轮定）。做之前先决定 `scripts/run-discovery.js`（无测试）是否纳入重排。- **行尾政策待定**：git 历史存的是 CRLF（见本次教训），而 oxfmt 写 LF。两条路——全仓归一到 LF（`git add --renormalize .`，diff 里看不见但会写满 blame）或让 formatter 跟随 CRLF（不推荐，Linux CI 与 Windows 会分叉）。必须先定这个，再谈接 formatter。
 - **`autofix.yml` 未接**：工作区惯例是 PR 上用 autofix.ci 自动修 lint/格式，但该 App 需先在仓上安装（`github.com/apps/autofix-ci`），否则 workflow 会给每个 PR 挂红叉。装完再补这个 workflow。
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

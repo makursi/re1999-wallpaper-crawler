@@ -210,7 +210,8 @@ first; see `HISTORY.md` › 开放问题.
   plus a handful of named rules. It replaced `@antfu/eslint-config` on
   2026-09-15 — see `HISTORY.md` for why, and for the rules deliberately kept
   (`eqeqeq` ignoring `!= null`, `import/no-unassigned-import` allowing
-  `dotenv/config`).
+  `dotenv/config`). `scripts/run-discovery.js` is the one deliberate exclusion:
+  it is browser-side JavaScript outside the tsconfig project.
 - TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
 - Formatting: semicolons off, single quotes, 2-space indent — hand-maintained
   for now; no formatter is wired up yet (`.editorconfig` states the editor

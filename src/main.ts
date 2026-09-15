@@ -70,14 +70,37 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+// An object is indexable at runtime; this is the narrowing the browser-payload
+// checks need, without an assertion that would skip the checks themselves.
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 // run-code publishes its diagnostics as `{ t, msg }` records in `window.__wpLog`.
 function isRunCodeLogEntry(value: unknown): value is { msg: string } {
-  return typeof value === 'object'
-    && value !== null
+  return isRecord(value)
     && 'msg' in value
     && typeof value.msg === 'string'
 }
 
+// `playwright-cli --raw eval "JSON.stringify(...)"` sometimes hands back a JSON
+// *string* that still has to be decoded, so decode until it is not a string.
+function parseJsonPayload(raw: string): unknown {
+  const first: unknown = JSON.parse(raw)
+  return typeof first === 'string' ? JSON.parse(first) : first
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+// `window.__wpStats` is the browser's word on how discovery went, so every field
+// is checked here: a truncated or stale payload must not put junk into the Run
+// report's discovery block (its `converged`/counts drive defect detection).
 function parseStats(rawStats: string): DiscoveryStats {
   const fallback: DiscoveryStats = {
     converged: false,
@@ -92,11 +115,19 @@ function parseStats(rawStats: string): DiscoveryStats {
   if (!rawStats)
     return fallback
   try {
-    const first: unknown = JSON.parse(rawStats)
-    const parsed: unknown = typeof first === 'string' ? JSON.parse(first) : first
-    if (typeof parsed !== 'object' || parsed === null)
+    const parsed = parseJsonPayload(rawStats)
+    if (!isRecord(parsed))
       return fallback
-    return { ...fallback, ...(parsed as Partial<DiscoveryStats>) }
+    return {
+      converged: booleanOr(parsed.converged, fallback.converged),
+      stableRounds: numberOr(parsed.stableRounds, fallback.stableRounds),
+      totalIdleSec: numberOr(parsed.totalIdleSec, fallback.totalIdleSec),
+      networkCount: numberOr(parsed.networkCount, fallback.networkCount),
+      domCount: numberOr(parsed.domCount, fallback.domCount),
+      combinedCount: numberOr(parsed.combinedCount, fallback.combinedCount),
+      thumbnailsClicked: numberOr(parsed.thumbnailsClicked, fallback.thumbnailsClicked),
+      discoveryDurationMs: numberOr(parsed.discoveryDurationMs, fallback.discoveryDurationMs),
+    }
   }
   catch {
     return fallback
@@ -284,8 +315,7 @@ async function main() {
 
   let allUrls: string[]
   try {
-    const first: unknown = JSON.parse(rawJson)
-    const parsed: unknown = typeof first === 'string' ? JSON.parse(first) : first
+    const parsed = parseJsonPayload(rawJson)
     const captured: unknown[] = Array.isArray(parsed) ? parsed : []
     allUrls = captured.filter((url): url is string => typeof url === 'string')
   }
@@ -326,8 +356,7 @@ async function main() {
         maxBuffer: 10 * 1024 * 1024,
       },
     ).trim()
-    const logEntries: unknown = JSON.parse(rawLog)
-    const parsed: unknown = typeof logEntries === 'string' ? JSON.parse(logEntries) : logEntries
+    const parsed = parseJsonPayload(rawLog)
     const entries: unknown[] = Array.isArray(parsed) ? parsed : []
     for (const entry of entries) {
       if (isRunCodeLogEntry(entry))
