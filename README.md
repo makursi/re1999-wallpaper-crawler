@@ -57,3 +57,4 @@ required — edit `.env` (validated at startup by zod):
 | Tests | `pnpm test` |
 | Typecheck | `pnpm typecheck` |
 | Lint | `pnpm lint` |
+| Format | `pnpm fmt` (check: `pnpm fmt:check`) |

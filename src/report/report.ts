@@ -1,12 +1,28 @@
 // ── types ──────────────────────────────────────────────────────────
 
-import type { GalleryStats } from './gallery.js'
 import { isImageUrl } from '../wallpaper-url.js'
+import type { GalleryStats } from './gallery.js'
 
-export type DownloadOutcome
-  = | { kind: 'ok', url: string, filename: string, status: number, retried: boolean, durationMs: number, bytes: number }
-    | { kind: 'skipped', url: string, filename: string }
-    | { kind: 'failed', url: string, filename: string, reason: string, status?: number, retried?: boolean, durationMs?: number }
+export type DownloadOutcome =
+  | {
+      kind: 'ok'
+      url: string
+      filename: string
+      status: number
+      retried: boolean
+      durationMs: number
+      bytes: number
+    }
+  | { kind: 'skipped'; url: string; filename: string }
+  | {
+      kind: 'failed'
+      url: string
+      filename: string
+      reason: string
+      status?: number
+      retried?: boolean
+      durationMs?: number
+    }
 
 export interface DownloadMetrics {
   total: number
@@ -23,8 +39,8 @@ export interface DownloadMetrics {
   totalBytes: number
   avgDownloadMs: number
   statusHistogram: Record<string, number>
-  failureGroups: { status: string, count: number }[]
-  failures: { url: string, status?: number, reason: string, retried: boolean }[]
+  failureGroups: { status: string; count: number }[]
+  failures: { url: string; status?: number; reason: string; retried: boolean }[]
 }
 
 export interface DiscoveryStats {
@@ -53,15 +69,15 @@ export interface RunReport {
   discovery: DiscoveryStats
   download: DownloadMetrics
   gallery: GalleryStats
-  siteAssets: { count: number, urls: string[] }
+  siteAssets: { count: number; urls: string[] }
   defects: {
-    discoveryLeak: { count: number, urls: string[] }
+    discoveryLeak: { count: number; urls: string[] }
     nonConverged: boolean
     emptyResult: boolean
     persistentFailures: number
     emptyFiles: string[]
   }
-  failures: { url: string, status?: number, reason: string, retried: boolean }[]
+  failures: { url: string; status?: number; reason: string; retried: boolean }[]
 }
 
 // ── pure analysis helpers ──────────────────────────────────────────
@@ -100,8 +116,7 @@ export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadMetrics {
       continue
     }
 
-    if (o.retried)
-      metrics.retryTotal++
+    if (o.retried) metrics.retryTotal++
 
     if (o.kind === 'ok') {
       metrics.ok++
@@ -111,11 +126,9 @@ export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadMetrics {
         metrics.emptyFiles++
         metrics.emptyFilenames.push(o.filename)
       }
-      if (o.retried)
-        metrics.retryRescued++
+      if (o.retried) metrics.retryRescued++
       bump(hist, String(o.status))
-    }
-    else {
+    } else {
       metrics.failed++
       metrics.failures.push({
         url: o.url,
@@ -123,8 +136,7 @@ export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadMetrics {
         reason: o.reason,
         retried: o.retried ?? false,
       })
-      if (o.retried)
-        metrics.persistentFailures++
+      if (o.retried) metrics.persistentFailures++
       if (o.status != null) {
         bump(hist, String(o.status))
         bump(failHist, String(o.status))
@@ -135,9 +147,8 @@ export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadMetrics {
   const attempted = metrics.ok + metrics.failed
   metrics.successRate = attempted > 0 ? metrics.ok / attempted : 0
   metrics.rescueRate = metrics.retryTotal > 0 ? metrics.retryRescued / metrics.retryTotal : 0
-  metrics.avgDownloadMs = okDurations.length > 0
-    ? okDurations.reduce((s, d) => s + d, 0) / okDurations.length
-    : 0
+  metrics.avgDownloadMs =
+    okDurations.length > 0 ? okDurations.reduce((s, d) => s + d, 0) / okDurations.length : 0
 
   metrics.statusHistogram = hist
   metrics.failureGroups = Object.entries(failHist)

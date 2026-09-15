@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "arrowParens": "avoid",
+  "tabWidth": 2,
+  "printWidth": 100,
+  "endOfLine": "lf",
+  "sortImports": true,
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "images",
+    "logs",
+    ".playwright",
+    ".playwright-cli",
+    "pnpm-lock.yaml",
+    "TRASH.md",
+    "**/*.md",
+    "scripts/run-discovery.js"
+  ]
+}

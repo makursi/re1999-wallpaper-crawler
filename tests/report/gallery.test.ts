@@ -1,8 +1,10 @@
-import type { GalleryStats } from '../../src/report/gallery.js'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+
 import { afterEach, describe, expect, it } from 'vitest'
+
+import type { GalleryStats } from '../../src/report/gallery.js'
 import {
   countWallpapers,
   isWallpaperFile,
@@ -92,8 +94,7 @@ describe('gallery state file', () => {
   }
 
   afterEach(() => {
-    for (const dir of dirs.splice(0))
-      fs.rmSync(dir, { recursive: true, force: true })
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
   })
 
   const stats: GalleryStats = {

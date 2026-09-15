@@ -16,16 +16,14 @@ function currentBranch() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
-  }
-  catch {
+  } catch {
     // Detached HEAD: `git symbolic-ref` exits non-zero.
     return ''
   }
 }
 
 function refuse(lines) {
-  for (const line of lines)
-    console.error(line)
+  for (const line of lines) console.error(line)
   process.exit(1)
 }
 

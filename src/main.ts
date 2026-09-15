@@ -1,8 +1,8 @@
-import type { DiscoveryStats, DownloadOutcome, RunMeta, RunReport } from './report/report.js'
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import process from 'node:process'
+
 import {
   BASE_ORIGIN,
   BATCH_SIZE,
@@ -27,6 +27,7 @@ import {
   readGalleryStats,
   writeGalleryStats,
 } from './report/gallery.js'
+import type { DiscoveryStats, DownloadOutcome, RunMeta, RunReport } from './report/report.js'
 import { buildRunReport, classifyOutcomes, detectLeaks } from './report/report.js'
 import { classifySiteAsset, describeSiteAssetRules, splitWallpaperUrls } from './wallpaper-url.js'
 
@@ -43,7 +44,10 @@ function pwc(args: string, timeoutSec = 300): string {
 
 // ── helpers ────────────────────────────────────────────────────────
 
-function newRunMeta(): { meta: RunMeta, config: Record<string, string | number | boolean | undefined> } {
+function newRunMeta(): {
+  meta: RunMeta
+  config: Record<string, string | number | boolean | undefined>
+} {
   const startedAt = new Date().toISOString()
   const runId = startedAt.replace(/[:.]/g, '-').slice(0, 19)
   return {
@@ -78,9 +82,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 // run-code publishes its diagnostics as `{ t, msg }` records in `window.__wpLog`.
 function isRunCodeLogEntry(value: unknown): value is { msg: string } {
-  return isRecord(value)
-    && 'msg' in value
-    && typeof value.msg === 'string'
+  return isRecord(value) && 'msg' in value && typeof value.msg === 'string'
 }
 
 // `playwright-cli --raw eval "JSON.stringify(...)"` sometimes hands back a JSON
@@ -112,12 +114,10 @@ function parseStats(rawStats: string): DiscoveryStats {
     thumbnailsClicked: 0,
     discoveryDurationMs: 0,
   }
-  if (!rawStats)
-    return fallback
+  if (!rawStats) return fallback
   try {
     const parsed = parseJsonPayload(rawStats)
-    if (!isRecord(parsed))
-      return fallback
+    if (!isRecord(parsed)) return fallback
     return {
       converged: booleanOr(parsed.converged, fallback.converged),
       stableRounds: numberOr(parsed.stableRounds, fallback.stableRounds),
@@ -128,8 +128,7 @@ function parseStats(rawStats: string): DiscoveryStats {
       thumbnailsClicked: numberOr(parsed.thumbnailsClicked, fallback.thumbnailsClicked),
       discoveryDurationMs: numberOr(parsed.discoveryDurationMs, fallback.discoveryDurationMs),
     }
-  }
-  catch {
+  } catch {
     return fallback
   }
 }
@@ -141,7 +140,9 @@ function printSummary(logger: ReturnType<typeof createLogger>, report: RunReport
   logger.info('========================================')
   logger.info('           DOWNLOAD SUMMARY')
   logger.info('========================================')
-  logger.info(`  Images captured    : ${report.discovery.combinedCount}  (Site assets filtered: ${report.siteAssets.count})`)
+  logger.info(
+    `  Images captured    : ${report.discovery.combinedCount}  (Site assets filtered: ${report.siteAssets.count})`,
+  )
   logger.info(`  Wallpapers found   : ${m.total}`)
   logger.info(`  Successfully saved : ${m.ok}`)
   logger.info(`  Skipped (existing) : ${m.skipped}`)
@@ -171,7 +172,9 @@ function printSummary(logger: ReturnType<typeof createLogger>, report: RunReport
   if (g.firstRun)
     logger.info(`  Official wallpapers : ${g.officialTotal}  (first record, ${delta} this run)`)
   else
-    logger.info(`  Official wallpapers : ${g.officialTotal}  (previous ${g.previousOfficialTotal}, ${delta})`)
+    logger.info(
+      `  Official wallpapers : ${g.officialTotal}  (previous ${g.previousOfficialTotal}, ${delta})`,
+    )
   logger.info('========================================')
 }
 
@@ -196,8 +199,7 @@ function updateGalleryStats(
   )
   try {
     writeGalleryStats(GALLERY_STATE_FILE, stats)
-  }
-  catch (err: unknown) {
+  } catch (err: unknown) {
     logger.warn({ err: errorMessage(err) }, 'failed to persist gallery state')
   }
   return stats
@@ -226,15 +228,27 @@ function finishRun(
 
   const d = report.defects
   if (d.discoveryLeak.count > 0)
-    logger.warn({ defect: 'discoveryLeak', count: d.discoveryLeak.count, urls: d.discoveryLeak.urls }, 'leaked URLs detected')
+    logger.warn(
+      { defect: 'discoveryLeak', count: d.discoveryLeak.count, urls: d.discoveryLeak.urls },
+      'leaked URLs detected',
+    )
   if (d.nonConverged)
-    logger.warn({ defect: 'nonConverged', stableRounds: report.discovery.stableRounds }, 'discovery did not converge')
+    logger.warn(
+      { defect: 'nonConverged', stableRounds: report.discovery.stableRounds },
+      'discovery did not converge',
+    )
   if (d.emptyResult)
     logger.warn({ defect: 'emptyResult' }, 'no images found — page structure may have changed')
   if (d.persistentFailures > 0)
-    logger.warn({ defect: 'persistentFailures', count: d.persistentFailures }, 'downloads failed even after retry')
+    logger.warn(
+      { defect: 'persistentFailures', count: d.persistentFailures },
+      'downloads failed even after retry',
+    )
   if (d.emptyFiles.length > 0)
-    logger.warn({ defect: 'emptyFiles', files: d.emptyFiles }, 'downloaded files were empty (0 bytes)')
+    logger.warn(
+      { defect: 'emptyFiles', files: d.emptyFiles },
+      'downloaded files were empty (0 bytes)',
+    )
 
   return report
 }
@@ -244,18 +258,19 @@ function finishRun(
 async function main() {
   const logger = createLogger(LOG_DIR)
   const { meta, config } = newRunMeta()
-  logger.info({ type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config }, 'run started')
+  logger.info(
+    { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
+    'run started',
+  )
 
   // 0. Clean slate
   logger.info('0. Preparing fresh browser session...')
   try {
     pwc('close-all', 10)
-  }
-  catch {}
+  } catch {}
   try {
     pwc('delete-data', 10)
-  }
-  catch {}
+  } catch {}
   logger.info('   Session cleared.')
 
   // 1. Open browser with real Chrome, 2560x1440 window, persistent
@@ -268,8 +283,7 @@ async function main() {
   pwc(`goto ${PAGE_URL}`)
   try {
     pwc('wait-for load', 30)
-  }
-  catch {}
+  } catch {}
 
   // 2. Run comprehensive image discovery script
   logger.info('2. Running image discovery (scroll + thumbnails)...')
@@ -282,23 +296,18 @@ async function main() {
   fs.writeFileSync(scriptFile, runScript, 'utf8')
 
   try {
-    execSync(
-      `npx playwright-cli -s=${SESSION} run-code --filename="${scriptFile}"`,
-      {
-        encoding: 'utf8',
-        stdio: 'pipe',
-        timeout: 900_000, // slow networks: discovery can take >10min (425s observed)
-        maxBuffer: 50 * 1024 * 1024,
-      },
-    )
-  }
-  catch (err: unknown) {
+    execSync(`npx playwright-cli -s=${SESSION} run-code --filename="${scriptFile}"`, {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout: 900_000, // slow networks: discovery can take >10min (425s observed)
+      maxBuffer: 50 * 1024 * 1024,
+    })
+  } catch (err: unknown) {
     logger.error({ err: errorMessage(err) }, 'run-code execution failed')
   }
   try {
     fs.unlinkSync(scriptFile)
-  }
-  catch {}
+  } catch {}
 
   // 3. Extract URLs from browser (merged network + DOM from run-code)
   logger.info('3. Extracting image URLs from browser...')
@@ -318,8 +327,7 @@ async function main() {
     const parsed = parseJsonPayload(rawJson)
     const captured: unknown[] = Array.isArray(parsed) ? parsed : []
     allUrls = captured.filter((url): url is string => typeof url === 'string')
-  }
-  catch {
+  } catch {
     logger.error('Failed to parse URLs from browser.')
     allUrls = []
   }
@@ -328,8 +336,7 @@ async function main() {
   const leakedUrls = detectLeaks(allUrls)
   if (leakedUrls.length > 0) {
     logger.warn(`   Leaked non-image URLs: ${leakedUrls.length}`)
-    for (const u of leakedUrls)
-      logger.warn(`     - ${u}`)
+    for (const u of leakedUrls) logger.warn(`     - ${u}`)
   }
 
   // 3a. Drop Site assets — the page HTML, analytics pixels, site UI art — so
@@ -359,11 +366,9 @@ async function main() {
     const parsed = parseJsonPayload(rawLog)
     const entries: unknown[] = Array.isArray(parsed) ? parsed : []
     for (const entry of entries) {
-      if (isRunCodeLogEntry(entry))
-        logger.info({ phase: 'run-code' }, entry.msg)
+      if (isRunCodeLogEntry(entry)) logger.info({ phase: 'run-code' }, entry.msg)
     }
-  }
-  catch {
+  } catch {
     logger.warn('Failed to extract run-code diagnostic log.')
   }
 
@@ -380,8 +385,7 @@ async function main() {
       },
     ).trim()
     discoveryStats = parseStats(rawStats)
-  }
-  catch {
+  } catch {
     logger.warn('Failed to extract discovery stats.')
     discoveryStats = parseStats('')
   }
@@ -406,7 +410,7 @@ async function main() {
   printSummary(logger, finishRun(logger, meta, discoveryStats, outcomes, leakedUrls, siteAssets))
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error('Fatal:', err)
   process.exit(1)
 })

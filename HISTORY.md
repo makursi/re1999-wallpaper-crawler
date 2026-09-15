@@ -258,7 +258,7 @@
 - **oxlint 忽略名单只放 `scripts/run-discovery.js`**（不是整个 `scripts/`）：自审指出新写的 `scripts/check-branch.mjs` 被误伤；实测 type-aware 对它是干净通过的（该浏览器脚本仍在名单外，因为它不在 tsconfig 的 `include` 里，纳入需先开 `allowJs`）。这是对 Q4「忽略 `scripts/**`」的**有意偏离**，理由如上。
 - **oxfmt 全量重排留到单独一轮**：实测 `oxfmt --check` 报 21 个文件里 16 个要改；其中 `src` + `tests` 共 11 个文件 +237/-169 行，`scripts/run-discovery.js`（无 lint、无类型、无测试的浏览器脚本）一个文件就 +189/-140。一次性重排会淹没本轮真正的逻辑改动。
 - 加 `.editorconfig`（仅编辑器默认：UTF-8 / 2 空格 / 末行换行，**不写 `end_of_line`**）与 `.vscode/extensions.json`（`oxc.oxc-vscode`）；`TRASH.md` 写进 `.gitignore`（本地保留、永不提交）。
-- **行尾政策本轮不碰**：本来加了 `.gitattributes`（`* text=auto eol=lf`），实做时发现本仓 **git 历史存的就是 CRLF**（`git cat-file blob HEAD:src/main.ts` 有 374 个 CR，而 `git ls-files --eol` 因属性归一化而报 `i/lf`，是误导信号），而 `git add` 并不会把它重写成 LF。所以 `.gitattributes` 一旦提交就会在后续 checkout 上悄悄翻转全仓行尾；与 oxfmt 同因，退出本轮，留待专门一轮（见开放问题）。本次提交对行尾保持中性。
+- **行尾：本轮的这个结论是错的，已更正。** 本条目初版说「git 历史存的就是 CRLF」并据此把 `.gitattributes` 从 PR #12 里拿出去——那是**测量事故**：`git cat-file` 打印 blob 时会跑 smudge 过滤器，而当时用来判断的 `grep -c $'\r'` 在这个 shell 里静默退化成「数行数」（对 LF 文件也返回行数，两堆文件报出的数字其实都是行数）。用 `git cat-file --batch-check='%(objectsize)'` 与文件实际字节数对比后，真相是本仓**一直存 LF**（blob 比 CRLF 工作区小约每行 1 字节），`git ls-files --eol` 报的 `i/lf` 才是对的；PR #12 里那句 AGENTS.md Gotcha 和开放问题描述因此都是错的，均已改成正确版 + 正确测量方法。
 
 **行为差异**（本轮唯一不是「配置搬运」的部分，逐条列出供真跑时对账；均只影响畸形输入，正常 payload 下逐字节等价）：
 - `window.__wpUrls`：非数组 payload 以前会当作数组继续用（`.length` 为 `undefined`），现在归为 `[]`；数组里的非字符串元素现在被过滤掉。
@@ -280,7 +280,31 @@
 - 钩子机制换代必须检查 `core.hooksPath`：旧值指向已删除目录时 git **静默跳过**所有钩子，「钩子装了」和「钩子生效」是两件事，只能用一次真提交演练来证明。
 - 工具链的隐藏门禁来自包管理器默认值：pnpm 12 会拒绝 24h 内发布的版本（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`）、并要求 `allowBuilds` 白名单（否则 `ERR_PNPM_IGNORED_BUILDS` 直接非零退出）。应对是 pin 前一版 + 写白名单，而不是放宽策略。
 - 格式化工具的全量重排要单独记账：它重写的是「人手工调过的风格」和「没有测试保护的脚本」，混在其它改动里既难 review 也难回滚。
-- 「行尾是不是 LF」不能靠模糊的间接信号判断：`git ls-files --eol` 会把属性归一化后的意图当成事实报出来（本例它谎报 `i/lf`），`git show HEAD:file` 还会跑 smudge 转换；唯一可信的是 `git rev-parse <ref>:<path>` 拿 sha 再用 `git cat-file blob <sha>` 看原始字节。差点因此把全仓行尾翻转塞进一个 lint 换代里。
+- 「行尾是不是 LF」不能用会跑过滤器的命令去量：`git cat-file` 打印 blob 时会 smudge（把 LF 显示成 CRLF），而 `grep -c $'\r'` 在 Windows 的 git-bash 里对 `$'\r'` 静默失效、退化成数行数——两个错误叠起来让整个仓看起来都是 CRLF，我据此把错误结论写进了仓库文档。可靠的量法只有一个：比**字节数**（`git cat-file --batch-check='%(objectsize)'` vs `wc -c`）。教训是**先用已知样本校准量具**：只要拿一个 LF 文件和一个 CRLF 文件试一下，这个量具当场就露馅了。
+
+---
+
+### 2026-09-15 — oxfmt 接入 + 行尾钡到 LF（含一次差点上线的格式化事故）
+
+**触因**：上一轮把 oxfmt 推迟了（实测 21 个文件里 16 个要改），行尾政策也标为未决；用户要求把清单上的未完项做完。
+
+**决策**：
+- **行尾：先纠错再决策**。上一轮「历史存 CRLF」是量具故障（详见上一条），真相是历史一直存 LF。于是加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钡到 LF，并用 `git checkout-index -a -f` 刷新工作区；`git add --renormalize` 在这里是 no-op（索引早就是 LF），不要把它当成可以验证的工具。
+- **oxfmt 0.67**（0.68 发布未满 24h，被 pnpm 供应链策略挡下）+ `.oxfmtrc.json`：`semi: false` / `singleQuote: true` / `arrowParens: "avoid"`（对齐原 antfu 风格）/ `printWidth: 100` / `endOfLine: "lf"` / `sortImports: true`。`**/*.md` 与 `pnpm-lock.yaml` 暂不格式化。试过 `experimentalOperatorPosition: "start"`（能把运算符前移风格还原得更彻底），但它自标 experimental，拒了。
+- **`scripts/run-discovery.js` 永久排除，并撑销了「把它纳入 lint」的原计划**。实测：交给 oxfmt 后文件以 `;async (page) => {` 开头，而 playwright-cli 是把文件包成 `(\n<内容>\n)(page);` 求值的 → `SyntaxError: Unexpected token ';'`。用 e2e 探针当场验证：带前导 `;` 的脚本报这个错、不带前导 `;` 的同文件能把 `window.__probe` 写成 `no-semi-ok`。也就是说这个格式化会静默弄死整个 Discovery（搜不到任何 URL，报告为 `emptyResult`）。既然这个文件的“形状”就是协议的一部分，它不该进任何会改写它的工具；要查它就等找一版不改写文件的只读检查。
+- **补上一个 lint-staged 漏洞**（上一轮收窄忽略名单时引入的）：被忽略的文件被显式传给工具时，oxlint 退 1（No files found to lint）、oxfmt 退 2（Expected at least one target file）→ 一旦提交只涉及 `scripts/run-discovery.js`，pre-commit 就会把提交拦死。两边都加 `--no-error-on-unmatched-pattern`（两个工具都有这个 flag），并写进 lint-staged。
+- oxfmt 进 lint-staged（提交时本地就格式化），CI 加 `Format` 步（`fmt:check`）。
+
+**验证**：
+- 四件套：`pnpm fmt:check` / `typecheck` / `lint`（`--deny-warnings` 全仓 0/0）/ `test`（33 passed）全绿。
+- **AST 对比证明“只改了空白”**：逐文件比较 HEAD 与现在的语法树（忽略 import 顺序、忽略括号，import 声明逐字排序比较）：12 个被重排文件里 11 个结构完全一致，剩下 `download.ts` 只有一处 `'Referer':` → `Referer:`（无引号键名，同一个字符串）；`scripts/run-discovery.js` 未被改写。
+- **提交演练**：只 stage 协议载荷文件（加一行注释）→ pre-commit 退 0 且文件字节不变（无前导 `;`、注释保留）；`node --check` 也过。
+- 交付后真跑一次冒烟（格式化涉及 `main.ts` / `report.ts` / `download.ts`，虽然 AST 等价，但这是唯一能真正证明管线还活着的检查）。
+
+**教训**：
+- 格式化不是“纯白”操作：当被格式化的文件本身是一个**协议载荷**时，formatter 的“安全”预处理（在裸表达式前插 `;`）恰好会弄死它。凡是被别的进程当作源码/表达式消费的文件（`--filename` 脚本、模板、eval 字符串），先查清消费方式，再决定是否允许格式化。
+- 工具“忽略名单”与“显式传路径”是两套语义：忽略只影响遍历，不影响显式传入时的非零退出。所以收窄忽略名单时，必须同步检查 lint-staged 这类“显式传文件”的调用方，并用一次真提交演练证明。
+- 真跑的价值不可替代：AST 等价、单测全绿、`node --check` 通过——这些都拦不住上面那个前导分号的坑，只有“实际跑一次管线”或“实际跑一次那个被包装的执行路径”能拦住。
 
 ---
 
@@ -303,11 +327,12 @@
 | 在同一轮里并入 oxfmt 全量重排 | 12 文件 +280/-180，其中不可测的 `run-discovery.js` 占 +189/-140，diff 淹没逻辑改动 | 2026-09-15 |
 | 放宽 pnpm 供应链策略（`minimumReleaseAge`）以装当日最新版 | 该策略挡的是「投毒版本 24h 窗口」，正确做法是 pin 前一版 | 2026-09-15 |
 | 继续用 npm | 与工作区兄弟仓、`pnpm/setup@v2` CI、pnpm 化的 lint-staged 形态都不一致 | 2026-09-15 |
+| 在同一个轮次里对 `scripts/run-discovery.js` 做格式化 / 自动修 | 它是 playwright-cli 的协议载荷（`(\n<file>\n)(page);`），formatter 会在裸表达式前插 `;` → `SyntaxError`，crawl 直接抓不到任何东西 | 2026-09-15 |
 | 直接复用 `sxzz/workflows` 的 `unit-test.yml` | 其 test job 无条件跑 `pnpm run build`，本仓无 build 脚本 | 2026-09-15 |
 
 ## 验证规范（所有迭代通用）
 
-- 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）
+- 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）；格式化改动加 `pnpm fmt:check`，且大范围重排要做 **AST 对比**（忽略 import 顺序与括号）证明“只改了空白”
 - 纯工具链/纯移动类改动不真跑，但要在 PR 里写明「没跑」
 - 行为验证：真跑 `pnpm save-wallpapers`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
@@ -316,7 +341,8 @@
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - **过滤逻辑分两道**：`scripts/run-discovery.js` 的 `shouldKeep` 里还留着旧的「精确文件名」黑名单（约 25 个 UI 图标名），它是第一道、不可单测、丢弃量不进 `siteAssets`；第二道才是 `src/wallpaper-url.ts` 的结构化规则。合并成一道的代价是那些 URL 会重新计入 `combinedCount`（改变字段语义），留待单独一轮。
-- **oxfmt 全量重排待做**：配置与实测数据见 2026-09-15 条目（`.oxfmtrc.json` 需 `semi: false` / `singleQuote: true` / `printWidth: 100` / `sortImports: true`，`**/*.md` 与 `scripts/` 的取舍要在那一轮定）。做之前先决定 `scripts/run-discovery.js`（无测试）是否纳入重排。- **行尾政策待定**：git 历史存的是 CRLF（见本次教训），而 oxfmt 写 LF。两条路——全仓归一到 LF（`git add --renormalize .`，diff 里看不见但会写满 blame）或让 formatter 跟随 CRLF（不推荐，Linux CI 与 Windows 会分叉）。必须先定这个，再谈接 formatter。
+- ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化，`scripts/run-discovery.js` 永久排除（见 Gotchas）。
+- ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
 - **`autofix.yml` 未接**：工作区惯例是 PR 上用 autofix.ci 自动修 lint/格式，但该 App 需先在仓上安装（`github.com/apps/autofix-ci`），否则 workflow 会给每个 PR 挂红叉。装完再补这个 workflow。
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。
