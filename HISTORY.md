@@ -269,7 +269,11 @@
 
 **验证**：`pnpm typecheck` 零错误；`pnpm test` 33 passed（与基线同数）；`pnpm lint` 零 error 零 warning（`--deny-warnings` 全仓退 0），并用 `oxlint --debug files .` 确认真的 lint 了 13 个文件（不是空跑）；`pnpm install` 退出 0，`--frozen-lockfile` 报 "Lockfile passes supply-chain policies"；**门禁“真会拦”也验了**——拿一个含 `debugger` 的文件试：`pnpm lint` 退 1、pre-commit 被 lint-staged 拦下；再拿一个 floating promise 试，type-aware 规则确实报错（证明 tsgolint 真的接上了）；**钩子实做演练**——把 `scripts/check-branch.mjs` 拿到临时仓里对三种真实 git 状态各跑一次（`main` → 拒；detached HEAD → 拒；feature 分支 → 通过），再在真仓里走一次真提交，看到 guard 先跑、lint-staged 对 staged 文件跑 `oxlint --fix`。CI 在 PR #12 上真实跑绿。
 
-提交前跑了双轴自审（standards / spec 两个独立子 agent，延续 09-15 先例）：standards 轴指出 `parseStats` 残留 `as` 断言、三处重复的双层 `JSON.parse`、`scripts/check-branch.mjs` 被忽略名单误伤，均已采纳修复；spec 轴指出 `.gitignore` 里 `TRASH.md` 写重复与 HISTORY 里 oxfmt 实测数字自相矛盾（已修正），并把「工具链轮里改了运行时代码」列为已声明的范围偏移。**未真跑爬虫**：不触碰 `run_report` 键集合与语义，Run parity 不适用（沿用同日「测试移出 src」的先例）；但上面的「行为差异」清单就是没有真跑背书的部分，下一次真跑时应拿 `run_report.discovery` 对照。
+提交前跑了双轴自审（standards / spec 两个独立子 agent，延续 09-15 先例）：standards 轴指出 `parseStats` 残留 `as` 断言、三处重复的双层 `JSON.parse`、`scripts/check-branch.mjs` 被忽略名单误伤，均已采纳修复；spec 轴指出 `.gitignore` 里 `TRASH.md` 写重复与 HISTORY 里 oxfmt 实测数字自相矛盾（已修正），并把「工具链轮里改了运行时代码」列为已声明的范围偏移。
+
+**真跑（合并后的 main，`runId 2026-09-15T04-56-21`，265s）**：`converged: true`、6 轮稳定、idle 65s、`combinedCount` 187（上轮 97，属页面视图波动不是回退）、`thumbnailsClicked` 43；`siteAssets` 7；download 180 个全部 Content-hash skip（`ok: 0` / `failed: 0`，即 runbook 说的 successRate: 0 属设计）；`gallery.officialTotal` 1001 = `previousOfficialTotal` 1001、`newSinceLastRun` 0（官网无新图），`firstRun` 转 false（状态文件连续）；`defects` 仅 `discoveryLeak = 1`，URL 是页面自身 `detail.html` —— 按 AGENTS.md 判定**良性、接受，不重跑**。
+
+**契约对账（轻量版 Run parity）**：新旧 `run_report` 的顶层 / `discovery` / `download` 三处键集合逐字一致，`run_meta` 配置快照逐字段相同（无配置漂移）；磁盘仍是 1001 个文件，那 7 个 Site asset（`1.png` / `BG2.png` / `hm.gif` 的 2 个 query 变体 / `Vinyl record.png` / `icon-192_*` / `detail.html`）一个都没回到 `images/`。因此上面「行为差异」清单里那几条只在畸形输入下成立，正常路径逐字节等价——**这是真跑背书，不是推设**。
 
 **教训**：
 - linter 换代是「新规则重新审旧代码」的机会：首轮 10 条诊断里 6 条是真缺陷，只有 2 条该用配置豁免；一律 `off` 掉报错规则等于白换工具。
