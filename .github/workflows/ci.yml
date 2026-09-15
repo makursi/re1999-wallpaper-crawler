@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref makes a running job obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs pnpm (version from `packageManager`), a Node.js runtime, and
+      # runs `pnpm install`. The runtime must be spelled out: this repository has
+      # no `devEngines.runtime` for the action to read, and pnpm's own binary
+      # does not bring Node.js with it — every step below needs it on PATH.
+      # CI matches local development on Node 24; `engines` only sets the floor.
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          # Fail on a missing lockfile instead of silently resolving from the
+          # registry: the committed lockfile is what makes the run reproducible.
+          require-lockfile: true
+
+      # No `.env` is needed: the unit tests cover pure logic (report, gallery,
+      # wallpaper URL set) and never import `src/config.ts`.
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test

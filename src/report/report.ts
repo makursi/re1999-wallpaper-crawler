@@ -142,7 +142,7 @@ export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadMetrics {
   metrics.statusHistogram = hist
   metrics.failureGroups = Object.entries(failHist)
     .map(([status, count]) => ({ status, count }))
-    .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status))
+    .toSorted((a, b) => b.count - a.count || a.status.localeCompare(b.status))
 
   return metrics
 }

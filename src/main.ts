@@ -64,6 +64,43 @@ function newRunMeta(): { meta: RunMeta, config: Record<string, string | number |
   }
 }
 
+// execSync throws an Error; anything else reaching a catch is unknown and only
+// has a useful String() form.
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// An object is indexable at runtime; this is the narrowing the browser-payload
+// checks need, without an assertion that would skip the checks themselves.
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+// run-code publishes its diagnostics as `{ t, msg }` records in `window.__wpLog`.
+function isRunCodeLogEntry(value: unknown): value is { msg: string } {
+  return isRecord(value)
+    && 'msg' in value
+    && typeof value.msg === 'string'
+}
+
+// `playwright-cli --raw eval "JSON.stringify(...)"` sometimes hands back a JSON
+// *string* that still has to be decoded, so decode until it is not a string.
+function parseJsonPayload(raw: string): unknown {
+  const first: unknown = JSON.parse(raw)
+  return typeof first === 'string' ? JSON.parse(first) : first
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+// `window.__wpStats` is the browser's word on how discovery went, so every field
+// is checked here: a truncated or stale payload must not put junk into the Run
+// report's discovery block (its `converged`/counts drive defect detection).
 function parseStats(rawStats: string): DiscoveryStats {
   const fallback: DiscoveryStats = {
     converged: false,
@@ -78,11 +115,19 @@ function parseStats(rawStats: string): DiscoveryStats {
   if (!rawStats)
     return fallback
   try {
-    const first: unknown = JSON.parse(rawStats)
-    const parsed: unknown = typeof first === 'string' ? JSON.parse(first) : first
-    if (typeof parsed !== 'object' || parsed === null)
+    const parsed = parseJsonPayload(rawStats)
+    if (!isRecord(parsed))
       return fallback
-    return { ...fallback, ...(parsed as Partial<DiscoveryStats>) }
+    return {
+      converged: booleanOr(parsed.converged, fallback.converged),
+      stableRounds: numberOr(parsed.stableRounds, fallback.stableRounds),
+      totalIdleSec: numberOr(parsed.totalIdleSec, fallback.totalIdleSec),
+      networkCount: numberOr(parsed.networkCount, fallback.networkCount),
+      domCount: numberOr(parsed.domCount, fallback.domCount),
+      combinedCount: numberOr(parsed.combinedCount, fallback.combinedCount),
+      thumbnailsClicked: numberOr(parsed.thumbnailsClicked, fallback.thumbnailsClicked),
+      discoveryDurationMs: numberOr(parsed.discoveryDurationMs, fallback.discoveryDurationMs),
+    }
   }
   catch {
     return fallback
@@ -153,7 +198,7 @@ function updateGalleryStats(
     writeGalleryStats(GALLERY_STATE_FILE, stats)
   }
   catch (err: unknown) {
-    logger.warn({ err: (err as Error).message }, 'failed to persist gallery state')
+    logger.warn({ err: errorMessage(err) }, 'failed to persist gallery state')
   }
   return stats
 }
@@ -248,8 +293,7 @@ async function main() {
     )
   }
   catch (err: unknown) {
-    const execErr = err as { message?: string, stdout?: string, stderr?: string }
-    logger.error({ err: execErr.message }, 'run-code execution failed')
+    logger.error({ err: errorMessage(err) }, 'run-code execution failed')
   }
   try {
     fs.unlinkSync(scriptFile)
@@ -271,11 +315,9 @@ async function main() {
 
   let allUrls: string[]
   try {
-    const first: unknown = JSON.parse(rawJson)
-    allUrls
-      = typeof first === 'string'
-        ? (JSON.parse(first) as string[])
-        : (first as string[])
+    const parsed = parseJsonPayload(rawJson)
+    const captured: unknown[] = Array.isArray(parsed) ? parsed : []
+    allUrls = captured.filter((url): url is string => typeof url === 'string')
   }
   catch {
     logger.error('Failed to parse URLs from browser.')
@@ -314,16 +356,12 @@ async function main() {
         maxBuffer: 10 * 1024 * 1024,
       },
     ).trim()
-    const logEntries: unknown = JSON.parse(rawLog)
-    const entries = (
-      Array.isArray(logEntries)
-        ? logEntries
-        : typeof logEntries === 'string'
-          ? JSON.parse(logEntries)
-          : []
-    ) as Array<{ t: number, msg: string }>
-    for (const entry of entries)
-      logger.info({ phase: 'run-code' }, entry.msg)
+    const parsed = parseJsonPayload(rawLog)
+    const entries: unknown[] = Array.isArray(parsed) ? parsed : []
+    for (const entry of entries) {
+      if (isRunCodeLogEntry(entry))
+        logger.info({ phase: 'run-code' }, entry.msg)
+    }
   }
   catch {
     logger.warn('Failed to extract run-code diagnostic log.')

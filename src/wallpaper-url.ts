@@ -79,6 +79,12 @@ function matchesRule(rule: SiteAssetRule, url: string): boolean {
       return urlOf(url)?.pathname.toLowerCase().startsWith(rule.value ?? '') ?? false
     case 'filenamePrefix':
       return filenameOf(url).startsWith(rule.value ?? '')
+    default: {
+      // Unreachable: `kind` is an exhaustive union. The assignment fails to
+      // compile if a new kind is added without a case above.
+      const unhandled: never = rule.kind
+      return unhandled
+    }
   }
 }
 

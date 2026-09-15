@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "options": {
+    "typeAware": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "plugins": ["oxc", "typescript", "unicorn", "import", "node", "promise", "vitest"],
+  "rules": {
+    // `!= null` is deliberate: it catches both null and undefined (see
+    // report.ts › classifyOutcomes).
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-debugger": "error",
+    "no-console": ["warn", { "allow": ["error"] }],
+    // Loading dotenv for its side effect is the point of the import.
+    "import/no-unassigned-import": ["warn", { "allow": ["dotenv/config"] }],
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "warn"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "images",
+    "logs",
+    ".playwright",
+    ".playwright-cli",
+    "scripts/run-discovery.js",
+    "**/*.md"
+  ]
+}

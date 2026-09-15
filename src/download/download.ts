@@ -17,7 +17,7 @@ export class HttpError extends Error {
 
 // ── cookie extraction ──────────────────────────────────────────────
 
-let _cachedCookieHeader = ''
+let cachedCookieHeader = ''
 
 export function extractCookies(
   pwc: (args: string, timeoutSec?: number) => string,
@@ -34,8 +34,8 @@ export function extractCookies(
         cookies.push(`${parts[0]}=${parts[1]}`)
       }
     }
-    _cachedCookieHeader = cookies.join('; ')
-    return _cachedCookieHeader
+    cachedCookieHeader = cookies.join('; ')
+    return cachedCookieHeader
   }
   catch {
     return ''
@@ -43,7 +43,7 @@ export function extractCookies(
 }
 
 function getCookieHeader(): string {
-  return _cachedCookieHeader
+  return cachedCookieHeader
 }
 
 // ── URL utilities ──────────────────────────────────────────────────

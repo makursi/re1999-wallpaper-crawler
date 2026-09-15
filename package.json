@@ -1,16 +1,25 @@
 {
-  "name": "test-playwirght",
+  "name": "re1999-wallpaper-crawler",
   "type": "module",
   "version": "1.0.0",
-  "description": "",
-  "author": "",
+  "private": true,
+  "description": "Wallpaper scraper for Bluepoch's official gallery (re.bluepoch.com)",
   "license": "ISC",
-  "keywords": [],
-  "main": "index.js",
   "scripts": {
     "save-wallpapers": "tsx src/main.ts",
+    "lint": "oxlint --type-aware .",
+    "lint:fix": "oxlint --type-aware --fix .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepare": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "node scripts/check-branch.mjs && pnpm exec lint-staged",
+    "pre-push": "pnpm typecheck && pnpm test"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs,cjs,js}": "oxlint --fix --deny-warnings"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
@@ -20,11 +29,17 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^9.0.0",
     "@types/node": "^25.9.1",
-    "eslint": "^10.5.0",
+    "lint-staged": "^17.5.1",
+    "oxlint": "^1.82.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "simple-git-hooks": "^2.14.0",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
-  }
+  },
+  "engines": {
+    "node": ">=22.22.1"
+  },
+  "packageManager": "pnpm@12.3.4"
 }
