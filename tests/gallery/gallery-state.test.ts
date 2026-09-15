@@ -19,7 +19,6 @@ function listOf(...specs: [id: number, name: string][]): GalleryList {
     total: specs.length,
     entries: specs.map(([id, name]) => ({
       id,
-      title: name,
       url: `${CDN}/20260907/${name}`,
     })),
   }
@@ -73,6 +72,32 @@ describe('mergeGalleryStats', () => {
     expect(state.runId).toBe('run-2')
   })
 
+  it('keeps ids the list no longer carries, so a returning entry is not new twice', () => {
+    const previous = {
+      version: 1 as const,
+      ids: [1010, 1011, 1012],
+      updatedAt: '2026-09-15T00:00:00.000Z',
+      runId: 'run-1',
+    }
+    // The site retired 1010 and 1011: the list no longer carries them, but one
+    // of them is still on disk. Forgetting the id would report a returning
+    // entry as new again.
+    const list = listOf([1012, '1012.jpg'])
+    const { state, stats } = mergeGalleryStats(
+      previous,
+      { list, diskFiles: ['1010.jpg', '1012.jpg'] },
+      'run-2',
+      '2026-09-16T00:00:00.000Z',
+    )
+
+    expect(state.ids).toEqual([1010, 1011, 1012])
+    expect(stats.officialTotal).toBe(1)
+    expect(stats.newSinceLastRun).toBe(0)
+    expect(stats.newFiles).toEqual([])
+    expect(stats.mirror?.missingFromDisk).toEqual({ count: 0, files: [] })
+    expect(stats.mirror?.extraOnDisk).toEqual({ count: 1, files: ['1010.jpg'] })
+  })
+
   it('reports both directions of a mirror gap, ignoring the state file itself', () => {
     const list = listOf([1012, '1012.jpg'], [1011, '1011.jpg'])
     const { stats } = mergeGalleryStats(
@@ -92,7 +117,6 @@ describe('mergeGalleryStats', () => {
       entries: [
         {
           id: 996,
-          title: '996.竖版-2560x1440',
           url: `${CDN}/20260729/996.%E7%AB%96%E7%89%88-2560x1440_abc.jpg`,
         },
       ],

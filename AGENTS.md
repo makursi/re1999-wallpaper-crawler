@@ -101,7 +101,11 @@ How to judge a run:
   appears in `defects.siteAssetFalsePositive` instead.
 - **Defects** (auto-detected in `defects`): `discoveryLeak`, `nonConverged`,
   `emptyResult`, `persistentFailures`, `emptyFiles`,
-  `siteAssetFalsePositive`, `gallerySourceUnavailable`, `mirrorGap`.
+  `siteAssetFalsePositive`, `gallerySourceUnavailable`, `mirrorGap`. The last
+  two, plus `siteAssetFalsePositive`, are `null` when the gallery list was
+  unavailable: **not checked is not the same as checked-and-clean**.
+- **Discovery coverage**: `discovery.coverage` = the share of the gallery list
+  that Run's capture contained (`null` when the list was unavailable).
 
 Reading traps:
 - An all-skipped run reads `download.successRate: 0` **by design** — the
@@ -114,6 +118,7 @@ Reading traps:
   "clean"; `mirrorGap: { missing: 0, extra: 0 }` is the clean reading.
   `missing` = official entries with no local file; `extra` = local files the
   list does not contain (retired art, or junk the filter let through).
+  `defects.siteAssetFalsePositive: null` reads the same way.
 - A `combinedCount` below the Gallery total is expected and **not a defect**:
   the page renders only the thumbnails in view, so a Run sees a subset
   (`discovery.coverage` measures how small). Read `gallery.newSinceLastRun` to

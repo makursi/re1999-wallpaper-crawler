@@ -21,7 +21,7 @@ import {
 import { buildRunCodeScript } from './discovery/discovery-loader.js'
 import { downloadBatch, extractCookies } from './download/download.js'
 import type { GalleryList } from './gallery/gallery-source.js'
-import { fetchGalleryList } from './gallery/gallery-source.js'
+import { falsePositivesAmong, fetchGalleryList, officialNamesOf } from './gallery/gallery-source.js'
 import type { GalleryStats } from './gallery/gallery-state.js'
 import {
   mergeGalleryStats,
@@ -30,7 +30,13 @@ import {
   writeGalleryState,
 } from './gallery/gallery-state.js'
 import { createLogger } from './logger.js'
-import type { DiscoveryStats, DownloadOutcome, RunMeta, RunReport } from './report/report.js'
+import type {
+  CaptureAudit,
+  DiscoveryStats,
+  DownloadOutcome,
+  RunMeta,
+  RunReport,
+} from './report/report.js'
 import { buildRunReport, classifyOutcomes, detectLeaks } from './report/report.js'
 import {
   classifySiteAsset,
@@ -151,10 +157,9 @@ function parseStats(rawStats: string): DiscoveryStats {
  * number that says whether rendering the page is still worth it next to asking
  * the list endpoint (see the discovery-coverage open question in HISTORY.md).
  */
-function coverageOf(
-  captured: readonly string[],
-  officialNames: ReadonlySet<string>,
-): number | null {
+function coverageOf(captured: readonly string[], list: GalleryList | null): number | null {
+  if (list === null) return null
+  const officialNames = officialNamesOf(list)
   if (officialNames.size === 0) return null
   const hits = new Set(captured.map(wallpaperNameOf).filter(name => officialNames.has(name)))
   return Math.round((hits.size / officialNames.size) * 10_000) / 10_000
@@ -262,9 +267,7 @@ function finishRun(
   meta: RunMeta,
   discoveryStats: DiscoveryStats,
   outcomes: DownloadOutcome[],
-  leakedUrls: string[],
-  siteAssets: string[],
-  siteAssetFalsePositive: string[],
+  capture: CaptureAudit,
   galleryList: GalleryList | null,
 ): RunReport {
   const finishedAt = new Date().toISOString()
@@ -274,9 +277,7 @@ function finishRun(
     discovery: discoveryStats,
     metrics,
     gallery,
-    leakedUrls,
-    siteAssets,
-    siteAssetFalsePositive,
+    ...capture,
   })
 
   logger.info(report, 'run report')
@@ -304,7 +305,7 @@ function finishRun(
       { defect: 'emptyFiles', files: d.emptyFiles },
       'downloaded files were empty (0 bytes)',
     )
-  if (d.siteAssetFalsePositive.count > 0)
+  if (d.siteAssetFalsePositive !== null && d.siteAssetFalsePositive.count > 0)
     logger.warn(
       {
         defect: 'siteAssetFalsePositive',
@@ -439,9 +440,13 @@ async function main() {
   // gallery holds, and therefore on whether the filter above kept the right
   // things — a URL it lists is a Wallpaper by definition.
   const galleryList = await loadGalleryList(logger)
-  const officialNames = new Set(galleryList?.entries.map(entry => wallpaperNameOf(entry.url)) ?? [])
-  const siteAssetFalsePositive =
-    galleryList === null ? [] : siteAssets.filter(url => officialNames.has(wallpaperNameOf(url)))
+  // A dropped URL the list calls a Wallpaper is a rule mistake; `null` means the
+  // list was unavailable and nothing could be checked (ADR 0006).
+  const capture: CaptureAudit = {
+    leakedUrls,
+    siteAssets,
+    siteAssetFalsePositive: falsePositivesAmong(siteAssets, galleryList),
+  }
 
   // 3b. Extract run-code diagnostic log
   try {
@@ -476,7 +481,7 @@ async function main() {
       },
     ).trim()
     discoveryStats = parseStats(rawStats)
-    discoveryStats.coverage = coverageOf(allUrls, officialNames)
+    discoveryStats.coverage = coverageOf(allUrls, galleryList)
   } catch {
     logger.warn('Failed to extract discovery stats.')
     discoveryStats = parseStats('')
@@ -484,19 +489,7 @@ async function main() {
 
   if (wallpapers.length === 0) {
     logger.warn('No Wallpapers found. The page structure may have changed.')
-    printSummary(
-      logger,
-      finishRun(
-        logger,
-        meta,
-        discoveryStats,
-        [],
-        leakedUrls,
-        siteAssets,
-        siteAssetFalsePositive,
-        galleryList,
-      ),
-    )
+    printSummary(logger, finishRun(logger, meta, discoveryStats, [], capture, galleryList))
     return
   }
 
@@ -511,19 +504,7 @@ async function main() {
   const outcomes = await downloadBatch(wallpapers, IMAGES_DIR, BATCH_SIZE, logger)
 
   // 6. Summarize, report and print
-  printSummary(
-    logger,
-    finishRun(
-      logger,
-      meta,
-      discoveryStats,
-      outcomes,
-      leakedUrls,
-      siteAssets,
-      siteAssetFalsePositive,
-      galleryList,
-    ),
-  )
+  printSummary(logger, finishRun(logger, meta, discoveryStats, outcomes, capture, galleryList))
 }
 
 main().catch(err => {

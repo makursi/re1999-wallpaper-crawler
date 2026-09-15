@@ -56,7 +56,8 @@ block against the site's own list:
 - `siteAssets.count` — Site assets dropped before Download. This is *why*
   `download.total` is below `discovery.combinedCount`; a Wallpaper that gets
   filtered by mistake shows up in `siteAssetFalsePositive` instead, because
-  every drop is checked against the list.
+  every drop is checked against the list. When the list was unavailable that
+  check is `null` — not checked, not clean.
 - `discovery.coverage` — how much of the list this Run's page walk reached.
   Single digits to ~45% is normal; the list endpoint always reaches 100%.
 - `emptyResult` — Discovery found no Wallpapers. Session logged out? Page

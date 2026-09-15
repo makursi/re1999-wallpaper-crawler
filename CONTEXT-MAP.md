@@ -12,8 +12,9 @@
   check against `images/`, and the cross-run memory of which entries have been
   seen.
   Owns: `src/gallery/gallery-source.ts` (the list endpoint),
-  `src/gallery/gallery-state.ts` (`images/.gallery-state.json`); refreshed by
-  `src/main.ts` (step 6). Vocabulary in CONTEXT.md → Gallery tracking.
+  `src/gallery/gallery-state.ts` (`images/.gallery-state.json`); `src/main.ts`
+  fetches the list once during discovery (step 3) and writes the state at the
+  end of the Run (step 6). Vocabulary in CONTEXT.md → Gallery tracking.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `src/wallpaper-url.ts`, which both Discovery's output and
   Download's input pass through.
@@ -28,7 +29,8 @@
   extracted after discovery and reused by Download for auth.
 - **Gallery list → Site asset filter**: the list is the authority on what a
   Wallpaper is, so a URL the filter dropped that appears in the list is reported
-  as a Site asset false positive.
+  as a Site asset false positive (`null` when the list was unavailable, because
+  not checking is not the same as finding nothing).
 - **Gallery list ↔ Mirror**: the list is compared with the Wallpaper files on
   disk in both directions (missing / extra), which is what makes a Mirror gap
   visible.

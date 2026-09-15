@@ -82,7 +82,8 @@ export interface RunReport {
     emptyResult: boolean
     persistentFailures: number
     emptyFiles: string[]
-    siteAssetFalsePositive: { count: number; urls: string[] }
+    /** `null` = not checked, because the list was unavailable. */
+    siteAssetFalsePositive: { count: number; urls: string[] } | null
     gallerySourceUnavailable: boolean
     mirrorGap: { missing: number; extra: number } | null
   }
@@ -171,14 +172,21 @@ function bump(hist: Record<string, number>, status: string): void {
   hist[status] = (hist[status] ?? 0) + 1
 }
 
-export interface RunInputs {
+/**
+ * What one Run's capture produced. These travel together — from the split,
+ * through the list checks, into the report — so they are passed as one value.
+ */
+export interface CaptureAudit {
+  leakedUrls: string[]
+  siteAssets: string[]
+  /** Site assets the official list calls Wallpapers; `null` when not checked. */
+  siteAssetFalsePositive: string[] | null
+}
+
+export interface RunInputs extends CaptureAudit {
   discovery: DiscoveryStats
   metrics: DownloadMetrics
   gallery: GalleryStats
-  leakedUrls: string[]
-  siteAssets: string[]
-  /** Site assets that the official list says are Wallpapers — rule mistakes. */
-  siteAssetFalsePositive: string[]
 }
 
 export function buildRunReport(
@@ -202,10 +210,10 @@ export function buildRunReport(
       emptyResult: metrics.total === 0,
       persistentFailures: metrics.persistentFailures,
       emptyFiles: metrics.emptyFilenames,
-      siteAssetFalsePositive: {
-        count: siteAssetFalsePositive.length,
-        urls: siteAssetFalsePositive,
-      },
+      siteAssetFalsePositive:
+        siteAssetFalsePositive === null
+          ? null
+          : { count: siteAssetFalsePositive.length, urls: siteAssetFalsePositive },
       gallerySourceUnavailable: gallery.officialTotal === null,
       mirrorGap:
         gallery.mirror === null

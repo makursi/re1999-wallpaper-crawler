@@ -15,6 +15,7 @@ import { z } from 'zod'
 
 import { wallpaperNameOf } from '../wallpaper-url.js'
 import type { GalleryList } from './gallery-source.js'
+import { officialNamesOf } from './gallery-source.js'
 
 export const GALLERY_STATE_VERSION = 1
 
@@ -55,19 +56,22 @@ export function mergeGalleryStats(
   runId: string,
   at: string,
 ): { state: GalleryState; stats: GalleryStats } {
-  const previousIds = new Set(previous?.ids ?? [])
-  const officialNames = new Set(list.entries.map(entry => wallpaperNameOf(entry.url)))
+  const previousIds = previous?.ids ?? []
+  const knownIds = new Set(previousIds)
+  const officialNames = officialNamesOf(list)
   const diskNames = diskFiles.filter(name => !name.startsWith('.'))
 
-  const newEntries =
-    previous === null ? [] : list.entries.filter(entry => !previousIds.has(entry.id))
+  const newEntries = previous === null ? [] : list.entries.filter(e => !knownIds.has(e.id))
   const missing = [...officialNames].filter(name => !diskNames.includes(name))
   const extra = diskNames.filter(name => !officialNames.has(name))
 
   return {
     state: {
       version: GALLERY_STATE_VERSION,
-      ids: list.entries.map(entry => entry.id).toSorted((a, b) => a - b),
+      // Union, never replace: a retired id that comes back must not read as new.
+      ids: [...new Set([...previousIds, ...list.entries.map(entry => entry.id)])].toSorted(
+        (a, b) => a - b,
+      ),
       updatedAt: at,
       runId,
     },

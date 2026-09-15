@@ -176,7 +176,14 @@ function describeRule(rule: SiteAssetRule): string {
       return rule.kind
     case 'filenameIn':
       return `${rule.kind}:${rule.values.join(',')}`
-    default:
+    case 'host':
+    case 'pathPrefix':
+    case 'filenamePrefix':
       return `${rule.kind}:${rule.value}`
+    default: {
+      // Same guard as matchesRule: a new kind must say how it prints.
+      const unhandled: never = rule
+      return unhandled
+    }
   }
 }

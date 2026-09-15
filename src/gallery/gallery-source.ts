@@ -8,10 +8,11 @@
 
 import { z } from 'zod'
 
+import { wallpaperNameOf } from '../wallpaper-url.js'
+
 export interface GalleryEntry {
   /** The gallery's own id for the entry; stable across re-encodes. */
   id: number
-  title: string | null
   url: string
 }
 
@@ -32,7 +33,8 @@ const payloadSchema = z.object({
     pageData: z.array(
       z.object({
         id: z.number().int(),
-        title: z.string().nullish(),
+        // The payload also carries `title`, which is null for 225 of the 1001
+        // entries and disagrees with the id for 625 of them. Not worth keeping.
         pictureUrl: z.string().min(1),
       }),
     ),
@@ -43,11 +45,10 @@ export interface GallerySourceOptions {
   endpoint: string
   fetchImpl?: typeof globalThis.fetch
   timeoutMs?: number
-  pageSize?: number
 }
 
 /** One request asks for the whole gallery; the site has never served more. */
-export const GALLERY_LIST_PAGE_SIZE = 2000
+const GALLERY_LIST_PAGE_SIZE = 2000
 
 const REQUEST_HEADERS = {
   'content-type': 'application/json',
@@ -63,14 +64,13 @@ export async function fetchGalleryList({
   endpoint,
   fetchImpl = globalThis.fetch,
   timeoutMs = 30_000,
-  pageSize = GALLERY_LIST_PAGE_SIZE,
 }: GallerySourceOptions): Promise<GalleryList> {
   let response: Response
   try {
     response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: REQUEST_HEADERS,
-      body: JSON.stringify({ current: 1, pageSize }),
+      body: JSON.stringify({ current: 1, pageSize: GALLERY_LIST_PAGE_SIZE }),
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
@@ -114,10 +114,24 @@ export function parseGalleryList(payload: unknown): GalleryList {
 
   return {
     total,
-    entries: pageData.map(entry => ({
-      id: entry.id,
-      title: entry.title ?? null,
-      url: entry.pictureUrl,
-    })),
+    entries: pageData.map(entry => ({ id: entry.id, url: entry.pictureUrl })),
   }
+}
+
+/** The names the Mirror check and the filter check both key on. */
+export function officialNamesOf(list: GalleryList): Set<string> {
+  return new Set(list.entries.map(entry => wallpaperNameOf(entry.url)))
+}
+
+/**
+ * The dropped URLs the list calls Wallpapers — a rule that swallowed one. `null`
+ * when the list was unavailable, because "not checked" is not "nothing wrong".
+ */
+export function falsePositivesAmong(
+  dropped: readonly string[],
+  list: GalleryList | null,
+): string[] | null {
+  if (list === null) return null
+  const officialNames = officialNamesOf(list)
+  return dropped.filter(url => officialNames.has(wallpaperNameOf(url)))
 }

@@ -342,6 +342,13 @@
   - `defects`：`siteAssetFalsePositive` 0、`gallerySourceUnavailable: false`、`mirrorGap` {missing:0,extra:0}、`discoveryLeak` 仍是良性的 `detail.html`。
   - **`discovery.coverage` = 0.4496**：单轮只覆盖官方清单的 45%，而接口是 100%/160ms——这就是 (C) 要的数据。
   - 状态文件 `images/.gallery-state.json` 落盘（9035 B，1001 个 id，6..1012）；旧的 `logs/gallery-state.json` 已删。
+  - **Run parity 对账（对 `2026-09-15T05-15-31`）**：`discovery` +`coverage`；`gallery` −`previousOfficialTotal`/`updatedAt`/`runId`、+`newFiles`/`mirror`；`defects` +`siteAssetFalsePositive`/`gallerySourceUnavailable`/`mirrorGap`；`download`/`failures`/`siteAssets` 键集合不变。即：除了声明过的契约变化，没有别的变化。
+- **双轴自审**（standards / spec 两个独立子 agent，提交后跑）报出 2 条 P1 + 6 条 P2，已全部处理：
+  - P1（spec）：“id 集合永不自动遗忘”没做到——`mergeGalleryStats` 直接用当前清单覆盖 `ids`。已改为与上一轮求并集，并加用例（下架再上架的条目不会被重复报成新增）。
+  - P1（spec）：Run parity 对账没进记录——上方已补。
+  - P2：`officialNamesOf()` 收掉 `main.ts` 与 `gallery-state.ts` 两处重复的名单集合；`falsePositivesAmong()` 把原本写在 `main.ts` 里、没有被测试覆盖的误杀判据提成纯函数 + 用例；清单不可用时 `siteAssetFalsePositive` 由 `0` 改 `null`（“没检查”不等于“没问题”，与 `mirrorGap` 一致）；`finishRun` 的三个捕获参数收成 `CaptureAudit`；`describeRule` 补 `never` 穷尽守卫（否则将来加 rule kind 会往 run_meta 里写 `kind:undefined`）；`GalleryEntry.title` 删除（1001 条里 225 条为 null、625 条与 id 不符，不可信）；未被消费的 `pageSize` 选项去掉；`.gitignore` 里 TRASH.md 的规则删除；CONTEXT/CONTEXT-MAP 里的“何时取清单”表述改正（只取一次，在 discovery 阶段）。
+  - 突变补测：把 id 集合改回覆盖、把误杀判据写死返回空数组 → 3 个用例精准变红，还原后全绿。
+  - 迁移准确性核验：`git show main:scripts/run-discovery.js` 里那 23 个图标名与 `filenameIn` 的值集合**逐条相同**（无多无少）。
 - 协议载荷复查：`scripts/run-discovery.js` 仍是裸 `async (page) => {...}` 表达式，`node --check` 通过、包一层括号能求值（前导分号坑的反证）。
 
 **教训**：

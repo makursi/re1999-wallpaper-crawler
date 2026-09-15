@@ -108,9 +108,16 @@ _Avoid_: image count, total images, 图片总数
 **Gallery state**:
 The persisted record of the entry ids previous Runs have seen
 (`images/.gallery-state.json`), which is what lets a Run report
-`newSinceLastRun`. It lives beside the Mirror it describes and is deleted with
-it.
+`newSinceLastRun`. Ids are never forgotten: the site can retire an entry and
+put it back, and forgetting it would report the re-appearance as new twice.
+It lives beside the Mirror it describes and is deleted with it.
 _Avoid_: cache, checkpoint
+
+**New since the last Run**:
+The entries whose id the previous Run's Gallery list did not carry — the answer
+to "did the site publish anything?". `null`, not `0`, on a first Run: there is
+nothing to compare against.
+_Avoid_: delta, growth, 新增
 
 **Mirror**:
 The local copy of the gallery — the Wallpaper files in `images/`.
@@ -219,7 +226,8 @@ which unmounts off-screen images and makes DOM counting unreliable.
    raw capture.
 6. Partition that capture with the Site asset filter (`src/wallpaper-url.ts`)
    — analytics pixels, site UI art, the page's own HTML — hand only Wallpapers
-   to Download, and check the drops against the Gallery list.
+   to Download, and check the drops against the Gallery list. That list is
+   fetched once, here, and reused for the Gallery state at the end of the Run.
 
 ### Download pipeline
 
@@ -228,8 +236,8 @@ which unmounts off-screen images and makes DOM counting unreliable.
    (Content-hash skip).
 3. On 403, retry once with full browser headers (403 retry).
 4. Summarize ok / skipped / failed + total size on disk, then refresh the
-   Gallery state: ask the Gallery list, compare it with the Mirror, and record
-   the ids for the next Run.
+   Gallery state from that same list: compare it with the Mirror and record the
+   ids for the next Run.
 
 ## Gotchas
 

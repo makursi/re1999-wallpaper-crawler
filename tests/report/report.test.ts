@@ -250,13 +250,15 @@ describe('buildRunReport', () => {
         firstRun: false,
         mirror: null,
       },
-      leakedUrls: [],
-      siteAssets: [],
-      siteAssetFalsePositive: [],
+      leakedUrls: ['https://re.bluepoch.com/home/detail.html'],
+      siteAssets,
+      siteAssetFalsePositive: null,
     })
     expect(report.gallery.officialTotal).toBeNull()
     expect(report.defects.gallerySourceUnavailable).toBe(true)
     expect(report.defects.mirrorGap).toBeNull()
+    // Not checked is not the same as checked-and-clean.
+    expect(report.defects.siteAssetFalsePositive).toBeNull()
   })
 
   it('flags emptyResult when nothing was found', () => {
