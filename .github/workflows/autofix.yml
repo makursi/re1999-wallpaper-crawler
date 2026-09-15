@@ -1,0 +1,36 @@
+name: autofix.ci
+
+on: [pull_request]
+
+# A newer push to the same ref makes a running job obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  autofix:
+    name: apply lint and format fixes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same setup as ci.yml: pnpm from `packageManager`, a Node.js runtime, and
+      # `pnpm install` — none of the steps below work without Node on PATH.
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          require-lockfile: true
+
+      # Fix what is mechanically fixable. The action below commits the result to
+      # the PR branch, so ci.yml's format and lint gates pass without the author
+      # having to run anything locally.
+      - name: Autofix
+        run: pnpm lint:fix && pnpm fmt
+
+      # Needs the autofix.ci GitHub App installed on this repository; without the
+      # App this step fails and every PR shows a red X.
+      - uses: autofix-ci/action@c5b2d67aa2274e7b5a18224e8171550871fc7e4a # v1.3.4

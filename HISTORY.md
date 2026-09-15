@@ -346,6 +346,6 @@
 - **过滤逻辑分两道**：`scripts/run-discovery.js` 的 `shouldKeep` 里还留着旧的「精确文件名」黑名单（约 25 个 UI 图标名），它是第一道、不可单测、丢弃量不进 `siteAssets`；第二道才是 `src/wallpaper-url.ts` 的结构化规则。合并成一道的代价是那些 URL 会重新计入 `combinedCount`（改变字段语义），留待单独一轮。
 - ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化，`scripts/run-discovery.js` 永久排除（见 Gotchas）。
 - ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
-- **`autofix.yml` 未接**：工作区惯例是 PR 上用 autofix.ci 自动修 lint/格式，但该 App 需先在仓上安装（`github.com/apps/autofix-ci`），否则 workflow 会给每个 PR 挂红叉。装完再补这个 workflow。
+- ~~**`autofix.yml` 未接**~~ **已接（2026-09-15 晚）**：`.github/workflows/autofix.yml` 在 PR 上跑 `pnpm lint:fix && pnpm fmt`，再由 `autofix-ci/action@v1.3.4` 把结果提交回 PR 分支（App 已由用户安装）。之所以手写而不是用 `sxzz/workflows` 的 autofix reusable：它的默认命令只有 `pnpm run lint --fix`（不含格式化），且与 `ci.yml` 的 setup 写法保持一致更好读。注意：机器人会往你的分支推提交，改完先 `git pull`，别用 `--force-with-lease` 把它的提交打掉。
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

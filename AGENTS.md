@@ -26,7 +26,10 @@ Then `pnpm install` for project dependencies.
 | Format | `pnpm fmt` / `pnpm fmt:check` (`oxfmt`) |
 
 CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck` and `test`
-on every PR and on pushes to `main`.
+on every PR and on pushes to `main`. `.github/workflows/autofix.yml` runs
+`pnpm lint:fix && pnpm fmt` on PRs and commits the result back to the branch, so
+a PR does not have to be formatted by hand — it needs the
+[autofix.ci App](https://github.com/apps/autofix-ci) installed on the repo.
 
 ## Git Conventions (every iteration)
 
