@@ -21,7 +21,7 @@ export interface SiteAssetRule {
 export const SITE_ASSET_RULES: readonly SiteAssetRule[] = [
   {
     kind: 'nonImage',
-    reason: 'not an image URL (the page\'s own HTML document)',
+    reason: "not an image URL (the page's own HTML document)",
   },
   {
     kind: 'host',
@@ -42,8 +42,7 @@ export const SITE_ASSET_RULES: readonly SiteAssetRule[] = [
 
 export function isImageUrl(url: string): boolean {
   const lower = url.toLowerCase()
-  if (lower.startsWith('data:') || lower.startsWith('blob:'))
-    return false
+  if (lower.startsWith('data:') || lower.startsWith('blob:')) return false
   const path = lower.split('?')[0].split('#')[0]
   return IMAGE_EXTENSIONS.some(ext => path.endsWith(ext))
 }
@@ -51,8 +50,7 @@ export function isImageUrl(url: string): boolean {
 function urlOf(url: string): URL | null {
   try {
     return new URL(url)
-  }
-  catch {
+  } catch {
     return null
   }
 }
@@ -63,8 +61,7 @@ function filenameOf(url: string): string {
   const raw = segments[segments.length - 1] ?? ''
   try {
     return decodeURIComponent(raw).toLowerCase()
-  }
-  catch {
+  } catch {
     return raw.toLowerCase()
   }
 }
@@ -76,7 +73,11 @@ function matchesRule(rule: SiteAssetRule, url: string): boolean {
     case 'host':
       return urlOf(url)?.host.toLowerCase() === rule.value
     case 'pathPrefix':
-      return urlOf(url)?.pathname.toLowerCase().startsWith(rule.value ?? '') ?? false
+      return (
+        urlOf(url)
+          ?.pathname.toLowerCase()
+          .startsWith(rule.value ?? '') ?? false
+      )
     case 'filenamePrefix':
       return filenameOf(url).startsWith(rule.value ?? '')
     default: {
@@ -91,8 +92,7 @@ function matchesRule(rule: SiteAssetRule, url: string): boolean {
 /** The rule that marks this URL as a Site asset, or `null` if it is a Wallpaper. */
 export function classifySiteAsset(url: string): SiteAssetRule | null {
   for (const rule of SITE_ASSET_RULES) {
-    if (matchesRule(rule, url))
-      return rule
+    if (matchesRule(rule, url)) return rule
   }
   return null
 }
@@ -101,21 +101,22 @@ export function isSiteAsset(url: string): boolean {
   return classifySiteAsset(url) !== null
 }
 
-export function splitWallpaperUrls(urls: readonly string[]): { wallpapers: string[], siteAssets: string[] } {
+export function splitWallpaperUrls(urls: readonly string[]): {
+  wallpapers: string[]
+  siteAssets: string[]
+} {
   const wallpapers: string[] = []
   const siteAssets: string[] = []
   for (const url of urls) {
-    if (isSiteAsset(url))
-      siteAssets.push(url)
-    else
-      wallpapers.push(url)
+    if (isSiteAsset(url)) siteAssets.push(url)
+    else wallpapers.push(url)
   }
   return { wallpapers, siteAssets }
 }
 
 /** Compact rule list for the `run_meta` config snapshot (config-drift detection). */
 export function describeSiteAssetRules(): string {
-  return SITE_ASSET_RULES
-    .map(rule => (rule.value !== undefined ? `${rule.kind}:${rule.value}` : rule.kind))
-    .join(' ')
+  return SITE_ASSET_RULES.map(rule =>
+    rule.value !== undefined ? `${rule.kind}:${rule.value}` : rule.kind,
+  ).join(' ')
 }

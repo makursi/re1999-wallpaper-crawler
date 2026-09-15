@@ -10,6 +10,7 @@
 // one Run, this is cross-Run memory. See docs/adr/0005.
 
 import * as fs from 'node:fs'
+
 import { IMAGE_EXTENSIONS } from '../wallpaper-url.js'
 
 export interface GalleryStats {
@@ -73,23 +74,22 @@ export function mergeGalleryStats(
 export function readGalleryStats(file: string): GalleryStats | null {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (typeof parsed !== 'object' || parsed === null)
-      return null
+    if (typeof parsed !== 'object' || parsed === null) return null
     const stored = parsed as Partial<GalleryStats>
     if (typeof stored.officialTotal !== 'number' || !Number.isFinite(stored.officialTotal))
       return null
     return {
       officialTotal: stored.officialTotal,
-      previousOfficialTotal: typeof stored.previousOfficialTotal === 'number'
-        ? stored.previousOfficialTotal
-        : stored.officialTotal,
+      previousOfficialTotal:
+        typeof stored.previousOfficialTotal === 'number'
+          ? stored.previousOfficialTotal
+          : stored.officialTotal,
       newSinceLastRun: typeof stored.newSinceLastRun === 'number' ? stored.newSinceLastRun : 0,
       firstRun: stored.firstRun === true,
       updatedAt: typeof stored.updatedAt === 'string' ? stored.updatedAt : '',
       runId: typeof stored.runId === 'string' ? stored.runId : '',
     }
-  }
-  catch {
+  } catch {
     return null
   }
 }

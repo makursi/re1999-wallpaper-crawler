@@ -23,9 +23,10 @@ Then `pnpm install` for project dependencies.
 | Tests | `pnpm test` (`vitest run`) |
 | Typecheck | `pnpm typecheck` (`tsc --noEmit`) |
 | Lint | `pnpm lint` (`oxlint --type-aware .`) |
+| Format | `pnpm fmt` / `pnpm fmt:check` (`oxfmt`) |
 
-CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck` and `test` on every PR
-and on pushes to `main`.
+CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck` and `test`
+on every PR and on pushes to `main`.
 
 ## Git Conventions (every iteration)
 
@@ -187,6 +188,41 @@ same-day `1.83.0`) rather than relaxing the policy.
 `ERR_PNPM_IGNORED_BUILDS`. pnpm 12 reads its settings from that file, **not**
 from a `pnpm` field in `package.json` (which it now warns about and ignores).
 
+### Git history is LF, the Windows worktree is CRLF
+
+The repository stores LF; `core.autocrlf=true` only makes Windows checkouts
+CRLF, and `.gitattributes` (`* text=auto eol=lf`) now pins the worktree to LF so
+the formatter, CI and the checkout agree.
+
+**Do not judge line endings from text output.** `git cat-file` runs the smudge
+filter when it prints a blob, so `git cat-file blob <sha> | grep -c $'\r'`
+reports CRLF for content that is stored as LF — and in this shell `grep -c $'\r'`
+silently degrades to counting *lines* (it returns the line count for both CRLF
+and LF input). Compare **sizes** instead:
+
+```sh
+sha=$(git rev-parse HEAD:src/main.ts)
+git cat-file --batch-check='%(objectsize)' <<< "$sha"   # vs wc -c on the file
+```
+
+A blob smaller than its file by roughly one byte per line is LF.
+
+### The run-code script is a protocol payload, not ordinary source
+
+`scripts/run-discovery.js` is read from disk and handed to
+`playwright-cli run-code --filename=…`, which evaluates it as
+`(\n<file contents>\n)(page);`. Its **exact** shape is therefore load-bearing:
+the file must stay a bare `async (page) => { … }` expression. Consequences:
+
+- It is excluded from both oxlint and oxfmt (`.oxlintrc.json`,
+  `.oxfmtrc.json`), because formatters insert a protective leading `;` before a
+  bare expression statement — `(;async (page) => …)(page)` is a
+  `SyntaxError: Unexpected token ';'`, and the whole crawl then discovers
+  nothing.
+- lint-staged calls both tools with `--no-error-on-unmatched-pattern`, so
+  committing a change to this file is not blocked by them having nothing to do.
+- Verify any edit by running the scraper, not just `node --check`.
+
 ### Git hooks live in `.git/hooks`, and `core.hooksPath` must stay unset
 
 `simple-git-hooks` writes `.git/hooks/*` from the `prepare` script. A leftover
@@ -210,11 +246,14 @@ first; see `HISTORY.md` › 开放问题.
   plus a handful of named rules. It replaced `@antfu/eslint-config` on
   2026-09-15 — see `HISTORY.md` for why, and for the rules deliberately kept
   (`eqeqeq` ignoring `!= null`, `import/no-unassigned-import` allowing
-  `dotenv/config`). `scripts/run-discovery.js` is the one deliberate exclusion:
-  it is browser-side JavaScript outside the tsconfig project.
+  `dotenv/config`). `scripts/run-discovery.js` is the one deliberate exclusion,
+  for the reason above.
+- Format: **oxfmt** (`pnpm fmt` → `oxfmt`, `pnpm fmt:check` gates CI), configured
+  in `.oxfmtrc.json`: no semicolons, single quotes, no parens on a sole arrow
+  parameter, 100 columns, LF, sorted imports. Markdown is not formatted yet, and
+  neither is the run-code payload. Formatting is not a matter of taste here —
+  run `pnpm fmt` instead of hand-aligning.
 - TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
-- Formatting: semicolons off, single quotes, 2-space indent — hand-maintained
-  for now; no formatter is wired up yet (`.editorconfig` states the editor
-  defaults). **Line endings are unsettled**: git history stores CRLF, so a
-  formatter (which writes LF) must not be adopted before that is decided — see
-  `HISTORY.md` › 开放问题.
+- Formatting: semicolons off, single quotes, 2-space indent, LF — enforced by
+  oxfmt, not hand-maintained (`.editorconfig` still states the editor defaults
+  for files outside its reach).

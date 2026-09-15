@@ -1,10 +1,12 @@
-import type { Logger } from 'pino'
-import type { DownloadOutcome } from '../report/report.js'
 import { Buffer } from 'node:buffer'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+
+import type { Logger } from 'pino'
 import { fetch } from 'undici'
+
 import { BASE_ORIGIN, PAGE_URL, USER_AGENT } from '../config.js'
+import type { DownloadOutcome } from '../report/report.js'
 import { IMAGE_EXTENSIONS } from '../wallpaper-url.js'
 
 // ── error carrying an HTTP status ──────────────────────────────────
@@ -19,16 +21,13 @@ export class HttpError extends Error {
 
 let cachedCookieHeader = ''
 
-export function extractCookies(
-  pwc: (args: string, timeoutSec?: number) => string,
-): string {
+export function extractCookies(pwc: (args: string, timeoutSec?: number) => string): string {
   try {
     const raw = pwc('cookie-list', 15)
     const cookies: string[] = []
     for (const line of raw.split('\n')) {
       const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('[') || trimmed.startsWith('─'))
-        continue
+      if (!trimmed || trimmed.startsWith('[') || trimmed.startsWith('─')) continue
       const parts = trimmed.split(/\s+/)
       if (parts.length >= 2) {
         cookies.push(`${parts[0]}=${parts[1]}`)
@@ -36,8 +35,7 @@ export function extractCookies(
     }
     cachedCookieHeader = cookies.join('; ')
     return cachedCookieHeader
-  }
-  catch {
+  } catch {
     return ''
   }
 }
@@ -54,14 +52,12 @@ export function getFilenameFromUrl(url: string): string {
   let raw = segments[segments.length - 1] || 'image'
   try {
     raw = decodeURIComponent(raw)
-  }
-  catch {}
+  } catch {}
 
   const dotIdx = raw.lastIndexOf('.')
   if (dotIdx !== -1) {
     const ext = raw.substring(dotIdx).toLowerCase()
-    if (IMAGE_EXTENSIONS.includes(ext))
-      return raw
+    if (IMAGE_EXTENSIONS.includes(ext)) return raw
   }
   // No recognized extension — leave as-is
   return raw
@@ -77,21 +73,19 @@ export async function downloadFile(
   url: string,
   dest: string,
   referer: string,
-): Promise<{ status: number, retried: boolean }> {
+): Promise<{ status: number; retried: boolean }> {
   const cookieHeader = getCookieHeader()
 
-  async function doRequest(retry: boolean): Promise<{ status: number, retried: boolean }> {
+  async function doRequest(retry: boolean): Promise<{ status: number; retried: boolean }> {
     const headers: Record<string, string> = {
       'User-Agent': USER_AGENT,
-      'Referer': referer,
+      Referer: referer,
     }
-    if (cookieHeader)
-      headers.Cookie = cookieHeader
+    if (cookieHeader) headers.Cookie = cookieHeader
 
     if (retry) {
       Object.assign(headers, {
-        'Accept':
-          'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         'Sec-Fetch-Dest': 'image',
         'Sec-Fetch-Mode': 'no-cors',
@@ -145,8 +139,7 @@ export async function downloadOne(
       durationMs: Date.now() - start,
       bytes,
     }
-  }
-  catch (err) {
+  } catch (err) {
     const status = err instanceof HttpError ? err.status : undefined
     return {
       kind: 'failed',
@@ -171,12 +164,17 @@ export async function downloadBatch(
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize)
     const results = await Promise.all(
-      batch.map(async (url) => {
+      batch.map(async url => {
         const outcome = await downloadOne(url, destDir, logger)
         switch (outcome.kind) {
           case 'ok':
             logger.debug(
-              { url: outcome.url, status: outcome.status, retried: outcome.retried, bytes: outcome.bytes },
+              {
+                url: outcome.url,
+                status: outcome.status,
+                retried: outcome.retried,
+                bytes: outcome.bytes,
+              },
               `[OK] ${outcome.filename}`,
             )
             break
@@ -185,7 +183,12 @@ export async function downloadBatch(
             break
           case 'failed':
             logger.warn(
-              { url: outcome.url, status: outcome.status, retried: outcome.retried, reason: outcome.reason },
+              {
+                url: outcome.url,
+                status: outcome.status,
+                retried: outcome.retried,
+                reason: outcome.reason,
+              },
               `[FAIL] ${outcome.filename}`,
             )
             break

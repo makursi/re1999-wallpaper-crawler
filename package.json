@@ -1,10 +1,10 @@
 {
   "name": "re1999-wallpaper-crawler",
-  "type": "module",
   "version": "1.0.0",
   "private": true,
   "description": "Wallpaper scraper for Bluepoch's official gallery (re.bluepoch.com)",
   "license": "ISC",
+  "type": "module",
   "scripts": {
     "save-wallpapers": "tsx src/main.ts",
     "lint": "oxlint --type-aware .",
@@ -12,14 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
     "prepare": "simple-git-hooks"
-  },
-  "simple-git-hooks": {
-    "pre-commit": "node scripts/check-branch.mjs && pnpm exec lint-staged",
-    "pre-push": "pnpm typecheck && pnpm test"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,mjs,cjs,js}": "oxlint --fix --deny-warnings"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
@@ -31,12 +26,21 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "lint-staged": "^17.5.1",
+    "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
     "oxlint-tsgolint": "^7.0.2001",
     "simple-git-hooks": "^2.14.0",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "node scripts/check-branch.mjs && pnpm exec lint-staged",
+    "pre-push": "pnpm typecheck && pnpm test"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs,cjs,js}": "oxlint --fix --deny-warnings --no-error-on-unmatched-pattern",
+    "*.{ts,mjs,cjs,js,json}": "oxfmt --no-error-on-unmatched-pattern"
   },
   "engines": {
     "node": ">=22.22.1"

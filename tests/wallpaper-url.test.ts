@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import {
   classifySiteAsset,
   describeSiteAssetRules,
@@ -7,7 +8,8 @@ import {
   splitWallpaperUrls,
 } from '../src/wallpaper-url.js'
 
-const WALLPAPER = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE/20260907/1012.%E7%AB%96%E7%89%88-2560x1440_5e7b2726dd044c39a526651bbebe75e6.jpg'
+const WALLPAPER =
+  'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE/20260907/1012.%E7%AB%96%E7%89%88-2560x1440_5e7b2726dd044c39a526651bbebe75e6.jpg'
 
 describe('isImageUrl', () => {
   it('accepts image extensions, with query strings and hashes', () => {
@@ -44,12 +46,17 @@ describe('classifySiteAsset', () => {
 
   it('marks site UI art by path prefix', () => {
     expect(classifySiteAsset('https://re.bluepoch.com/home/img/BG2.png')?.kind).toBe('pathPrefix')
-    expect(classifySiteAsset('https://re.bluepoch.com/home/img/music/1.png')?.reason).toContain('UI art')
-    expect(classifySiteAsset('https://re.bluepoch.com/home/img/music/Vinyl%20record.png')?.kind).toBe('pathPrefix')
+    expect(classifySiteAsset('https://re.bluepoch.com/home/img/music/1.png')?.reason).toContain(
+      'UI art',
+    )
+    expect(
+      classifySiteAsset('https://re.bluepoch.com/home/img/music/Vinyl%20record.png')?.kind,
+    ).toBe('pathPrefix')
   })
 
   it('marks the site icon by filename prefix', () => {
-    const icon = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/GAME_PIC/20230327/icon-192_0e1a4a1085404e98a024506fc4b7c2f6.png'
+    const icon =
+      'https://gamecms-res.sl916.com/official_website_resource/50001/4/GAME_PIC/20230327/icon-192_0e1a4a1085404e98a024506fc4b7c2f6.png'
     expect(classifySiteAsset(icon)?.kind).toBe('filenamePrefix')
   })
 

@@ -1,9 +1,14 @@
+import { describe, expect, it } from 'vitest'
+
 import type { GalleryStats } from '../../src/report/gallery.js'
 import type { DiscoveryStats, DownloadOutcome, RunMeta } from '../../src/report/report.js'
-import { describe, expect, it } from 'vitest'
 import { buildRunReport, classifyOutcomes, detectLeaks } from '../../src/report/report.js'
 
-function ok(url: string, filename: string, over: Partial<{ status: number, retried: boolean, durationMs: number, bytes: number }> = {}): DownloadOutcome {
+function ok(
+  url: string,
+  filename: string,
+  over: Partial<{ status: number; retried: boolean; durationMs: number; bytes: number }> = {},
+): DownloadOutcome {
   return {
     kind: 'ok',
     url,
@@ -35,8 +40,22 @@ describe('classifyOutcomes', () => {
       ok('https://cdn/b.jpg', 'b.jpg', { durationMs: 800, bytes: 1024 }),
       ok('https://cdn/empty.jpg', 'empty.jpg', { durationMs: 300, bytes: 0 }),
       { kind: 'skipped', url: 'https://cdn/exists.jpg', filename: 'exists.jpg' },
-      { kind: 'failed', url: 'https://cdn/missing.jpg', filename: 'missing.jpg', status: 404, reason: 'HTTP 404', retried: false },
-      { kind: 'failed', url: 'https://cdn/blocked.jpg', filename: 'blocked.jpg', status: 403, reason: 'HTTP 403', retried: true },
+      {
+        kind: 'failed',
+        url: 'https://cdn/missing.jpg',
+        filename: 'missing.jpg',
+        status: 404,
+        reason: 'HTTP 404',
+        retried: false,
+      },
+      {
+        kind: 'failed',
+        url: 'https://cdn/blocked.jpg',
+        filename: 'blocked.jpg',
+        status: 403,
+        reason: 'HTTP 403',
+        retried: true,
+      },
     ]
     const m = classifyOutcomes(outcomes)
 
@@ -54,7 +73,10 @@ describe('classifyOutcomes', () => {
     expect(m.totalBytes).toBe(3072)
     expect(m.avgDownloadMs).toBeCloseTo(766.67, 1)
     expect(m.statusHistogram).toEqual({ 200: 3, 404: 1, 403: 1 })
-    expect(m.failureGroups).toEqual([{ status: '403', count: 1 }, { status: '404', count: 1 }])
+    expect(m.failureGroups).toEqual([
+      { status: '403', count: 1 },
+      { status: '404', count: 1 },
+    ])
     expect(m.failures).toEqual([
       { url: 'https://cdn/missing.jpg', status: 404, reason: 'HTTP 404', retried: false },
       { url: 'https://cdn/blocked.jpg', status: 403, reason: 'HTTP 403', retried: true },
@@ -97,13 +119,16 @@ describe('detectLeaks', () => {
   })
 
   it('flags data: and blob: URIs as leaks', () => {
-    expect(detectLeaks(['data:image/png;base64,AAA', 'blob:https://x/y', 'https://cdn.com/ok.jpg']))
-      .toEqual(['data:image/png;base64,AAA', 'blob:https://x/y'])
+    expect(
+      detectLeaks(['data:image/png;base64,AAA', 'blob:https://x/y', 'https://cdn.com/ok.jpg']),
+    ).toEqual(['data:image/png;base64,AAA', 'blob:https://x/y'])
   })
 
   it('flags extension-less and directory URLs', () => {
-    expect(detectLeaks(['https://cdn.com/somepath', 'https://cdn.com/folder/']))
-      .toEqual(['https://cdn.com/somepath', 'https://cdn.com/folder/'])
+    expect(detectLeaks(['https://cdn.com/somepath', 'https://cdn.com/folder/'])).toEqual([
+      'https://cdn.com/somepath',
+      'https://cdn.com/folder/',
+    ])
   })
 })
 
@@ -124,8 +149,23 @@ describe('buildRunReport', () => {
     discoveryDurationMs: 600000,
   }
   const outcomes: DownloadOutcome[] = [
-    { kind: 'ok', url: 'https://cdn/a.jpg', filename: 'a.jpg', status: 200, retried: true, durationMs: 1000, bytes: 0 },
-    { kind: 'failed', url: 'https://cdn/b.jpg', filename: 'b.jpg', status: 403, reason: 'HTTP 403', retried: true },
+    {
+      kind: 'ok',
+      url: 'https://cdn/a.jpg',
+      filename: 'a.jpg',
+      status: 200,
+      retried: true,
+      durationMs: 1000,
+      bytes: 0,
+    },
+    {
+      kind: 'failed',
+      url: 'https://cdn/b.jpg',
+      filename: 'b.jpg',
+      status: 403,
+      reason: 'HTTP 403',
+      retried: true,
+    },
   ]
   const metrics = classifyOutcomes(outcomes)
   const gallery: GalleryStats = {
@@ -142,11 +182,13 @@ describe('buildRunReport', () => {
   ]
 
   it('computes duration and passes through discovery, download and gallery metrics', () => {
-    const report = buildRunReport(
-      meta,
-      '2026-08-06T10:05:30.500Z',
-      { discovery, metrics, gallery, leakedUrls: [], siteAssets: [] },
-    )
+    const report = buildRunReport(meta, '2026-08-06T10:05:30.500Z', {
+      discovery,
+      metrics,
+      gallery,
+      leakedUrls: [],
+      siteAssets: [],
+    })
     expect(report.type).toBe('run_report')
     expect(report.runId).toBe('2026-08-06T10-00-00')
     expect(report.durationMs).toBe(330500)
@@ -158,26 +200,24 @@ describe('buildRunReport', () => {
   })
 
   it('records the filtered site assets so the capture is auditable', () => {
-    const report = buildRunReport(
-      meta,
-      '2026-08-06T10:05:30.500Z',
-      { discovery, metrics, gallery, leakedUrls: [], siteAssets },
-    )
+    const report = buildRunReport(meta, '2026-08-06T10:05:30.500Z', {
+      discovery,
+      metrics,
+      gallery,
+      leakedUrls: [],
+      siteAssets,
+    })
     expect(report.siteAssets).toEqual({ count: 2, urls: siteAssets })
   })
 
   it('derives defects from discovery, metrics and leaked URLs', () => {
-    const report = buildRunReport(
-      meta,
-      '2026-08-06T10:05:30.500Z',
-      {
-        discovery,
-        metrics,
-        gallery,
-        leakedUrls: ['https://re.bluepoch.com/home/detail.html'],
-        siteAssets,
-      },
-    )
+    const report = buildRunReport(meta, '2026-08-06T10:05:30.500Z', {
+      discovery,
+      metrics,
+      gallery,
+      leakedUrls: ['https://re.bluepoch.com/home/detail.html'],
+      siteAssets,
+    })
     expect(report.defects).toEqual({
       discoveryLeak: { count: 1, urls: ['https://re.bluepoch.com/home/detail.html'] },
       nonConverged: true,
