@@ -214,11 +214,18 @@ A blob smaller than its file by roughly one byte per line is LF.
 `(\n<file contents>\n)(page);`. Its **exact** shape is therefore load-bearing:
 the file must stay a bare `async (page) => { … }` expression. Consequences:
 
-- It is excluded from both oxlint and oxfmt (`.oxlintrc.json`,
-  `.oxfmtrc.json`), because formatters insert a protective leading `;` before a
-  bare expression statement — `(;async (page) => …)(page)` is a
-  `SyntaxError: Unexpected token ';'`, and the whole crawl then discovers
-  nothing.
+- It is excluded from **oxfmt** (`.oxfmtrc.json`): the formatter inserts a
+  protective leading `;` before a bare expression statement, and
+  `(;async (page) => …)(page)` is a `SyntaxError: Unexpected token ';'` — the
+  whole crawl then discovers nothing. Proven against a live session; do not
+  re-try this by "just formatting it once".
+- It is excluded from **oxlint** (`.oxlintrc.json`) as well, and not for a style
+  reason: the file *is* a bare expression statement, so `no-unused-expressions`
+  fires on line 1 as an unfixable error (measured: read-only lint reports 1
+  error + 5 warnings, `oxlint --fix` changes nothing and still exits 1). Since
+  `lint-staged` runs `--deny-warnings`, that would block every commit touching
+  the file, and silencing it would need either a disable comment or a rule
+exception — neither worth it for a file no tool may rewrite anyway.
 - lint-staged calls both tools with `--no-error-on-unmatched-pattern`, so
   committing a change to this file is not blocked by them having nothing to do.
 - Verify any edit by running the scraper, not just `node --check`.
@@ -230,14 +237,6 @@ the file must stay a bare `async (page) => { … }` expression. Consequences:
 deleted directory and makes git skip hooks **silently** — clear it with
 `git config --unset core.hooksPath`. Verify the hooks actually fire by trying a
 commit on `main`: it must be refused.
-
-### Git history stores CRLF
-
-`git cat-file blob <sha>` shows the committed blobs of `.ts` files carry CRLF
-(`git ls-files --eol` reports `i/lf` only because the attributes normalize the
-view). Nothing in the current toolchain cares, but any tool that *writes* LF —
-oxfmt, a line-ending normalizer — will show a repo-wide diff. Settle the policy
-first; see `HISTORY.md` › 开放问题.
 
 ## Code style
 
