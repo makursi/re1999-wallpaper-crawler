@@ -26,10 +26,23 @@ Then `npm install` for project dependencies.
 
 ## Git Conventions (every iteration)
 
-All work lands on `main` only through a merged PR. Every iteration ships via
-this exact flow, in order:
+All work lands on `main` only through a merged PR. **Never commit on `main`
+(or `master`), and never touch a file before the branch exists** — the first
+action of every iteration is step 1, not an edit.
+
+This is enforced, not just asked: `.githooks/pre-commit` refuses a commit when
+HEAD is on `main`/`master` or detached. Activate it in a fresh clone with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`git commit --no-verify` bypasses it — if you ever use it, say why in the PR.
+
+Every iteration ships via this exact flow, in order:
 
 1. `git checkout -b <type>/<short-slug>` — type: `feat` / `fix` / `refactor` / `docs` / `chore`
+   — **before** editing anything
 2. Commit in English, conventional style (never Chinese in commit messages)
 3. `git push -u origin <branch>`
 4. `gh pr create --base main` (title = commit subject), then after review:
