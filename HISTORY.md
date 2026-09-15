@@ -359,6 +359,34 @@
 
 ---
 
+### 2026-09-15 深夜 — 审计轨迹改为主线程同步写（logger.ts / ADR 0007）
+
+**触因**：`2026-09-15T09-36-50` 那轮跑完退 0，JSONL 却只有 48 条、**没有 `run_report`**（末行是 17:40:57.770 的 `Official list: 1001 entries`），而 `images/.gallery-state.json` 的 `updatedAt`（17:41:03.118Z）证明它跑到了 step 6，磁盘与官方清单也逐条对得上。根因在 `src/logger.ts`：**两个 target 都放在 pino transport（worker 线程）里**，worker 一旦停摆，主线程继续往死通道里写、退出码仍是 0。worker 为什么停摆**始终未查明**。
+
+**决策**（grill 两轮，第一轮 8 题 + 第二轮 6 题，全部按推荐）：
+- **文件 sink 移出 worker**：`pino.destination({ dest, sync: true })` + `pino.multistream`，`pino-pretty` 也从 transport 改成主线程流。全仓只有 logger 用 worker（`src/` 里除 `logger.ts` 外只有 `download.ts` 引 `Logger` 类型），所以修完**进程里不再有 thread-stream**——不是「缓解」，是**消除该类故障**。否决「保留 transport + `logger.flush()`」：worker 已死则无从 flush，只能缩短窗口
+- **文件 sink 保持更低的 level（`debug`）**：pino 的 multistream 是裸循环、逐流 `stream.write()` 且**无 try/catch**（`node_modules/pino/lib/multistream.js`），而 `add()` 会把流按 level 排序（`compareByLevel`）——**构造顺序是装饰不是机制**，真正让 Run log 先写的是它 level 最低；把文件 level 提到控制台之上就会反过来。控制台流抛异常会吃掉本该给文件的那条记录
+- **不加 `fsync`**：本类故障是进程/worker 停摆，`sync: true`（写进内核缓冲）已覆盖；`fsync: true` 多防的是断电，而本轮 269 条记录每条都要付一次真 fsync。留给「断电也不能丢」的未来需求
+- **不加事后回读自检**：sync 写失败会在调用点抛（实测：对只读 fd 写 → `EBADF` 从 `log.info()` 抛出），`main().catch` 已经会 `Fatal:` + 非零退出；回读只是在验证 pino 自身
+- **不加测试缝**：`createLogger(logDir)` 签名不动（改签名会连带 `main.ts` 三处 `ReturnType<typeof createLogger>`），测试只打在「文件已落盘」这个可观测 seam 上
+- **词表与文档**：CONTEXT.md 新增 **`Run log`**（Diagnostics 里一直缺「装 `run_meta`/`run_report` 的那个文件」这条词，而 `AGENTS.md`/`SKILL.md` 已在用 `the log tail`/`audit trail`/`log defect` 三个非正式说法）；ADR 0007 记录决策 + 否决项 + 事故数字 + 「根因未知但已被结构性排除」；`AGENTS.md` 加 Gotcha、架构树与测试树更新；`SKILL.md` 的「没有 `run_report`」陷阱**保留但改掉因果**（进程被杀一样会缺，操作步骤不变）
+
+**验证**：
+- TDD 先红后绿：`tests/logger.test.ts` 三个用例——①记录在 `logger.x()` 返回时就已落盘；②文件仍是裸 JSONL（一行一个带 pino 信封的 JSON 对象，ADR 0002 的契约）；③debug 记录同样进 Run log。**红得很彻底**：旧 transport 实现下连日志文件都还没建（读取报「wrote no Run log」），即「文件是否存在」本身都曾取决于 worker
+- **突变测试有牙**：文件流 level `debug`→`info` → 只有③红；文件流换成 pretty 流 → ②③红；`sync: true`→`false` → ①红
+- 四件套全绿：`pnpm fmt:check` / `lint`（`--deny-warnings` 0/0）/ `typecheck` / `test`（53 passed，基线 50 + 新增 3）
+- **真跑**（`2026-09-15T10-01-39`，262s = `durationMs` 261553，10:01:39.841 → 10:06:01.394）：`run_report` **存在**，JSONL **269 条**（对照丢失那轮的 48 条），且尾部完整——`4. Extracting cookies...` 之后的下载记录、汇总与报告全部落盘，即「活过了最长的 `execSync` 段」；`converged: true`、6 轮稳定、`combinedCount` 214、`siteAssets` 34、`discovery.coverage` 0.1798；`gallery.officialTotal` 1001 / `newSinceLastRun` 0 / `firstRun` false / `mirror` {missing 0, extra 0}；download 180 全 skip / 0 failed（`successRate: 0` 是全 skip 语义）；`defects` 仅良性 `discoveryLeak`（页面自身 `detail.html`，接受不重跑）；磁盘仍 1001 个文件，状态文件 `runId` = 该轮
+- **Run parity（对 `2026-09-15T08-48-00`，同代基线）**：`run_report` 的顶层 / `discovery` / `download` / `gallery` / `defects` / `siteAssets` / `failures` 键集合**逐字一致**，`run_meta` 配置快照逐字段相同（无配置漂移）。对 `2026-09-15T05-15-31` 的差异恰好是 ADR 0006 已声明的契约变化（`discovery`+`coverage`、`gallery`−`previousOfficialTotal`/`updatedAt`/`runId` +`newFiles`/`mirror`、`defects` +3 键），与本次改动无关
+
+**教训**：
+- **「报告缺失」的原话把未知根因写成了已知机制**：文档当时写「pino transport 的写侧可以停摆」，这句话本身没错，但它让人以为根因已明。修完必须把因果那半句一并改掉，否则下一个人会照它去查一个已经被拆掉的 worker
+- **排错先分清「Run 失败」与「日志失败」**：退出码无法区分二者，`images/.gallery-state.json` 的 `runId`/`updatedAt` 是当时唯一能分开它们的独立证据（`SKILL.md` 的操作步骤因此保留）
+- **测试只能打在你真能观察到的那个 seam 上**：pino-pretty 13 的「流」是直接写 **fd 1**（`buildSafeSonicBoom({ dest: opts.destination || 1 })`），**不经过 `process.stdout.write`**，所以「控制台只出 info+」这一半在单测里根本观察不到——原计划用 `vi.spyOn(process.stdout, 'write')` 是错的（跑出来是空数组）。改成「Run log 是裸 JSONL」既在同一 seam 上，又守住了 ADR 0002 的契约，比原来那条还有价值
+- **同步写的失败是响的，这件事值得实测**：sonic-boom sync 路径把 `fs.writeSync` 的失败走 `emit('error')`，而 `buildSafeSonicBoom` 对非 EPIPE 无监听者时重新抛出 ⇒ 错误直接在 `logger.x()` 调用点抛出。所以「fail loudly」是**免费**的，不需要额外写错误处理
+- **「为什么这样写」的断言必须能被一行源码证实**：我原先在注释/AGENTS.md/ADR 里都写「文件流排在 `multistream` 第一位」，而 pino 的 `add()` 是 `streams.unshift(dest_); streams.sort(compareByLevel)`——构造顺序根本不起作用，真正起作用的是文件 sink 的 level 更低。这是**自审（standards 轴）拿源码直接推翻**的：机制类断言不能凭直觉写，写完要去看那一行
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -385,6 +413,7 @@
 | 结构化「画廊家族」判据（`/PICTURE/` + 数字开头） | 有权威清单后属于多余的猜测；判据越少越不会自己出错 | 2026-09-15 |
 | 只用接口取总数、其余照旧 | 头号数字诚实了，delta 还是错的 | 2026-09-15 |
 | 在 Discovery 的网络捕获里收 `application/json` 清单 | 把权威数字绑在一次未必发生的渲染上，且一个捕获里混两种 content-type | 2026-09-15 |
+| 把 Run log 的文件 target 留在 pino transport（worker 线程），只补 `logger.flush()` + error handler | `2026-09-15T09-36-50` 那轮 worker 停摆后主线程静默续跑、退 0 且丢光 `run_report`；`flush()` 只能缩窗，已死的 worker 无从 flush | ADR 0007 |
 
 ## 验证规范（所有迭代通用）
 
@@ -404,5 +433,5 @@
 - ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
 - ~~**`autofix.yml` 未接**~~ **已接（2026-09-15 晚）**：`.github/workflows/autofix.yml` 在 PR 上跑 `pnpm lint:fix && pnpm fmt`，再由 `autofix-ci/action@v1.3.4` 把结果提交回 PR 分支（App 已由用户安装）。之所以手写而不是用 `sxzz/workflows` 的 autofix reusable：它的默认命令只有 `pnpm run lint --fix`（不含格式化），且与 `ci.yml` 的 setup 写法保持一致更好读。注意：机器人会往你的分支推提交，改完先 `git pull`，别用 `--force-with-lease` 把它的提交打掉。
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
-- **跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**：2026-09-15 的 `2026-09-15T09-36-50` 那轮就是这样——`images/.gallery-state.json` 的 `runId` 证明它跑到了 step 6，但 17:40:57 之后的所有日志记录（`run_report`、汇总、下载 debug 行）一个字都没落盘，磁盘与官方清单却完全对得上（`missingFromDisk` 0 / `extraOnDisk` 0 / 新增 0）。根因在 `src/logger.ts`：它把**两个 target 都放在 pino transport（worker 线程）**里，worker 一旦停摆，主线程会**静默**继续、退出码仍是 0，审计轨迹随之消失。候选修法：文件的 target 换成不经 worker 的同步 destination（`pino.destination({ dest: logFile, sync: true })`，配合 `pino.multistream` 把 pretty 那条留给控制台），或在退出前显式 `logger.flush()`；两者都需要一次真跑验证「报告一定落盘」。在那之前，`SKILL.md` 已把「没有 `run_report`」写成独立陷阱：先看状态文件的 `runId`/`updatedAt` 分清「跑完了但日志丢了」与「根本没跑到」，再用官方清单独立核对结果。
+- ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

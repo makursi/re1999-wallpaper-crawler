@@ -167,6 +167,13 @@ One invocation of the whole scraper, from session clear through download
 summary, producing one JSONL log and one Run report.
 _Avoid_: execution, session run
 
+**Run log**:
+The one JSONL file a Run writes, from its first `run_meta` record to its
+`run_report`. It is that Run's audit trail, so the Run is only verifiable
+through it: a Run log that stops before `run_report` is a defect in the log,
+**not** evidence that the Run failed. See docs/adr/0007.
+_Avoid_: log file, log output, 日志
+
 **Run 稳定性 (Run stability)**:
 The degree to which a single Run completes both pipelines and produces a
 trustworthy outcome, measured by: discovery convergence, download success
