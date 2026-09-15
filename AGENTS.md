@@ -13,16 +13,19 @@ npm install -g @playwright/cli
 npx playwright-cli install
 ```
 
-Then `npm install` for project dependencies.
+Then `pnpm install` for project dependencies.
 
 ## Commands
 
 | Task | Command |
 |------|---------|
-| Scrape wallpapers | `npm run save-wallpapers` (`tsx src/main.ts`) |
-| Tests | `npm test` (`vitest run`) |
-| Typecheck | `npx tsc --noEmit` |
-| Lint | `npx eslint .` |
+| Scrape wallpapers | `pnpm save-wallpapers` (`tsx src/main.ts`) |
+| Tests | `pnpm test` (`vitest run`) |
+| Typecheck | `pnpm typecheck` (`tsc --noEmit`) |
+| Lint | `pnpm lint` (`oxlint --type-aware .`) |
+
+CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck` and `test` on every PR
+and on pushes to `main`.
 
 ## Git Conventions (every iteration)
 
@@ -30,14 +33,16 @@ All work lands on `main` only through a merged PR. **Never commit on `main`
 (or `master`), and never touch a file before the branch exists** — the first
 action of every iteration is step 1, not an edit.
 
-This is enforced, not just asked: `.githooks/pre-commit` refuses a commit when
-HEAD is on `main`/`master` or detached. Activate it in a fresh clone with:
-
-```sh
-git config core.hooksPath .githooks
-```
+This is enforced, not just asked: `simple-git-hooks` (configured in
+`package.json`) runs `scripts/check-branch.mjs` on pre-commit, which refuses a
+commit when HEAD is on `main`/`master` or detached, and then `lint-staged`
+(`oxlint --fix --deny-warnings` on the staged files). The `prepare` script
+installs the hooks — `pnpm install` runs it, and `pnpm prepare` re-runs it.
 
 `git commit --no-verify` bypasses it — if you ever use it, say why in the PR.
+
+Pre-push runs `pnpm typecheck && pnpm test`; that is a **subset** of CI, which
+also runs `pnpm lint`. Push only after all three pass.
 
 Every iteration ships via this exact flow, in order:
 
@@ -134,7 +139,8 @@ tests/
     ├── report.test.ts
     └── gallery.test.ts
 scripts/
-└── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
+├── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
+└── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ```
 
 Tests mirror `src/` under `tests/` (`src/report/report.ts` → `tests/report/report.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in `src/` never runs.
@@ -167,8 +173,47 @@ The target site renders different layouts based on viewport. The Playwright conf
 
 Download first attempt uses cookies + UA + Referer. If 403, retries with full browser headers (`Sec-Fetch-Dest`, `Sec-Fetch-Mode`, `Sec-Fetch-Site`, `Accept`).
 
+### pnpm 12 refuses just-published versions
+
+`pnpm install` fails with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` when the
+lockfile names a version published within the last 24h — a supply-chain guard
+pnpm 12 applies by default. Pin the previous release (`oxlint@1.82.0`, not the
+same-day `1.83.0`) rather than relaxing the policy.
+
+### Build scripts need an allow-list
+
+`pnpm-workspace.yaml` carries the `allowBuilds` list (`esbuild`,
+`simple-git-hooks`). Without it `pnpm install` exits non-zero with
+`ERR_PNPM_IGNORED_BUILDS`. pnpm 12 reads its settings from that file, **not**
+from a `pnpm` field in `package.json` (which it now warns about and ignores).
+
+### Git hooks live in `.git/hooks`, and `core.hooksPath` must stay unset
+
+`simple-git-hooks` writes `.git/hooks/*` from the `prepare` script. A leftover
+`git config core.hooksPath .githooks` (the removed shell-hook setup) points at a
+deleted directory and makes git skip hooks **silently** — clear it with
+`git config --unset core.hooksPath`. Verify the hooks actually fire by trying a
+commit on `main`: it must be refused.
+
+### Git history stores CRLF
+
+`git cat-file blob <sha>` shows the committed blobs of `.ts` files carry CRLF
+(`git ls-files --eol` reports `i/lf` only because the attributes normalize the
+view). Nothing in the current toolchain cares, but any tool that *writes* LF —
+oxfmt, a line-ending normalizer — will show a repo-wide diff. Settle the policy
+first; see `HISTORY.md` › 开放问题.
+
 ## Code style
 
-- ESLint: `@antfu/eslint-config` (single quotes, no semicolons, 2-space indent)
+- Lint: **oxlint** (`pnpm lint` → `oxlint --type-aware .`), configured in
+  `.oxlintrc.json`: the `correctness` category (error) and `suspicious` (warn),
+  plus a handful of named rules. It replaced `@antfu/eslint-config` on
+  2026-09-15 — see `HISTORY.md` for why, and for the rules deliberately kept
+  (`eqeqeq` ignoring `!= null`, `import/no-unassigned-import` allowing
+  `dotenv/config`).
 - TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
-- Formatting: semicolons are off (`semi: false`), use single quotes
+- Formatting: semicolons off, single quotes, 2-space indent — hand-maintained
+  for now; no formatter is wired up yet (`.editorconfig` states the editor
+  defaults). **Line endings are unsettled**: git history stores CRLF, so a
+  formatter (which writes LF) must not be adopted before that is decided — see
+  `HISTORY.md` › 开放问题.

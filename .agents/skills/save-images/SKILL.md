@@ -30,7 +30,7 @@ disturbs Discovery.
 
 _Done when playwright-cli answers and the machine is clear._
 
-**Run — one command.** `npm run save-wallpapers` (tsx runs `src/main.ts`).
+**Run — one command.** `pnpm save-wallpapers` (tsx runs `src/main.ts`).
 Watch the terminal as hash injection, the Stability loop's rounds, the Site
 assets it filters, and the download batches stream into
 `logs/save-wallpapers-<ts>.jsonl`. Touch nothing until it exits.

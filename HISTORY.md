@@ -245,6 +245,31 @@
 
 ---
 
+### 2026-09-15 — 工具链换代：oxlint 取代 eslint + simple-git-hooks + CI
+
+**触因**：eslint（10）+ `@antfu/eslint-config`（9）在本仓是纯开销：type-aware 慢、配置只为这一个仓服务；钩子还是手写的 shell `.githooks/pre-commit`（只查分支、不查代码）；仓里没有任何 workflow，PR 没有自动门禁。用户要求：换 oxlint、上 simple-git-hooks、补 CI、删掉 `.githooks`。
+
+**决策**（grill 一轮 8 题，全部按推荐）：
+- **lint：eslint → oxlint 1.82**（`oxlint --type-aware .`，type-aware 由 `oxlint-tsgolint` 7.0.2001 提供）。`.oxlintrc.json` = `correctness: error` + `suspicious: warn` + `oxc / typescript / unicorn / import / node / promise / vitest` 插件；只有两处用配置豁免而非改代码：`eqeqeq` 允许 `!= null`（本意就是同时吃 null 与 undefined）、`import/no-unassigned-import` 允许 `dotenv/config`（副作用导入）。否决「eslint 并存一段时间」——两套规则互相打架。
+- **钩子：simple-git-hooks 接管，`.githooks/` 删除**。分支门禁的逻辑搬进 `scripts/check-branch.mjs`（原 shell 钩子的等价物：拦 `main` / `master` / detached HEAD），作为 pre-commit 第一步，之后接 `lint-staged`（`oxlint --fix --deny-warnings`）；pre-push = `typecheck && test`。否决「只留 lint-staged、放弃门禁」——`AGENTS.md` 明写这条是 "enforced, not just asked"；否决「两套钩子并存」——机制重复且 `core.hooksPath` 会让 simple-git-hooks 静默失效。
+- **npm → pnpm 12.3.4**（删 `package-lock.json`，加 `packageManager` + `engines.node >=22.22.1`）。理由：工作区所有兄弟仓都是 pnpm，且 CI 的参考实现（toolbox）与 `sxzz/workflows` 都按 pnpm 设计。
+- **CI：手写 `.github/workflows/ci.yml`**（`pnpm/setup@v2` + `runtime: node@24` + `cache` + `require-lockfile`，跑 lint → typecheck → test）。否决直接用 `sxzz/workflows` 的 `unit-test.yml` reusable：其 test job 会无条件跑 `pnpm run build`，本仓无 build 脚本，绕过要传 `build: ''` 这种 hack；30 行手写 CI 更可控、可读。
+- **顺手修掉 oxlint 报出的真问题**（不是补规则）：`main.ts` 4 处不安全类型断言改成运行时校验（`errorMessage()` 收 Narrowing、`window.__wpUrls` / `__wpLog` 的 JSON 加数组+字符串校验）、`wallpaper-url.ts` 的 `matchesRule` 补 `never` 穷尽守卫、`download.ts` 的 `_cachedCookieHeader` 去掉下划线前缀、`report.ts` 的 `.sort()` → `.toSorted()`（`lib` 提到 ES2023）。
+- **oxfmt 全量重排留到单独一轮**：实测 21 个文件里 16 个要改，src+tests ≈ +280/-180 行，光 `scripts/run-discovery.js`（无 lint、无类型、无测试的浏览器脚本）就 +189/-140。一次性重排会淹没本轮真正的逻辑改动。
+- 加 `.editorconfig`（仅编辑器默认：UTF-8 / 2 空格 / 末行换行，**不写 `end_of_line`**）与 `.vscode/extensions.json`（`oxc.oxc-vscode`）；`TRASH.md` 写进 `.gitignore`（本地保留、永不提交）。
+- **行尾政策本轮不碰**：本来加了 `.gitattributes`（`* text=auto eol=lf`），实做时发现本仓 **git 历史存的就是 CRLF**（`git cat-file blob HEAD:src/main.ts` 有 374 个 CR，而 `git ls-files --eol` 因属性归一化而报 `i/lf`，是误导信号），而 `git add` 并不会把它重写成 LF。所以 `.gitattributes` 一旦提交就会在后续 checkout 上悄悄翻转全仓行尾；与 oxfmt 同因，退出本轮，留待专门一轮（见开放问题）。本次提交对行尾保持中性。
+
+**验证**：`pnpm typecheck` 零错误；`pnpm test` 33 passed（与基线同数）；`pnpm lint` 零 error 零 warning，并用 `oxlint --debug files .` 确认真的 lint 了 12 个文件（不是空跑）；`pnpm install` 退出 0，`--frozen-lockfile` 报 "Lockfile passes supply-chain policies"；**钩子实做演练**——把 `scripts/check-branch.mjs` 拿到临时仓里对三种真实 git 状态各跑一次（`main` → 拒；detached HEAD → 拒；feature 分支 → 通过），再在真仓里直接执行 `.git/hooks/pre-commit`，看到 guard 先跑、lint-staged 对 5 个 staged 文件跑 `oxlint --fix`、退出 0；CI 在 PR 上真实跑绿。**未真跑爬虫**：纯工具链改动，不触碰 `run_report` 键集合与语义，Run parity 不适用（沿用同日「测试移出 src」的先例）；但注意这次动了 `src/main.ts` / `report.ts` / `download.ts` 的实现细节（断言改写、`sort`→`toSorted`、重命名），行为等价但**没有真跑背书**。
+
+**教训**：
+- linter 换代是「新规则重新审旧代码」的机会：首轮 10 条诊断里 6 条是真缺陷，只有 2 条该用配置豁免；一律 `off` 掉报错规则等于白换工具。
+- 钩子机制换代必须检查 `core.hooksPath`：旧值指向已删除目录时 git **静默跳过**所有钩子，「钩子装了」和「钩子生效」是两件事，只能用一次真提交演练来证明。
+- 工具链的隐藏门禁来自包管理器默认值：pnpm 12 会拒绝 24h 内发布的版本（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`）、并要求 `allowBuilds` 白名单（否则 `ERR_PNPM_IGNORED_BUILDS` 直接非零退出）。应对是 pin 前一版 + 写白名单，而不是放宽策略。
+- 格式化工具的全量重排要单独记账：它重写的是「人手工调过的风格」和「没有测试保护的脚本」，混在其它改动里既难 review 也难回滚。
+- 「行尾是不是 LF」不能靠模糊的间接信号判断：`git ls-files --eol` 会把属性归一化后的意图当成事实报出来（本例它谎报 `i/lf`），`git show HEAD:file` 还会跑 smudge 转换；唯一可信的是 `git rev-parse <ref>:<path>` 拿 sha 再用 `git cat-file blob <sha>` 看原始字节。差点因此把全仓行尾翻转塞进一个 lint 换代里。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -260,15 +285,25 @@
 | ts-node ESM / bundler resolution | 与 ESM+tsx 比语义不纯 | ADR 0003 |
 | skill Preflight 探测 session | 管线自管 session，探测必报 not open | 2026-09-03 |
 | 测试与源文件同目录 / `src/**/__tests__/` | 「src = 产品代码」的边界在目录上不可见，且无配置层护栏 | 2026-09-15 |
+| 保留 `.githooks` 作为钩子后端 | 两套钩子体系并存，`core.hooksPath` 还会让 simple-git-hooks 静默失效 | 2026-09-15 |
+| 在同一轮里并入 oxfmt 全量重排 | 12 文件 +280/-180，其中不可测的 `run-discovery.js` 占 +189/-140，diff 淹没逻辑改动 | 2026-09-15 |
+| 放宽 pnpm 供应链策略（`minimumReleaseAge`）以装当日最新版 | 该策略挡的是「投毒版本 24h 窗口」，正确做法是 pin 前一版 | 2026-09-15 |
+| 继续用 npm | 与工作区兄弟仓、`pnpm/setup@v2` CI、pnpm 化的 lint-staged 形态都不一致 | 2026-09-15 |
+| 直接复用 `sxzz/workflows` 的 `unit-test.yml` | 其 test job 无条件跑 `pnpm run build`，本仓无 build 脚本 | 2026-09-15 |
 
 ## 验证规范（所有迭代通用）
 
-- 三件套：`npx tsc --noEmit` → `npm test`（vitest）→ `npx eslint .`
-- 行为验证：真跑 `npm run save-wallpapers`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
+- 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）
+- 纯工具链/纯移动类改动不真跑，但要在 PR 里写明「没跑」
+- 行为验证：真跑 `pnpm save-wallpapers`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - **过滤逻辑分两道**：`scripts/run-discovery.js` 的 `shouldKeep` 里还留着旧的「精确文件名」黑名单（约 25 个 UI 图标名），它是第一道、不可单测、丢弃量不进 `siteAssets`；第二道才是 `src/wallpaper-url.ts` 的结构化规则。合并成一道的代价是那些 URL 会重新计入 `combinedCount`（改变字段语义），留待单独一轮。
+- **oxfmt 全量重排待做**：配置与实测数据见 2026-09-15 条目（`.oxfmtrc.json` 需 `semi: false` / `singleQuote: true` / `printWidth: 100` / `sortImports: true`，`**/*.md` 与 `scripts/` 的取舍要在那一轮定）。做之前先决定 `scripts/run-discovery.js`（无测试）是否纳入重排。
+- **行尾政策待定**：git 历史存的是 CRLF（见本次教训），而 oxfmt 写 LF。两条路——全仓归一到 LF（`git add --renormalize .`，diff 里看不见但会写满 blame）或让 formatter 跟随 CRLF（不推荐，Linux CI 与 Windows 会分叉）。必须先定这个，再谈接 formatter。
+- **`autofix.yml` 未接**：工作区惯例是 PR 上用 autofix.ci 自动修 lint/格式，但该 App 需先在仓上安装（`github.com/apps/autofix-ci`），否则 workflow 会给每个 PR 挂红叉。装完再补这个 workflow。
+- **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

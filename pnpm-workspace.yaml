@@ -1,0 +1,7 @@
+# pnpm 12 reads its settings from this file, not from package.json `pnpm`.
+# Both dependencies ship build scripts we want to run: simple-git-hooks installs
+# the git hooks, esbuild (via tsx/vitest) validates its platform binary.
+# Without this allow-list, `pnpm install` exits non-zero (ERR_PNPM_IGNORED_BUILDS).
+allowBuilds:
+  esbuild: true
+  simple-git-hooks: true

@@ -64,6 +64,20 @@ function newRunMeta(): { meta: RunMeta, config: Record<string, string | number |
   }
 }
 
+// execSync throws an Error; anything else reaching a catch is unknown and only
+// has a useful String() form.
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// run-code publishes its diagnostics as `{ t, msg }` records in `window.__wpLog`.
+function isRunCodeLogEntry(value: unknown): value is { msg: string } {
+  return typeof value === 'object'
+    && value !== null
+    && 'msg' in value
+    && typeof value.msg === 'string'
+}
+
 function parseStats(rawStats: string): DiscoveryStats {
   const fallback: DiscoveryStats = {
     converged: false,
@@ -153,7 +167,7 @@ function updateGalleryStats(
     writeGalleryStats(GALLERY_STATE_FILE, stats)
   }
   catch (err: unknown) {
-    logger.warn({ err: (err as Error).message }, 'failed to persist gallery state')
+    logger.warn({ err: errorMessage(err) }, 'failed to persist gallery state')
   }
   return stats
 }
@@ -248,8 +262,7 @@ async function main() {
     )
   }
   catch (err: unknown) {
-    const execErr = err as { message?: string, stdout?: string, stderr?: string }
-    logger.error({ err: execErr.message }, 'run-code execution failed')
+    logger.error({ err: errorMessage(err) }, 'run-code execution failed')
   }
   try {
     fs.unlinkSync(scriptFile)
@@ -272,10 +285,9 @@ async function main() {
   let allUrls: string[]
   try {
     const first: unknown = JSON.parse(rawJson)
-    allUrls
-      = typeof first === 'string'
-        ? (JSON.parse(first) as string[])
-        : (first as string[])
+    const parsed: unknown = typeof first === 'string' ? JSON.parse(first) : first
+    const captured: unknown[] = Array.isArray(parsed) ? parsed : []
+    allUrls = captured.filter((url): url is string => typeof url === 'string')
   }
   catch {
     logger.error('Failed to parse URLs from browser.')
@@ -315,15 +327,12 @@ async function main() {
       },
     ).trim()
     const logEntries: unknown = JSON.parse(rawLog)
-    const entries = (
-      Array.isArray(logEntries)
-        ? logEntries
-        : typeof logEntries === 'string'
-          ? JSON.parse(logEntries)
-          : []
-    ) as Array<{ t: number, msg: string }>
-    for (const entry of entries)
-      logger.info({ phase: 'run-code' }, entry.msg)
+    const parsed: unknown = typeof logEntries === 'string' ? JSON.parse(logEntries) : logEntries
+    const entries: unknown[] = Array.isArray(parsed) ? parsed : []
+    for (const entry of entries) {
+      if (isRunCodeLogEntry(entry))
+        logger.info({ phase: 'run-code' }, entry.msg)
+    }
   }
   catch {
     logger.warn('Failed to extract run-code diagnostic log.')

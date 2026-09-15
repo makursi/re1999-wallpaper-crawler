@@ -8,3 +8,7 @@ logs/
 .env
 .env.local
 explain/
+
+# Local scratch notes, intentionally never committed
+TRASH.md
+TRASH.md

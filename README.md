@@ -13,10 +13,10 @@ npm install -g @playwright/cli
 npx playwright-cli install
 
 # 2. Project dependencies
-npm install
+pnpm install
 
 # 3. Run — opens a real Chrome window, takes a few minutes
-npm run save-wallpapers
+pnpm save-wallpapers
 ```
 
 Downloaded wallpapers land in `./images/`. Don't touch the browser window
@@ -53,7 +53,7 @@ required — edit `.env` (validated at startup by zod):
 
 | Task | Command |
 |------|---------|
-| Scrape | `npm run save-wallpapers` |
-| Tests | `npm test` |
-| Typecheck | `npx tsc --noEmit` |
-| Lint | `npx eslint .` |
+| Scrape | `pnpm save-wallpapers` |
+| Tests | `pnpm test` |
+| Typecheck | `pnpm typecheck` |
+| Lint | `pnpm lint` |
