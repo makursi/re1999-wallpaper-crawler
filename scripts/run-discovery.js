@@ -248,25 +248,19 @@ async (page) => {
     return [...urls];
   });
 
-  // Filter helpers (apply same filter as before)
-  const iconNames = ["pre.png","next.png","star.png","hide.png","share.png",
-    "menuc.png","menu.png","v2c.png","b.png","s.png","a.png","d.png",
-    "c.png","pc.png","z.png","log.png","logo.png","wx.png","age.png",
-    "ageword.png","agewordm.png","cha.png","v2.webp","v2c.png"];
-
-  function shouldKeep(url) {
-    const lower = url.toLowerCase();
-    if (url.startsWith("data:") || url.startsWith("blob:")) return false;
-    if (lower.indexOf(".svg") !== -1) return false;
-    const filename = lower.split("/").pop().split("?")[0];
-    if (iconNames.indexOf(filename) !== -1) return false;
-    return true;
+  // Filter helpers. Payloads are dropped here and nowhere else: `data:` and
+  // `blob:` are not URLs the crawler can fetch, so they never enter the capture
+  // and `combinedCount` stays the raw capture. Which of the captured URLs is a
+  // Wallpaper is decided in TypeScript (src/wallpaper-url.ts), so the drop is
+  // unit-tested and shows up in the Run report as a Site asset.
+  function isFetchableUrl(url) {
+    return !url.startsWith("data:") && !url.startsWith("blob:");
   }
 
   // Merge network + DOM, apply filter
   const allUrls = new Set();
-  for (const u of networkImages) if (shouldKeep(u)) allUrls.add(u);
-  for (const u of domUrls) if (shouldKeep(u)) allUrls.add(u);
+  for (const u of networkImages) if (isFetchableUrl(u)) allUrls.add(u);
+  for (const u of domUrls) if (isFetchableUrl(u)) allUrls.add(u);
 
   const finalUrls = [...allUrls];
   await log("[final] DOM=" + domUrls.length + " Network=" + networkImages.size + " Combined=" + finalUrls.length);

@@ -1,7 +1,7 @@
 // ── types ──────────────────────────────────────────────────────────
 
+import type { GalleryStats } from '../gallery/gallery-state.js'
 import { isImageUrl } from '../wallpaper-url.js'
-import type { GalleryStats } from './gallery.js'
 
 export type DownloadOutcome =
   | {
@@ -52,6 +52,12 @@ export interface DiscoveryStats {
   combinedCount: number
   thumbnailsClicked: number
   discoveryDurationMs: number
+  /**
+   * Share of the official list this Run's capture contained, or `null` when the
+   * list was unavailable. The gate for judging whether scrolling the page is
+   * still worth it next to asking the list endpoint (docs/adr/0006).
+   */
+  coverage: number | null
 }
 
 export interface RunMeta {
@@ -76,6 +82,10 @@ export interface RunReport {
     emptyResult: boolean
     persistentFailures: number
     emptyFiles: string[]
+    /** `null` = not checked, because the list was unavailable. */
+    siteAssetFalsePositive: { count: number; urls: string[] } | null
+    gallerySourceUnavailable: boolean
+    mirrorGap: { missing: number; extra: number } | null
   }
   failures: { url: string; status?: number; reason: string; retried: boolean }[]
 }
@@ -162,18 +172,27 @@ function bump(hist: Record<string, number>, status: string): void {
   hist[status] = (hist[status] ?? 0) + 1
 }
 
-export interface RunInputs {
+/**
+ * What one Run's capture produced. These travel together — from the split,
+ * through the list checks, into the report — so they are passed as one value.
+ */
+export interface CaptureAudit {
+  leakedUrls: string[]
+  siteAssets: string[]
+  /** Site assets the official list calls Wallpapers; `null` when not checked. */
+  siteAssetFalsePositive: string[] | null
+}
+
+export interface RunInputs extends CaptureAudit {
   discovery: DiscoveryStats
   metrics: DownloadMetrics
   gallery: GalleryStats
-  leakedUrls: string[]
-  siteAssets: string[]
 }
 
 export function buildRunReport(
   meta: RunMeta,
   finishedAt: string,
-  { discovery, metrics, gallery, leakedUrls, siteAssets }: RunInputs,
+  { discovery, metrics, gallery, leakedUrls, siteAssets, siteAssetFalsePositive }: RunInputs,
 ): RunReport {
   return {
     type: 'run_report',
@@ -191,6 +210,18 @@ export function buildRunReport(
       emptyResult: metrics.total === 0,
       persistentFailures: metrics.persistentFailures,
       emptyFiles: metrics.emptyFilenames,
+      siteAssetFalsePositive:
+        siteAssetFalsePositive === null
+          ? null
+          : { count: siteAssetFalsePositive.length, urls: siteAssetFalsePositive },
+      gallerySourceUnavailable: gallery.officialTotal === null,
+      mirrorGap:
+        gallery.mirror === null
+          ? null
+          : {
+              missing: gallery.mirror.missingFromDisk.count,
+              extra: gallery.mirror.extraOnDisk.count,
+            },
     },
     failures: metrics.failures,
   }

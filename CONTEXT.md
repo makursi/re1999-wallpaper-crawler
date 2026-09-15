@@ -84,13 +84,55 @@ _Avoid_: junk, noise, non-image (a Site asset can be an image)
 **Site asset filter**:
 The stage that partitions the raw capture into Wallpapers and Site assets
 before Download, so the Wallpaper URL set Download consumes contains neither
-Site assets nor non-image URLs.
+Site assets nor non-image URLs. It is the only filter: the Discovery script
+drops nothing but `data:`/`blob:` payloads, which are not URLs the crawler can
+fetch. Every drop is reported, and every Run checks the drops against the
+Gallery list, so a rule that swallows a Wallpaper is caught rather than
+inferred. See docs/adr/0004.
 _Avoid_: cleanup, sanitizer
 
-_Dropping happens in two passes_: the Discovery script's own `shouldKeep`
-drops the site's UI icon sprites by exact filename before publishing (a
-pre-existing, untested pass, invisible in the report), and this filter drops
-the rest. See docs/adr/0004.
+### Gallery tracking
+
+**Gallery list**:
+The site's own inventory of the gallery, from its list endpoint: every entry
+with the id the gallery numbers it by, plus the total. One request, no session.
+It is the authoritative Wallpaper URL set.
+_Avoid_: API, endpoint, manifest
+
+**Gallery total**:
+What the Gallery list says the gallery holds. Not a count of local files, and
+it can fall when the site retires an entry. `null` when the list could not be
+read.
+_Avoid_: image count, total images, 图片总数
+
+**Gallery state**:
+The persisted record of the entry ids previous Runs have seen
+(`images/.gallery-state.json`), which is what lets a Run report
+`newSinceLastRun`. Ids are never forgotten: the site can retire an entry and
+put it back, and forgetting it would report the re-appearance as new twice.
+It lives beside the Mirror it describes and is deleted with it.
+_Avoid_: cache, checkpoint
+
+**New since the last Run**:
+The entries whose id the previous Run's Gallery list did not carry — the answer
+to "did the site publish anything?". `null`, not `0`, on a first Run: there is
+nothing to compare against.
+_Avoid_: delta, growth, 新增
+
+**Mirror**:
+The local copy of the gallery — the Wallpaper files in `images/`.
+_Avoid_: library, collection, dataset
+
+**Mirror gap**:
+A difference between the Gallery list and the Mirror: `missingFromDisk`
+(official entries with no local file) or `extraOnDisk` (local files the list
+does not contain — retired art, or junk the filter let through).
+_Avoid_: diff, drift
+
+**Discovery coverage**:
+The share of the Gallery list that one Run's capture contained. A Run sees a
+small slice by design; the number says how small.
+_Avoid_: hit rate, recall
 
 ### Download
 
@@ -144,29 +186,17 @@ _Avoid_: run quality, 运行质量, no regression
 **运行缺陷 (Run defect)**:
 An anomaly detectable from the log that shows the crawl deviated from
 expectations. Classes: discovery leak, convergence failure, empty result,
-persistent failure, empty file. Cross-run drift is a future,
-aggregation-phase class, except for the Gallery total, whose growth is
-reported per Run.
+persistent failure, empty file, Site asset false positive, gallery source
+unavailable, mirror gap. Cross-run drift beyond the Gallery list is a future,
+aggregation-phase class.
 _Avoid_: bug, error, failure (as a blanket term)
 
 **Run report**:
 The single structured log record (`type: run_report`) that aggregates one
-Run's stability signals, its Gallery total, the Site assets it filtered, and
-detected defects, so an Agent can assess the run without re-parsing the whole
-log.
+Run's stability signals, its Gallery numbers and Mirror gap, the Site assets it
+filtered, the capture's Discovery coverage, and detected defects, so an Agent
+can assess the run without re-parsing the whole log.
 _Avoid_: summary, dashboard, report file
-
-**Gallery total**:
-The number of Wallpapers the official gallery has exposed so far — the
-Wallpaper files on disk. Cumulative, because the gallery page renders only the
-thumbnails in view, so no single Run can count the gallery. Never decreases.
-_Avoid_: image count, total images, 图片总数
-
-**Gallery state**:
-The persisted record of the Gallery total and the previous Run's value
-(`logs/gallery-state.json`), which is what lets a Run report how many
-Wallpapers are new since the last Run.
-_Avoid_: cache, checkpoint
 
 **run_meta**:
 The first log record of a Run carrying runId, timestamps, and a config
@@ -191,12 +221,13 @@ which unmounts off-screen images and makes DOM counting unreliable.
    click every Thumbnail to trigger High-res preview requests.
 4. Run the Stability loop until 45s pass with no new image AND the total
    scroll height is unchanged, for 6 consecutive rounds.
-5. Merge network captures with DOM `img[src]` URLs, filter through
-   `shouldKeep` (drops icons, SVGs, data:/blob:), and publish the result as
-   the Wallpaper URL set.
-6. Partition that set with the Site asset filter (`src/wallpaper-url.ts`) —
-   analytics pixels, site UI art, the page's own HTML — and hand only
-   Wallpapers to Download.
+5. Merge network captures with DOM `img[src]` URLs — dropping only
+   `data:`/`blob:` payloads, which are not URLs — and publish the result as the
+   raw capture.
+6. Partition that capture with the Site asset filter (`src/wallpaper-url.ts`)
+   — analytics pixels, site UI art, the page's own HTML — hand only Wallpapers
+   to Download, and check the drops against the Gallery list. That list is
+   fetched once, here, and reused for the Gallery state at the end of the Run.
 
 ### Download pipeline
 
@@ -205,7 +236,8 @@ which unmounts off-screen images and makes DOM counting unreliable.
    (Content-hash skip).
 3. On 403, retry once with full browser headers (403 retry).
 4. Summarize ok / skipped / failed + total size on disk, then refresh the
-   Gallery total from the Wallpapers on disk.
+   Gallery state from that same list: compare it with the Mirror and record the
+   ids for the next Run.
 
 ## Gotchas
 

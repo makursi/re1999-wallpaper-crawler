@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { GalleryStats } from '../../src/report/gallery.js'
+import type { GalleryStats } from '../../src/gallery/gallery-state.js'
 import type { DiscoveryStats, DownloadOutcome, RunMeta } from '../../src/report/report.js'
 import { buildRunReport, classifyOutcomes, detectLeaks } from '../../src/report/report.js'
 
@@ -147,6 +147,7 @@ describe('buildRunReport', () => {
     combinedCount: 970,
     thumbnailsClicked: 120,
     discoveryDurationMs: 600000,
+    coverage: 0.09,
   }
   const outcomes: DownloadOutcome[] = [
     {
@@ -170,11 +171,13 @@ describe('buildRunReport', () => {
   const metrics = classifyOutcomes(outcomes)
   const gallery: GalleryStats = {
     officialTotal: 1001,
-    previousOfficialTotal: 965,
     newSinceLastRun: 36,
+    newFiles: ['1012.jpg'],
     firstRun: false,
-    updatedAt: '2026-08-06T10:05:30.500Z',
-    runId: '2026-08-06T10-00-00',
+    mirror: {
+      missingFromDisk: { count: 1, files: ['1011.jpg'] },
+      extraOnDisk: { count: 0, files: [] },
+    },
   }
   const siteAssets = [
     'https://hm.baidu.com/hm.gif?rnd=1',
@@ -188,6 +191,7 @@ describe('buildRunReport', () => {
       gallery,
       leakedUrls: [],
       siteAssets: [],
+      siteAssetFalsePositive: [],
     })
     expect(report.type).toBe('run_report')
     expect(report.runId).toBe('2026-08-06T10-00-00')
@@ -206,17 +210,19 @@ describe('buildRunReport', () => {
       gallery,
       leakedUrls: [],
       siteAssets,
+      siteAssetFalsePositive: [],
     })
     expect(report.siteAssets).toEqual({ count: 2, urls: siteAssets })
   })
 
-  it('derives defects from discovery, metrics and leaked URLs', () => {
+  it('derives defects from discovery, metrics, leaked URLs and the gallery check', () => {
     const report = buildRunReport(meta, '2026-08-06T10:05:30.500Z', {
       discovery,
       metrics,
       gallery,
       leakedUrls: ['https://re.bluepoch.com/home/detail.html'],
       siteAssets,
+      siteAssetFalsePositive: ['https://cdn/PICTURE/20260907/1012.jpg'],
     })
     expect(report.defects).toEqual({
       discoveryLeak: { count: 1, urls: ['https://re.bluepoch.com/home/detail.html'] },
@@ -224,7 +230,35 @@ describe('buildRunReport', () => {
       emptyResult: false,
       persistentFailures: 1,
       emptyFiles: ['a.jpg'],
+      siteAssetFalsePositive: {
+        count: 1,
+        urls: ['https://cdn/PICTURE/20260907/1012.jpg'],
+      },
+      gallerySourceUnavailable: false,
+      mirrorGap: { missing: 1, extra: 0 },
     })
+  })
+
+  it('reports an unreachable gallery list as unknown instead of a number', () => {
+    const report = buildRunReport(meta, '2026-08-06T10:05:30.500Z', {
+      discovery: { ...discovery, coverage: null },
+      metrics,
+      gallery: {
+        officialTotal: null,
+        newSinceLastRun: null,
+        newFiles: [],
+        firstRun: false,
+        mirror: null,
+      },
+      leakedUrls: ['https://re.bluepoch.com/home/detail.html'],
+      siteAssets,
+      siteAssetFalsePositive: null,
+    })
+    expect(report.gallery.officialTotal).toBeNull()
+    expect(report.defects.gallerySourceUnavailable).toBe(true)
+    expect(report.defects.mirrorGap).toBeNull()
+    // Not checked is not the same as checked-and-clean.
+    expect(report.defects.siteAssetFalsePositive).toBeNull()
   })
 
   it('flags emptyResult when nothing was found', () => {
@@ -234,6 +268,7 @@ describe('buildRunReport', () => {
       gallery,
       leakedUrls: [],
       siteAssets: [],
+      siteAssetFalsePositive: [],
     })
     expect(report.defects.emptyResult).toBe(true)
   })

@@ -5,7 +5,8 @@ Download every official `重返未来：1999` wallpaper from
 
 It opens a real Chrome window, walks the gallery page, captures the images on
 the network layer, drops the site's own UI art, and saves the rest to `images/`
-in parallel.
+in parallel. The gallery's own list endpoint supplies the authoritative total,
+so every run can say what the site holds and whether your copy still matches it.
 
 ## Quick start
 
@@ -47,21 +48,33 @@ record is a `run_report` — the whole run in a single object:
 
 ```json
 {
-  "discovery": { "converged": true, "combinedCount": 172 },
-  "download": { "total": 165, "ok": 0, "skipped": 165, "failed": 0, "successRate": 0 },
-  "gallery": { "officialTotal": 1001, "newSinceLastRun": 0 }
+  "discovery": { "converged": true, "combinedCount": 484, "coverage": 0.4496 },
+  "download": { "total": 450, "ok": 0, "skipped": 450, "failed": 0, "successRate": 0 },
+  "gallery": {
+    "officialTotal": 1001,
+    "newSinceLastRun": null,
+    "firstRun": true,
+    "mirror": { "missingFromDisk": { "count": 0 }, "extraOnDisk": { "count": 0 } }
+  }
 }
 ```
 
-The four numbers to look at:
+The numbers to look at:
 
+- `gallery.officialTotal` — what the site's own list says the gallery holds
+  (1001 today). It is the site's number, not a count of your files, and it can
+  go down if the site retires a wallpaper.
 - `gallery.newSinceLastRun` — wallpapers the site added since the previous run.
-  `0` means there is nothing new; it does not mean the crawl failed.
-- `gallery.officialTotal` — wallpapers on disk in total. It never goes down.
+  `0` means there is nothing new; it does not mean the crawl failed. `null`
+  means there was no earlier run to compare against (`firstRun: true`).
+- `gallery.mirror` — your `images/` against that list: `missingFromDisk` are
+  wallpapers you do not have yet, `extraOnDisk` are files the gallery no longer
+  lists. Both `0` means your copy matches.
 - `download.successRate` — `0` is normal when everything was already on disk:
   a skipped file is not a failure, and `ok` counts new downloads only.
 - `discovery.converged` — `true` means the page walk finished, `false` means it
-  gave up early.
+  gave up early. `discovery.coverage` says how much of the gallery list that
+  walk actually reached; the list endpoint always reaches all of it.
 
 `AGENTS.md → Analyzing a run's logs` lists every field and the defect checks.
 
@@ -88,6 +101,12 @@ page has stopped growing, the capture is filtered — icons, SVGs and the site's
 own UI art go away — and the remaining wallpapers are downloaded in parallel
 batches of `BATCH_SIZE`, reusing the browser's cookies and retrying once with
 full browser headers if the CDN answers 403.
+
+Alongside that, each run asks the site's own gallery list (one POST, no login)
+for every entry it holds. That list is the authority behind `officialTotal`, the
+id-keyed `newSinceLastRun`, and the mirror check — and it is what proves the
+filter kept the right things: a dropped URL the list calls a wallpaper is
+reported, not silently lost.
 
 Vocabulary, the run checklists and the decisions behind all of this live in
 `CONTEXT.md` and `docs/adr/`.

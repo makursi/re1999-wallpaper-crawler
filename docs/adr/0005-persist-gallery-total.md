@@ -1,3 +1,9 @@
+> **Superseded by ADR 0006 (2026-09-15).** The premise below — that no Run can
+> count the gallery — held only while the number had to be inferred from the
+> rendered page. The site's own list endpoint answers it directly, so the
+> file-count proxy, its monotone `max` and this state file are gone. Kept as
+> the record of why the proxy was built and what it cost.
+
 # Persist the gallery total across Runs
 
 The gallery page renders only the thumbnails on screen, so a single Run

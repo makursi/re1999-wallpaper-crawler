@@ -25,24 +25,33 @@ distinct URLs across `logs/`) and the icon filename embeds a build hash.
   pixel query strings. Rejected after inspecting the captured URLs.
 - **Filter inside the Discovery script** (`shouldKeep`): keeps the cross-process
   bridge clean, but the rules would live in untyped, untested JavaScript.
-  Rejected; the filter is TypeScript in `src/wallpaper-url.ts`.
+  Rejected; the filter is TypeScript in `src/wallpaper-url.ts`. **2026-09-15:**
+  the script's own filter was then removed entirely — it kept dropping SVG art
+  and 23 UI icon filenames before the capture was published, so `combinedCount`
+  was never quite the raw capture and those drops never reached the report. Its
+  icon list is now a `filenameIn` rule beside the others, and only `data:` /
+  `blob:` payloads are dropped before capture, because they are not URLs the
+  crawler can fetch. See ADR 0006.
 - **Only drop non-image URLs** (i.e. reuse the existing leak check): leaves
   every site image asset in the download queue. Rejected.
 
 ## Consequences
 
-- `discovery.combinedCount` still describes the raw capture, so its meaning is
-  unchanged and Runs stay comparable; the gap down to `download.total` is
-  explained by `siteAssets` in the Run report.
+- `discovery.combinedCount` describes the raw capture (everything but `data:` /
+  `blob:` payloads), so its meaning is unchanged and Runs stay comparable; the
+  gap down to `download.total` is explained by `siteAssets` in the Run report.
+  Before 2026-09-15 the script's own filter sat in between and made this
+  sentence untrue; it is true now that that filter is gone (ADR 0006).
 - `defects.discoveryLeak` keeps its meaning — a non-image URL in the *raw*
   capture — so the long-documented benign `detail.html` leak still shows up
-  there. It is now also reported as a Site asset, and never downloaded.
-- A non-image leak that cannot be explained as a Site asset is still flagged.
-- `images/` holds Wallpapers only, which is what makes the Gallery total
-  (ADR 0005) a clean number.
-- Filtering happens in two passes and only this one is visible. The Discovery
-  script's `shouldKeep` already drops the site's UI icon sprites by exact
-  filename: a pre-existing list, no unit tests, and its drops never appear in
-  the report. Migrating that list into these rules is left for a later
-  iteration, because it would move those URLs back into `combinedCount`, whose
-  meaning this ADR deliberately preserves.
+  there. It is now also reported as a Site asset, and never downloaded. Since
+  non-image URLs are always Site assets, the leak list is a subset view of
+  `siteAssets.urls`: a leak that appears there is explained.
+- **A rule that drops a real Wallpaper is detected, not inferred**: every Run
+  diffs the drops against the site's own gallery list, and a dropped URL the
+  list contains is reported as `siteAssetFalsePositive` (ADR 0006). Junk that
+  does reach the disk shows up in the same check as `extraOnDisk`.
+- `images/` holds Wallpapers only, which is what makes the mirror check
+  (ADR 0006) a clean number.
+- There is one filter pass, in TypeScript, with unit tests. The two-pass split
+  described in the first version of this ADR is history.

@@ -32,8 +32,12 @@ export const SESSION = parsed.SESSION_NAME
 export const BATCH_SIZE = parsed.BATCH_SIZE
 export const PLAYWRIGHT_CONFIG = parsed.PLAYWRIGHT_CONFIG
 export const LOG_DIR = path.resolve(PROJECT_ROOT, parsed.LOG_DIR)
-// Cross-run memory (the known gallery total), not a log — see docs/adr/0005
-export const GALLERY_STATE_FILE = path.join(LOG_DIR, 'gallery-state.json')
+// The site's own gallery list — the authoritative Wallpaper URL set and total
+// (docs/adr/0006). Derived from BASE_ORIGIN so it cannot drift from the site.
+export const GALLERY_LIST_URL = `${BASE_ORIGIN}/activity/official/websites/picture/query`
+// Cross-run memory of that list, kept next to the mirror it describes
+// (docs/adr/0006); not a log, and deleted together with `images/`.
+export const GALLERY_STATE_FILE = path.join(IMAGES_DIR, '.gallery-state.json')
 
 export const USER_AGENT =
   process.env.USER_AGENT ??

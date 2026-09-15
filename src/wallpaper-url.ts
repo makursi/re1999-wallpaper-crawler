@@ -8,11 +8,16 @@
 
 export const IMAGE_EXTENSIONS: readonly string[] = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 
-export interface SiteAssetRule {
-  kind: 'nonImage' | 'host' | 'pathPrefix' | 'filenamePrefix'
-  value?: string
-  reason: string
-}
+/**
+ * One reason a captured URL is a Site asset. Each kind carries exactly the
+ * data it needs, so a rule cannot be written without its match value.
+ */
+export type SiteAssetRule =
+  | { kind: 'nonImage'; reason: string }
+  | { kind: 'host'; value: string; reason: string }
+  | { kind: 'pathPrefix'; value: string; reason: string }
+  | { kind: 'filenamePrefix'; value: string; reason: string }
+  | { kind: 'filenameIn'; values: readonly string[]; reason: string }
 
 // Site assets observed in the capture, marked so they are never downloaded
 // again. Rules are structural (host / path / filename prefix) rather than
@@ -21,7 +26,7 @@ export interface SiteAssetRule {
 export const SITE_ASSET_RULES: readonly SiteAssetRule[] = [
   {
     kind: 'nonImage',
-    reason: "not an image URL (the page's own HTML document)",
+    reason: "not an image URL we download (the page's own HTML, SVG art)",
   },
   {
     kind: 'host',
@@ -37,6 +42,37 @@ export const SITE_ASSET_RULES: readonly SiteAssetRule[] = [
     kind: 'filenamePrefix',
     value: 'icon-',
     reason: 'site icon / favicon',
+  },
+  {
+    kind: 'filenameIn',
+    // The UI chrome the Discovery script used to drop in its own untested
+    // filter. Same decision, so it lives with the other rules now (ADR 0004).
+    values: [
+      'pre.png',
+      'next.png',
+      'star.png',
+      'hide.png',
+      'share.png',
+      'menuc.png',
+      'menu.png',
+      'v2c.png',
+      'b.png',
+      's.png',
+      'a.png',
+      'd.png',
+      'c.png',
+      'pc.png',
+      'z.png',
+      'log.png',
+      'logo.png',
+      'wx.png',
+      'age.png',
+      'ageword.png',
+      'agewordm.png',
+      'cha.png',
+      'v2.webp',
+    ],
+    reason: 'site UI chrome (nav arrows, player, share and age-gate icons)',
   },
 ]
 
@@ -55,15 +91,32 @@ function urlOf(url: string): URL | null {
   }
 }
 
-function filenameOf(url: string): string {
+/**
+ * The basename Download writes to disk for a URL — decoded, query and hash
+ * dropped. Both the Site asset rules and the Gallery mirror check key on it, so
+ * "the same image" means the same string wherever it is compared.
+ */
+export function wallpaperNameOf(url: string): string {
   const withoutQuery = url.split('?')[0].split('#')[0]
   const segments = withoutQuery.split('/')
   const raw = segments[segments.length - 1] ?? ''
   try {
-    return decodeURIComponent(raw).toLowerCase()
+    return decodeURIComponent(raw)
   } catch {
-    return raw.toLowerCase()
+    return raw
   }
+}
+
+/** A downloaded Wallpaper file, as opposed to a Site asset that slipped in. */
+export function isWallpaperFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  const dot = lower.lastIndexOf('.')
+  // `dot > 0` so a nameless dotfile like `.jpg` is not a Wallpaper
+  return dot > 0 && IMAGE_EXTENSIONS.includes(lower.slice(dot))
+}
+
+function filenameOf(url: string): string {
+  return wallpaperNameOf(url).toLowerCase()
 }
 
 function matchesRule(rule: SiteAssetRule, url: string): boolean {
@@ -73,17 +126,15 @@ function matchesRule(rule: SiteAssetRule, url: string): boolean {
     case 'host':
       return urlOf(url)?.host.toLowerCase() === rule.value
     case 'pathPrefix':
-      return (
-        urlOf(url)
-          ?.pathname.toLowerCase()
-          .startsWith(rule.value ?? '') ?? false
-      )
+      return urlOf(url)?.pathname.toLowerCase().startsWith(rule.value) ?? false
     case 'filenamePrefix':
-      return filenameOf(url).startsWith(rule.value ?? '')
+      return filenameOf(url).startsWith(rule.value)
+    case 'filenameIn':
+      return rule.values.includes(filenameOf(url))
     default: {
       // Unreachable: `kind` is an exhaustive union. The assignment fails to
       // compile if a new kind is added without a case above.
-      const unhandled: never = rule.kind
+      const unhandled: never = rule
       return unhandled
     }
   }
@@ -116,7 +167,23 @@ export function splitWallpaperUrls(urls: readonly string[]): {
 
 /** Compact rule list for the `run_meta` config snapshot (config-drift detection). */
 export function describeSiteAssetRules(): string {
-  return SITE_ASSET_RULES.map(rule =>
-    rule.value !== undefined ? `${rule.kind}:${rule.value}` : rule.kind,
-  ).join(' ')
+  return SITE_ASSET_RULES.map(describeRule).join(' ')
+}
+
+function describeRule(rule: SiteAssetRule): string {
+  switch (rule.kind) {
+    case 'nonImage':
+      return rule.kind
+    case 'filenameIn':
+      return `${rule.kind}:${rule.values.join(',')}`
+    case 'host':
+    case 'pathPrefix':
+    case 'filenamePrefix':
+      return `${rule.kind}:${rule.value}`
+    default: {
+      // Same guard as matchesRule: a new kind must say how it prints.
+      const unhandled: never = rule
+      return unhandled
+    }
+  }
 }

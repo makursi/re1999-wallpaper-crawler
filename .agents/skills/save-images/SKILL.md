@@ -40,18 +40,26 @@ the size on disk, and the Gallery total._
 
 **Verify — the Run report.** Open the newest `logs/save-wallpapers-*.jsonl`
 and grep `"type":"run_report"` — one record per Run. Read its `gallery`
-block against the previous Run's `officialTotal`:
+block against the site's own list:
 
-- `gallery.newSinceLastRun` — how many Wallpapers are new. `0` means the site
-  has nothing new; a positive number is the answer to "did it find anything?".
-- `gallery.previousOfficialTotal` — must equal the previous Run's
-  `officialTotal`; if it does not, the state file (`logs/gallery-state.json`)
-  was deleted or rewritten between Runs.
-- `gallery.firstRun` — no earlier record existed, so `previousOfficialTotal`
-  was back-derived from this Run's downloads.
+- `gallery.officialTotal` — what the site says the gallery holds. `null` means
+  the list call failed (`defects.gallerySourceUnavailable`), which makes every
+  gallery number in this Run unknown rather than zero.
+- `gallery.newSinceLastRun` — how many entries are new. `0` means the site has
+  nothing new; a positive number answers "did it find anything?"; `null` means
+  there is no earlier record to compare against (`firstRun: true`), which is
+  **not** the same as 0.
+- `gallery.newFiles` — which entries those are.
+- `gallery.mirror` — the list against `images/`: `missingFromDisk` (Wallpapers
+  we do not have) and `extraOnDisk` (files the list does not contain). Both 0
+  means the copy matches; `null` means it could not be checked.
 - `siteAssets.count` — Site assets dropped before Download. This is *why*
   `download.total` is below `discovery.combinedCount`; a Wallpaper that gets
-  filtered by mistake would show up here.
+  filtered by mistake shows up in `siteAssetFalsePositive` instead, because
+  every drop is checked against the list. When the list was unavailable that
+  check is `null` — not checked, not clean.
+- `discovery.coverage` — how much of the list this Run's page walk reached.
+  Single digits to ~45% is normal; the list endpoint always reaches 100%.
 - `emptyResult` — Discovery found no Wallpapers. Session logged out? Page
   structure changed? Read the `[final]` / `[thumbnails]` diagnostics.
 - `nonConverged` / `discoveryLeak` — the Stability loop stopped early or
@@ -65,16 +73,22 @@ Reading traps — three numbers misread easily:
 - A re-scrape where every file already exists reports `download.successRate:
   0` with everything skipped / 0 failed — that is by design (ok / (ok+failed),
   Content-hash skip), not a defect.
+- `gallery.newSinceLastRun: null` is not "nothing new"; it means no previous
+  record existed (or the list was unavailable). Only `0` means the site added
+  nothing. The same holds for `mirrorGap: null`, which means "not checked".
 - A `discoveryLeak` whose only URL is the page's own HTML URL
   (`re.bluepoch.com/home/detail.html`) is benign: it is reported in its own
   right as a Site asset, is never downloaded and never failed; accept it, do
-  not re-run for it.
+  not re-run for it. Every non-image URL is a Site asset, so the leak list is a
+  subset of `siteAssets.urls` — a leak that is not in there is the interesting
+  one.
 - A `combinedCount` below the Gallery total is **not a defect**: the page
-  renders only the thumbnails in view, so a Run sees a subset. Before
-  re-running, read `gallery.newSinceLastRun` — the site may simply have
-  nothing new (the gallery is at 1001 Wallpapers as of 2026-09-15, and it
-  grows: the 2026-09-04 "the gallery is exhausted at 971" reading was
-  falsified when the 09-07 batch appeared).
+  renders only the thumbnails in view, so a Run sees a subset (that is what
+  `discovery.coverage` measures). Before re-running, read
+  `gallery.newSinceLastRun` — the site may simply have nothing new. The gallery
+  total itself comes from the site's own list endpoint (ADR 0006), not from our
+  copy, and it grows over time: the 2026-09-04 "the gallery is exhausted at
+  971" reading was falsified when the 09-07 batch appeared.
 
 Accept the Run when no defect is reported, or record the decision for every
 defect (accept / re-run / investigate) so the log stays the audit trail.
@@ -94,7 +108,7 @@ operator's runbook, not the project's memory:
   Run defect.
 - **docs/adr/** — decision history: 0001 network-first capture, 0002 run
   report in JSONL, 0003 ESM with tsx, 0004 Site asset filter, 0005 persisted
-  Gallery total.
+  gallery total (superseded), 0006 the gallery list is the source.
 
 ## Invoking
 
