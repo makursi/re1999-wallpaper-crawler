@@ -1,0 +1,3 @@
+# Line endings are LF everywhere: oxfmt writes LF, and this keeps Windows
+# checkouts from re-introducing CRLF through core.autocrlf.
+* text=auto eol=lf
