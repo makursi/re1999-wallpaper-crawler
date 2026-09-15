@@ -31,21 +31,31 @@ disturbs Discovery.
 _Done when playwright-cli answers and the machine is clear._
 
 **Run — one command.** `npm run save-wallpapers` (tsx runs `src/main.ts`).
-Watch the terminal as hash injection, the Stability loop's rounds, and the
-download batches stream into `logs/save-wallpapers-<ts>.jsonl`. Touch
-nothing until it exits.
+Watch the terminal as hash injection, the Stability loop's rounds, the Site
+assets it filters, and the download batches stream into
+`logs/save-wallpapers-<ts>.jsonl`. Touch nothing until it exits.
 
-_Done when the process exits 0 and prints the ok / skipped / failed counts
-and the size on disk._
+_Done when the process exits 0 and prints the ok / skipped / failed counts,
+the size on disk, and the Gallery total._
 
 **Verify — the Run report.** Open the newest `logs/save-wallpapers-*.jsonl`
-and grep `"type":"run_report"` — one record per Run. Read it against the
-project baseline (earlier runs' `combinedCount` and `download.successRate`):
+and grep `"type":"run_report"` — one record per Run. Read its `gallery`
+block against the previous Run's `officialTotal`:
 
+- `gallery.newSinceLastRun` — how many Wallpapers are new. `0` means the site
+  has nothing new; a positive number is the answer to "did it find anything?".
+- `gallery.previousOfficialTotal` — must equal the previous Run's
+  `officialTotal`; if it does not, the state file (`logs/gallery-state.json`)
+  was deleted or rewritten between Runs.
+- `gallery.firstRun` — no earlier record existed, so `previousOfficialTotal`
+  was back-derived from this Run's downloads.
+- `siteAssets.count` — Site assets dropped before Download. This is *why*
+  `download.total` is below `discovery.combinedCount`; a Wallpaper that gets
+  filtered by mistake would show up here.
 - `emptyResult` — Discovery found no Wallpapers. Session logged out? Page
   structure changed? Read the `[final]` / `[thumbnails]` diagnostics.
 - `nonConverged` / `discoveryLeak` — the Stability loop stopped early or
-  network capture lagged; `combinedCount` sits below baseline.
+  network capture lagged.
 - `persistentFailures` / `emptyFiles` — Download-side. A
   `download.statusHistogram` full of 403s points at the session Cookie
   header, not the CDN.
@@ -53,18 +63,18 @@ project baseline (earlier runs' `combinedCount` and `download.successRate`):
 Reading traps — three numbers misread easily:
 
 - A re-scrape where every file already exists reports `download.successRate:
-  0` with 502 skipped / 0 failed — that is by design (ok / (ok+failed),
+  0` with everything skipped / 0 failed — that is by design (ok / (ok+failed),
   Content-hash skip), not a defect.
 - A `discoveryLeak` whose only URL is the page's own HTML URL
-  (`re.bluepoch.com/home/detail.html`) is benign: it was never downloaded
-  and never failed; accept it, do not re-run for it.
-- A `combinedCount` far below baseline is **not automatically a defect**.
-  Before re-running, check whether the site simply has nothing new left:
-  does `images/` disk count match the run's downloads (everything
-  Content-hash skipped)? Does a static page probe show only a handful of
-  `.holder-img` with no tabs / load-more? The official gallery was fully
-  crawled (971 files, 2026-09-04 confirmed) — a low count on a site whose
-  resources are already exhausted is a clean run, not a regression.
+  (`re.bluepoch.com/home/detail.html`) is benign: it is reported in its own
+  right as a Site asset, is never downloaded and never failed; accept it, do
+  not re-run for it.
+- A `combinedCount` below the Gallery total is **not a defect**: the page
+  renders only the thumbnails in view, so a Run sees a subset. Before
+  re-running, read `gallery.newSinceLastRun` — the site may simply have
+  nothing new (the gallery is at 1001 Wallpapers as of 2026-09-15, and it
+  grows: the 2026-09-04 "the gallery is exhausted at 971" reading was
+  falsified when the 09-07 batch appeared).
 
 Accept the Run when no defect is reported, or record the decision for every
 defect (accept / re-run / investigate) so the log stays the audit trail.
@@ -79,10 +89,12 @@ operator's runbook, not the project's memory:
 
 - **AGENTS.md** — "Analyzing a run's logs": the full run-report reading
   workflow and the optimization leads.
-- **CONTEXT.md** — domain vocabulary: Wallpaper, Wallpaper URL set,
-  Stability loop, Content-hash skip, 403 retry, Run defect.
+- **CONTEXT.md** — domain vocabulary: Wallpaper, Wallpaper URL set, Site
+  asset, Gallery total, Stability loop, Content-hash skip, 403 retry,
+  Run defect.
 - **docs/adr/** — decision history: 0001 network-first capture, 0002 run
-  report in JSONL, 0003 ESM with tsx.
+  report in JSONL, 0003 ESM with tsx, 0004 Site asset filter, 0005 persisted
+  Gallery total.
 
 ## Invoking
 

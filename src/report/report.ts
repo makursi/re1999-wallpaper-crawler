@@ -1,5 +1,8 @@
 // ── types ──────────────────────────────────────────────────────────
 
+import type { GalleryStats } from './gallery.js'
+import { isImageUrl } from '../wallpaper-url.js'
+
 export type DownloadOutcome
   = | { kind: 'ok', url: string, filename: string, status: number, retried: boolean, durationMs: number, bytes: number }
     | { kind: 'skipped', url: string, filename: string }
@@ -49,6 +52,8 @@ export interface RunReport {
   durationMs: number
   discovery: DiscoveryStats
   download: DownloadMetrics
+  gallery: GalleryStats
+  siteAssets: { count: number, urls: string[] }
   defects: {
     discoveryLeak: { count: number, urls: string[] }
     nonConverged: boolean
@@ -61,18 +66,8 @@ export interface RunReport {
 
 // ── pure analysis helpers ──────────────────────────────────────────
 
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-
 export function detectLeaks(urls: string[]): string[] {
   return urls.filter(u => !isImageUrl(u))
-}
-
-function isImageUrl(url: string): boolean {
-  const lower = url.toLowerCase()
-  if (lower.startsWith('data:') || lower.startsWith('blob:'))
-    return false
-  const path = lower.split('?')[0].split('#')[0]
-  return IMAGE_EXTENSIONS.some(ext => path.endsWith(ext))
 }
 
 export function classifyOutcomes(outcomes: DownloadOutcome[]): DownloadMetrics {
@@ -156,12 +151,18 @@ function bump(hist: Record<string, number>, status: string): void {
   hist[status] = (hist[status] ?? 0) + 1
 }
 
+export interface RunInputs {
+  discovery: DiscoveryStats
+  metrics: DownloadMetrics
+  gallery: GalleryStats
+  leakedUrls: string[]
+  siteAssets: string[]
+}
+
 export function buildRunReport(
   meta: RunMeta,
   finishedAt: string,
-  discovery: DiscoveryStats,
-  metrics: DownloadMetrics,
-  leakedUrls: string[],
+  { discovery, metrics, gallery, leakedUrls, siteAssets }: RunInputs,
 ): RunReport {
   return {
     type: 'run_report',
@@ -171,6 +172,8 @@ export function buildRunReport(
     durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(meta.startedAt)),
     discovery,
     download: metrics,
+    gallery,
+    siteAssets: { count: siteAssets.length, urls: siteAssets },
     defects: {
       discoveryLeak: { count: leakedUrls.length, urls: leakedUrls },
       nonConverged: !discovery.converged,
