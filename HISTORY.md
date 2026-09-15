@@ -299,7 +299,7 @@
 - 四件套：`pnpm fmt:check` / `typecheck` / `lint`（`--deny-warnings` 全仓 0/0）/ `test`（33 passed）全绿。
 - **AST 对比证明“只改了空白”**：逐文件比较 HEAD 与现在的语法树（忽略 import 顺序、忽略括号，import 声明逐字排序比较）：12 个被重排文件里 11 个结构完全一致，剩下 `download.ts` 只有一处 `'Referer':` → `Referer:`（无引号键名，同一个字符串）；`scripts/run-discovery.js` 未被改写。
 - **提交演练**：只 stage 协议载荷文件（加一行注释）→ pre-commit 退 0 且文件字节不变（无前导 `;`、注释保留）；`node --check` 也过。
-- 交付后真跑一次冒烟（格式化涉及 `main.ts` / `report.ts` / `download.ts`，虽然 AST 等价，但这是唯一能真正证明管线还活着的检查）。
+- 交付后真跑一次冒烟（格式化涉及 `main.ts` / `report.ts` / `download.ts`，虽然 AST 等价，但这是唯一能真正证明管线还活着的检查）：**已跑，干净**（`2026-09-15T05-15-31`，252s）——`converged`、6 轮、idle 55s、`combinedCount` 172、`siteAssets` 7、download 165 全 skip / 0 failed、`gallery.officialTotal` 1001 = `previousOfficialTotal`（`newSinceLastRun` 0）、`defects` 仅良性 `discoveryLeak`（页面自身 `detail.html`，接受不重跑）；`run_report` 键集合与上一轮一致，磁盘仍 1001 个文件。这一跑也就是那个前导分号坑的反证：若 run-code 载荷被格式化弄坏，这里会是 `emptyResult` + `combinedCount` 近 0。
 
 **教训**：
 - 格式化不是“纯白”操作：当被格式化的文件本身是一个**协议载荷**时，formatter 的“安全”预处理（在裸表达式前插 `;`）恰好会弄死它。凡是被别的进程当作源码/表达式消费的文件（`--filename` 脚本、模板、eval 字符串），先查清消费方式，再决定是否允许格式化。
