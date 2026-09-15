@@ -311,6 +311,47 @@
 
 ---
 
+### 2026-09-15 晚 — 官方清单成为唯一真源（ADR 0006 / 过滤器并轨 / 一次探针证伪两个前提）
+
+**触因**：用户要求重新评审 09-15 那轮的两个功能（Site asset 过滤 + 官方总数跨轮追踪），理由是那是没走完整工作流的产物。方式是三轮 grill（每轮先自己查事实再问决策，全部按推荐落地）+ 一次受控探针。
+
+**探针（subagent 执行，独立 session，未碰 `bluepoch` 会话，未下载）**：
+- `POST https://re.bluepoch.com/activity/official/websites/picture/query`（body `{"current":1,"pageSize":2000}`，GET 亦可）→ `data.total` = 1001 + 完整 `pageData[]`（`id` / `title` / `pictureUrl`），**无需任何 cookie**。
+- 该清单 1001 个 `pictureUrl` 的 basename 与 `images/` 的 1001 个文件**完全相等**（API 独有 0、磁盘独有 0）——镜像本来就是完整的，旧实现那个 `officialTotal: 1001` 是“数文件”蒙对的。
+- CDN 侧匿名抽样 12 个 URL（跳 12 个批次）全部 206，下载同样不需要登录态。
+- 页面 DOM 里不展示总数；`window` 里也没有完整清单（`imgArr` 只存当前 15 条，`paperData` 是 9 条诱饵数组）。清单只存在于那个网络响应里，而我们的捕获只收 `content-type: image/*`，所以一直看不到它。
+
+**决策**（三轮 grill，全部按推荐）：
+- **分阶段**：本轮只做 (A)「接口取数 + 精确校验」，但客户端按 (C)「整体坍缩成接口客户端 + 下载器」的形状做接缝，并新增 `discovery.coverage` 作为 (C) 的立项门槛；(C) 单独一轮、单独 ADR。
+- **ADR 0006 取代 ADR 0005**：官方总数 = 清单的 `data.total`（**可以下降**），新增 = 清单 `id` 集合差（按 id 不按文件名），镜像双向对账 `missingFromDisk` / `extraOnDisk`；状态改存 id 集合于 `images/.gallery-state.json`（与它描述的镜像同生共死）。接口不可用时 `officialTotal: null` + defect `gallerySourceUnavailable`，**绝不退回数文件**。
+- **首轮不再撕谎**：`newSinceLastRun: null`（不是 0）+ `firstRun: true`。
+- **误杀用真值判**：丢掉却在清单里 = `siteAssetFalsePositive`；结构化「画廊家族」判据不做。
+- **过滤器并轨**：`shouldKeep` 只剩 `data:`/`blob:`，23 个 UI 图标文件名 + SVG 归入 `src/wallpaper-url.ts`（新增 `filenameIn` 规则，规则类型收成判别联合），于是 `combinedCount` 真的是原始捕获，ADR 0004 那句假话变真。
+- **词表搬家**：Gallery tracking 成为独立上下文（CONTEXT.md 新增一节、CONTEXT-MAP 更新）；`isWallpaperFile` 从 `report/gallery.ts` 迁入 `wallpaper-url.ts`（之前它自己写了一份，与「唯一词汇表」矛盾）。
+- **删除 TRASH.md**（本地、已过期、在 `.gitignore` 里）。
+
+**纠错（重要）**：评审开头我拿**文件名前导数字**当官网编号，得出“官网编号到 1012、我们只有 937 个、75 个从未捕获”并写进了第一轮。拿到清单后实测：真实 id 空间是 `6..1012 去掉 {191,192,445,537,589,695}`，共 1001 条；而 1001 条里有 **625 条** filename 前导数字 ≠ id（id 6..20 的 title 甚至是 null）。量具错了，整条结论作废。
+
+**验证**：
+- 四件套全绿：`pnpm fmt:check` / `lint`（`--deny-warnings` 0/0）/ `typecheck` / `test`（45 passed，新增 `tests/gallery/*` 15 个用例）。
+- **突变测试**（本仓先例）：打断 `parseGalleryList` 的完整性守卫、把 `newSinceLastRun` 写死 0、把 `missingFromDisk` 写成空数组 → 3 个用例精准变红，还原后全绿。
+- **真跑**（`2026-09-15T08-48-00`）：`converged`、6 轮稳定、idle 55s、`networkCount` 483 / `domCount` 480 / **`combinedCount` 484**（上一轮 172——多出来的就是并轨后首次进入捕获的图标 URL）、`thumbnailsClicked` 75、discovery 297s。
+  - `siteAssets` **34**（上一轮 7）：原来被 `shouldKeep` 悄悄丢掉的那批 UI 图标现在逐条可见（`/home/img/` 下的 pagenation / music / paperDetail / statement / mobile 等）。
+  - download 450 全 skip / 0 failed；磁盘仍 1001 个文件且**全是 jpg/jpeg**（无杂项）。
+  - `gallery.officialTotal` **1001**（来自接口），`firstRun: true` + `newSinceLastRun: null`；**`mirror.missingFromDisk` 0、`extraOnDisk` 0**——镜像与官方清单逐条一致。
+  - `defects`：`siteAssetFalsePositive` 0、`gallerySourceUnavailable: false`、`mirrorGap` {missing:0,extra:0}、`discoveryLeak` 仍是良性的 `detail.html`。
+  - **`discovery.coverage` = 0.4496**：单轮只覆盖官方清单的 45%，而接口是 100%/160ms——这就是 (C) 要的数据。
+  - 状态文件 `images/.gallery-state.json` 落盘（9035 B，1001 个 id，6..1012）；旧的 `logs/gallery-state.json` 已删。
+- 协议载荷复查：`scripts/run-discovery.js` 仍是裸 `async (page) => {...}` 表达式，`node --check` 通过、包一层括号能求值（前导分号坑的反证）。
+
+**教训**：
+- **代理指标的失效是静默的，而且会互相污染**：`officialTotal` 数文件 + 单调 `max`，于是“删了文件”和“杂项漏进 `images/`”都会让 delta 永久变 0 或虚高，而它名字里写着 official。选代理指标时先问：错误方向可不可见？
+- **量具错了比结论错了更贵**：文件名前导数字与接口 id 是两套编号，我用前者推出了涉及 75 个“缺失”的结论。凡是要写进文档的数字，先用一个已知事实校准量具（这里是清单的总数）。
+- **前提被证伪时，替代方案的成本结构会整体改变**：官方总数这个功能的前提是“单轮数不出总数”。一个匿名 POST 就能拿到全部，于是旧实现的全部复杂度（状态文件、单调 max、首轮反推）都是在为那个不存在的前提付费。
+- **“没人需要用浏览器”这种事只有实测算数**：CDN 匿名 206、接口匿名 200，都是 30 秒 curl 能验的，而项目为此维护了 Playwright、会话、滚动稳定性循环，以及两条“协议载荷不许被格式化/lint”的约束。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -332,6 +373,11 @@
 | 继续用 npm | 与工作区兄弟仓、`pnpm/setup@v2` CI、pnpm 化的 lint-staged 形态都不一致 | 2026-09-15 |
 | 在同一个轮次里对 `scripts/run-discovery.js` 做格式化 / 自动修 | 它是 playwright-cli 的协议载荷（`(\n<file>\n)(page);`），formatter 会在裸表达式前插 `;` → `SyntaxError`，crawl 直接抓不到任何东西 | 2026-09-15 |
 | 直接复用 `sxzz/workflows` 的 `unit-test.yml` | 其 test job 无条件跑 `pnpm run build`，本仓无 build 脚本 | 2026-09-15 |
+| 继续用「磁盘文件数 + 单调 max」当官方总数 | 分不清「站点没上新」和「我们丢了文件」，且一次删除或一次杂项漏进就让 delta 永久为 0 | 2026-09-15 |
+| 用文件名前导数字当官网编号 | 1001 条里 625 条与真实 id 不符，id 6–20 连 title 都没有（实测） | 2026-09-15 |
+| 结构化「画廊家族」判据（`/PICTURE/` + 数字开头） | 有权威清单后属于多余的猜测；判据越少越不会自己出错 | 2026-09-15 |
+| 只用接口取总数、其余照旧 | 头号数字诚实了，delta 还是错的 | 2026-09-15 |
+| 在 Discovery 的网络捕获里收 `application/json` 清单 | 把权威数字绑在一次未必发生的渲染上，且一个捕获里混两种 content-type | 2026-09-15 |
 
 ## 验证规范（所有迭代通用）
 
@@ -343,7 +389,10 @@
 ## 开放问题
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
-- **过滤逻辑分两道**：`scripts/run-discovery.js` 的 `shouldKeep` 里还留着旧的「精确文件名」黑名单（约 25 个 UI 图标名），它是第一道、不可单测、丢弃量不进 `siteAssets`；第二道才是 `src/wallpaper-url.ts` 的结构化规则。合并成一道的代价是那些 URL 会重新计入 `combinedCount`（改变字段语义），留待单独一轮。
+- ~~**过滤逻辑分两道**~~ **已解决（2026-09-15 晚）**：`scripts/run-discovery.js` 的 `shouldKeep` 只剩 `data:`/`blob:`（它们不是可抓取的 URL），23 个 UI 图标文件名与 SVG 判定归入 `src/wallpaper-url.ts`（新增 `filenameIn` 规则）。`combinedCount` 因此真的是原始捕获——真跑实测 172 → 484，多出来的就是以前被静默丢掉的图标 URL，它们现在出现在 `siteAssets`（7 → 34）。
+- **(C) 整体坍缩成「接口客户端 + 下载器」**：清单接口已能一次给出全部 1001 个 `pictureUrl`（ADR 0006），CDN 匿名抽样 12/12 也是 206——也就是说浏览器、会话、滚动稳定性循环、cookie 提取、Site asset 过滤、甚至 `@playwright/cli` 这个全局依赖都不再是必需的。**立项门槛是 `discovery.coverage`**：真跑实测单轮只覆盖官方清单的 **45%**，而接口是 100%/160ms。先让它跑几轮取数，再单独开一轮 + 单独一份 ADR，不要在功能评审里顺手做掉。
+- **清单接口的稳定性未验证**：未公开文档，`pageSize` 上限、WAF/限流、`collectionId` 是否会随新合集变化都未知。失败模式是响的（`gallerySourceUnavailable` defect + `officialTotal: null`），但 `pageSize: 2000` 一旦被服务端悄悄截断，`parseGalleryList` 会直接拒收而不是把缺的那半报成「新增」。
+- **镜像缺口只报警、不自动补**：`missingFromDisk` 现在能把缺的条目列出来，而清单里带着它们的 URL——自动补下是可行的（且不受 `images/` 文件名不含批次日期的限制），留给后续一轮。
 - ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化，`scripts/run-discovery.js` 永久排除（见 Gotchas）。
 - ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
 - ~~**`autofix.yml` 未接**~~ **已接（2026-09-15 晚）**：`.github/workflows/autofix.yml` 在 PR 上跑 `pnpm lint:fix && pnpm fmt`，再由 `autofix-ci/action@v1.3.4` 把结果提交回 PR 分支（App 已由用户安装）。之所以手写而不是用 `sxzz/workflows` 的 autofix reusable：它的默认命令只有 `pnpm run lint --fix`（不含格式化），且与 `ci.yml` 的 setup 写法保持一致更好读。注意：机器人会往你的分支推提交，改完先 `git pull`，别用 `--force-with-lease` 把它的提交打掉。
