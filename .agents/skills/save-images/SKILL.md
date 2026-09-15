@@ -94,9 +94,12 @@ Reading traps — the numbers that get misread:
   971" reading was falsified when the 09-07 batch appeared.
 - **No `run_report` at all is a defect in the log, not proof the Run failed.**
   Run `2026-09-15T09-36-50` exited 0 and finished its work while every log
-  record after the Site asset dump was lost, `run_report` included
-  (`src/logger.ts` logs through a pino transport, so the writing side can stop
-  while the pipeline keeps going). When the report is missing, read
+  record after the Site asset dump was lost, `run_report` included — the cause
+  was the Run log's file target living in a pino transport worker, which can
+  stop while the pipeline keeps going, and that is now gone (the Run log is
+  written synchronously on the main thread, ADR 0007). A missing report still
+  happens if the Run is killed or dies before its last step. When the report is
+  missing, read
   `images/.gallery-state.json` first: its `runId` and `updatedAt` are written at
   the end of a Run, which separates "the Run finished, the log is gone" from
   "the Run never got that far". Then verify the outcome directly — fetch the
@@ -120,10 +123,11 @@ operator's runbook, not the project's memory:
   rejected, and the open questions. Read it before trusting a defect as new.
 - **CONTEXT.md** — domain vocabulary: Wallpaper, Wallpaper URL set, Site
   asset, Gallery total, Stability loop, Content-hash skip, 403 retry,
-  Run defect.
+  Run log, Run report, Run defect.
 - **docs/adr/** — decision history: 0001 network-first capture, 0002 run
   report in JSONL, 0003 ESM with tsx, 0004 Site asset filter, 0005 persisted
-  gallery total (superseded), 0006 the gallery list is the source.
+  gallery total (superseded), 0006 the gallery list is the source, 0007 the Run
+  log is written synchronously.
 
 ## Invoking
 

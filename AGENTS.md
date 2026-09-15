@@ -149,8 +149,10 @@ Reading traps:
   definition, so the leak list is a subset of `siteAssets.urls`: a leak that
   appears there is explained, and one that does not means the rules need a look.
 - **A missing `run_report` is a log defect, not a clean Run.** An exit code of
-  0 does not prove the report was written: the logger can stop while the
-  pipeline keeps going and exits 0 (see the open question in HISTORY.md). Read
+  0 does not prove the report was written: a Run can be killed, or die, before
+  its last step. (The one mechanism that used to do this silently — the Run
+  log's file target living in a pino transport worker — is gone; it is written
+  synchronously on the main thread, ADR 0007.) Read
   `images/.gallery-state.json` first — its `runId`/`updatedAt` are written at the
   end of a Run, so they separate "finished, log lost" from "never got there" —
   and verify the outcome against the official list instead of trusting the exit
@@ -174,7 +176,7 @@ the scrolling walk is doing less of the work than the list endpoint could.
 ```
 src/
 ├── config.ts                — zod-validated .env config, shared constants
-├── logger.ts                — pino with pretty console + JSONL file output
+├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
 ├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, wallpaperNameOf, isWallpaperFile, Site asset rules, splitWallpaperUrls (unit-tested)
 ├── discovery/
@@ -187,6 +189,7 @@ src/
 └── report/
     └── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
 tests/
+├── logger.test.ts
 ├── wallpaper-url.test.ts
 ├── gallery/
 │   ├── gallery-source.test.ts
@@ -289,6 +292,22 @@ exception — neither worth it for a file no tool may rewrite anyway.
 - lint-staged calls both tools with `--no-error-on-unmatched-pattern`, so
   committing a change to this file is not blocked by them having nothing to do.
 - Verify any edit by running the scraper, not just `node --check`.
+
+### The Run log is written synchronously, and must stay that way
+
+`src/logger.ts` writes the JSONL Run log through `pino.destination({ sync: true })`
+on the main thread, with `pino-pretty` as a plain stream rather than a second
+`transport` target. That costs one blocking write per record and buys the one
+property the log exists for: a transport puts the file sink in a worker thread,
+and a worker that stops leaves the process logging into a dead channel while
+still exiting 0 — which is how Run `2026-09-15T09-36-50` lost its `run_report`
+(ADR 0007). The file sink also keeps the **lower level** of the two sinks,
+because pino's multistream writes in level order and has no error isolation: the
+record has to reach the file before a console stream that throws can eat it
+(pino sorts the streams by level in `add()`, so the order of the array in the
+source is decoration, not the mechanism — raising the file's level above the
+console's is what would invert it). Do not "optimize" this back into a
+transport.
 
 ### Git hooks live in `.git/hooks`, and `core.hooksPath` must stay unset
 
