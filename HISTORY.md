@@ -255,9 +255,9 @@
 - **npm → pnpm 12.3.4**（删 `package-lock.json`，加 `packageManager` + `engines.node >=22.22.1`）。理由：工作区所有兄弟仓都是 pnpm，且 CI 的参考实现（toolbox）与 `sxzz/workflows` 都按 pnpm 设计。
 - **CI：手写 `.github/workflows/ci.yml`**（`pnpm/setup@v2` + `runtime: node@24` + `cache` + `require-lockfile`，跑 lint → typecheck → test）。否决直接用 `sxzz/workflows` 的 `unit-test.yml` reusable：其 test job 会无条件跑 `pnpm run build`，本仓无 build 脚本，绕过要传 `build: ''` 这种 hack；30 行手写 CI 更可控、可读。
 - **顺手修掉 oxlint 报出的真问题**（不是补规则，具体行为差异见下方「行为差异」）：`main.ts` 4 处不安全类型断言改成运行时校验（`errorMessage()` 收窄、`window.__wpUrls` / `__wpLog` 的 JSON 加数组+字符串校验）、`wallpaper-url.ts` 的 `matchesRule` 补 `never` 穷尽守卫、`download.ts` 的 `_cachedCookieHeader` 去掉下划线前缀、`report.ts` 的 `.sort()` → `.toSorted()`（`lib` 提到 ES2023）。自审后又补了 `parseStats` 的逐字段校验（`numberOr` / `booleanOr` / `isRecord`）与 `parseJsonPayload`（三处重复的双层 `JSON.parse` 收成一个），因为原先还留着一处 `as Partial<DiscoveryStats>`——它不在 oxlint 的报错里，但会让脏数据直接进 `run_report.discovery`。
-- **oxlint 忽略名单只放 `scripts/run-discovery.js`**（不是整个 `scripts/`）：自审指出新写的 `scripts/check-branch.mjs` 被误伤；实测 type-aware 对它是干净通过的（该浏览器脚本仍在名单外，因为它不在 tsconfig 的 `include` 里，纳入需先开 `allowJs`）。这是对 Q4「忽略 `scripts/**`」的**有意偏离**，理由如上。
+- **oxlint 忽略名单只放 `scripts/run-discovery.js`**（不是整个 `scripts/`）：自审指出新写的 `scripts/check-branch.mjs` 被误伤；实测 type-aware 对它是干净通过的。（**2026-09-15 晚更正**：当时写的理由是“它不在 tsconfig 的 `include` 里，纳入需先开 `allowJs`”——真正的原因比这硬：它是 playwright-cli 的协议载荷，详见下一条；`allowJs` 只是当时以为的前置条件。）
 - **oxfmt 全量重排留到单独一轮**：实测 `oxfmt --check` 报 21 个文件里 16 个要改；其中 `src` + `tests` 共 11 个文件 +237/-169 行，`scripts/run-discovery.js`（无 lint、无类型、无测试的浏览器脚本）一个文件就 +189/-140。一次性重排会淹没本轮真正的逻辑改动。
-- 加 `.editorconfig`（仅编辑器默认：UTF-8 / 2 空格 / 末行换行，**不写 `end_of_line`**）与 `.vscode/extensions.json`（`oxc.oxc-vscode`）；`TRASH.md` 写进 `.gitignore`（本地保留、永不提交）。
+- 加 `.editorconfig`（当时仅编辑器默认：UTF-8 / 2 空格 / 末行换行；**当晚已补上 `end_of_line = lf`**）与 `.vscode/extensions.json`（`oxc.oxc-vscode`）；`TRASH.md` 写进 `.gitignore`（本地保留、永不提交）。
 - **行尾：本轮的这个结论是错的，已更正。** 本条目初版说「git 历史存的就是 CRLF」并据此把 `.gitattributes` 从 PR #12 里拿出去——那是**测量事故**：`git cat-file` 打印 blob 时会跑 smudge 过滤器，而当时用来判断的 `grep -c $'\r'` 在这个 shell 里静默退化成「数行数」（对 LF 文件也返回行数，两堆文件报出的数字其实都是行数）。用 `git cat-file --batch-check='%(objectsize)'` 与文件实际字节数对比后，真相是本仓**一直存 LF**（blob 比 CRLF 工作区小约每行 1 字节），`git ls-files --eol` 报的 `i/lf` 才是对的；PR #12 里那句 AGENTS.md Gotcha 和开放问题描述因此都是错的，均已改成正确版 + 正确测量方法。
 
 **行为差异**（本轮唯一不是「配置搬运」的部分，逐条列出供真跑时对账；均只影响畸形输入，正常 payload 下逐字节等价）：
@@ -284,16 +284,17 @@
 
 ---
 
-### 2026-09-15 — oxfmt 接入 + 行尾钡到 LF（含一次差点上线的格式化事故）
+### 2026-09-15 — oxfmt 接入 + 行尾钉到 LF（含一次差点上线的格式化事故）
 
 **触因**：上一轮把 oxfmt 推迟了（实测 21 个文件里 16 个要改），行尾政策也标为未决；用户要求把清单上的未完项做完。
 
 **决策**：
-- **行尾：先纠错再决策**。上一轮「历史存 CRLF」是量具故障（详见上一条），真相是历史一直存 LF。于是加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钡到 LF，并用 `git checkout-index -a -f` 刷新工作区；`git add --renormalize` 在这里是 no-op（索引早就是 LF），不要把它当成可以验证的工具。
+- **行尾：先纠错再决策**。上一轮「历史存 CRLF」是量具故障（详见上一条），真相是历史一直存 LF。于是加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 刷新工作区；`git add --renormalize` 在这里是 no-op（索引早就是 LF），不要把它当成可以验证的工具。`.editorconfig` 也跟着写上 `end_of_line = lf`。
 - **oxfmt 0.67**（0.68 发布未满 24h，被 pnpm 供应链策略挡下）+ `.oxfmtrc.json`：`semi: false` / `singleQuote: true` / `arrowParens: "avoid"`（对齐原 antfu 风格）/ `printWidth: 100` / `endOfLine: "lf"` / `sortImports: true`。`**/*.md` 与 `pnpm-lock.yaml` 暂不格式化。试过 `experimentalOperatorPosition: "start"`（能把运算符前移风格还原得更彻底），但它自标 experimental，拒了。
-- **`scripts/run-discovery.js` 永久排除，并撑销了「把它纳入 lint」的原计划**。实测：交给 oxfmt 后文件以 `;async (page) => {` 开头，而 playwright-cli 是把文件包成 `(\n<内容>\n)(page);` 求值的 → `SyntaxError: Unexpected token ';'`。用 e2e 探针当场验证：带前导 `;` 的脚本报这个错、不带前导 `;` 的同文件能把 `window.__probe` 写成 `no-semi-ok`。也就是说这个格式化会静默弄死整个 Discovery（搜不到任何 URL，报告为 `emptyResult`）。既然这个文件的“形状”就是协议的一部分，它不该进任何会改写它的工具；要查它就等找一版不改写文件的只读检查。
+- **`scripts/run-discovery.js` 对两个工具都永久排除，并撤销了「把它纳入 lint」的原计划**。对 **oxfmt**：交给它以后文件以 `;async (page) => {` 开头，而 playwright-cli 是把文件包成 `(\n<内容>\n)(page);` 求值的 → `SyntaxError: Unexpected token ';'`。用 e2e 探针当场验证：带前导 `;` 的脚本报这个错、不带前导 `;` 的同文件能把 `window.__probe` 写成 `no-semi-ok`。也就是说这个格式化会静默弄死整个 Discovery（搜不到任何 URL，报告为 `emptyResult`）。对 **oxlint**：它不会弄死文件，但这个文件本身就是一个裸表达式语句，所以 `no-unused-expressions` 在第 1 行就是个**不可修复的 error**（实测：只读 lint 报 1 error + 5 warning，`oxlint --fix` 改了 0 字节但退 1）。而 lint-staged 跑的是 `--fix --deny-warnings`，那会让任何改动这个文件的提交恒被拦死；要绕过得加 disable 注释或规则豁免，对一个“本来就不允许被改写”的文件不值得。
 - **补上一个 lint-staged 漏洞**（上一轮收窄忽略名单时引入的）：被忽略的文件被显式传给工具时，oxlint 退 1（No files found to lint）、oxfmt 退 2（Expected at least one target file）→ 一旦提交只涉及 `scripts/run-discovery.js`，pre-commit 就会把提交拦死。两边都加 `--no-error-on-unmatched-pattern`（两个工具都有这个 flag），并写进 lint-staged。
 - oxfmt 进 lint-staged（提交时本地就格式化），CI 加 `Format` 步（`fmt:check`）。
+- **本轮没做的两项分别是：`autofix.yml`（阻塞在人工安装 autofix.ci App，自动化做不了）与 CI 的 Windows job（上一轮就只是“可选建议”，本轮未纳入）；两者继续挂在开放问题里。** Markdown 格式化（`**/*.md`）也没做，因为它是对 300 行中文散文的单独决定。
 
 **验证**：
 - 四件套：`pnpm fmt:check` / `typecheck` / `lint`（`--deny-warnings` 全仓 0/0）/ `test`（33 passed）全绿。
@@ -303,8 +304,10 @@
 
 **教训**：
 - 格式化不是“纯白”操作：当被格式化的文件本身是一个**协议载荷**时，formatter 的“安全”预处理（在裸表达式前插 `;`）恰好会弄死它。凡是被别的进程当作源码/表达式消费的文件（`--filename` 脚本、模板、eval 字符串），先查清消费方式，再决定是否允许格式化。
+- 同一件事在“会被改写”与“只是被检查”两种模式下结论可能不同，但都要有实测：oxfmt 是改一下就坏（已证）；oxlint 是只读就先报不可修复的 error（已证）——两个排除各有各的证据，不要用“同理”代替实测。
 - 工具“忽略名单”与“显式传路径”是两套语义：忽略只影响遍历，不影响显式传入时的非零退出。所以收窄忽略名单时，必须同步检查 lint-staged 这类“显式传文件”的调用方，并用一次真提交演练证明。
 - 真跑的价值不可替代：AST 等价、单测全绿、`node --check` 通过——这些都拦不住上面那个前导分号的坑，只有“实际跑一次管线”或“实际跑一次那个被包装的执行路径”能拦住。
+- **改完一个事实要把它的旧副本一并删掉**：本轮把行尾结论从“CRLF”改成“LF”时只加了新节、忘了删旧节，结果同一个 `AGENTS.md` 里两段自相矛盾（评审当场拓到）——这正是本文档自己记过的失败模式：单一事实源靠的是“旧副本也被清掉”，不是“新副本写对”。
 
 ---
 

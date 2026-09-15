@@ -1,11 +1,11 @@
-# Editor-level style for files outside the linter's reach. Deliberately says
-# nothing about line endings: this repository stores CRLF in git history and the
-# policy is unsettled — see HISTORY.md › 开放问题 (it must be settled before a
-# formatter, which writes LF, is adopted).
+# Editor defaults for files outside the toolchain's reach (markdown, and anything
+# oxfmt does not format). Line endings are LF everywhere: see `.gitattributes`
+# and AGENTS.md › Gotchas › "Git history is LF, the Windows worktree is CRLF".
 root = true
 
 [*]
 charset = utf-8
+end_of_line = lf
 indent_style = space
 indent_size = 2
 insert_final_newline = true
