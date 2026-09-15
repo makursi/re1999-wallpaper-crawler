@@ -58,6 +58,20 @@ Every iteration ships via this exact flow, in order:
    `gh pr merge --squash --delete-branch`
 5. `git checkout main && git pull`
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues, driven by the `gh` CLI (it infers the repo from `git remote`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles map 1:1 to `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: `CONTEXT-MAP.md` at the repo root names the contexts, whose glossaries are sections of the single root `CONTEXT.md`, plus `docs/adr/` and `HISTORY.md`. See `docs/agents/domain.md`.
+
 ## Project history (read before changing pipeline internals)
 
 `HISTORY.md` records **why the code is shaped the way it is** — each iteration's
