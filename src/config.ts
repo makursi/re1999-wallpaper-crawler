@@ -31,9 +31,9 @@ export const SESSION = parsed.SESSION_NAME
 export const BATCH_SIZE = parsed.BATCH_SIZE
 export const PLAYWRIGHT_CONFIG = parsed.PLAYWRIGHT_CONFIG
 export const LOG_DIR = path.resolve(PROJECT_ROOT, parsed.LOG_DIR)
+// Cross-run memory (the known gallery total), not a log — see docs/adr/0005
+export const GALLERY_STATE_FILE = path.join(LOG_DIR, 'gallery-state.json')
 
 export const USER_AGENT
   = process.env.USER_AGENT
     ?? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-
-export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']

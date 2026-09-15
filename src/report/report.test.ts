@@ -1,3 +1,4 @@
+import type { GalleryStats } from './gallery.js'
 import type { DiscoveryStats, DownloadOutcome, RunMeta } from './report.js'
 import { describe, expect, it } from 'vitest'
 import { buildRunReport, classifyOutcomes, detectLeaks } from './report.js'
@@ -127,30 +128,55 @@ describe('buildRunReport', () => {
     { kind: 'failed', url: 'https://cdn/b.jpg', filename: 'b.jpg', status: 403, reason: 'HTTP 403', retried: true },
   ]
   const metrics = classifyOutcomes(outcomes)
+  const gallery: GalleryStats = {
+    officialTotal: 1001,
+    previousOfficialTotal: 965,
+    newSinceLastRun: 36,
+    firstRun: false,
+    updatedAt: '2026-08-06T10:05:30.500Z',
+    runId: '2026-08-06T10-00-00',
+  }
+  const siteAssets = [
+    'https://hm.baidu.com/hm.gif?rnd=1',
+    'https://re.bluepoch.com/home/detail.html',
+  ]
 
-  it('computes duration and passes through discovery and download metrics', () => {
+  it('computes duration and passes through discovery, download and gallery metrics', () => {
     const report = buildRunReport(
       meta,
       '2026-08-06T10:05:30.500Z',
-      discovery,
-      metrics,
-      [],
+      { discovery, metrics, gallery, leakedUrls: [], siteAssets: [] },
     )
     expect(report.type).toBe('run_report')
     expect(report.runId).toBe('2026-08-06T10-00-00')
     expect(report.durationMs).toBe(330500)
     expect(report.discovery).toEqual(discovery)
     expect(report.download).toEqual(metrics)
+    expect(report.gallery).toEqual(gallery)
+    expect(report.siteAssets).toEqual({ count: 0, urls: [] })
     expect(report.failures).toEqual(metrics.failures)
+  })
+
+  it('records the filtered site assets so the capture is auditable', () => {
+    const report = buildRunReport(
+      meta,
+      '2026-08-06T10:05:30.500Z',
+      { discovery, metrics, gallery, leakedUrls: [], siteAssets },
+    )
+    expect(report.siteAssets).toEqual({ count: 2, urls: siteAssets })
   })
 
   it('derives defects from discovery, metrics and leaked URLs', () => {
     const report = buildRunReport(
       meta,
       '2026-08-06T10:05:30.500Z',
-      discovery,
-      metrics,
-      ['https://re.bluepoch.com/home/detail.html'],
+      {
+        discovery,
+        metrics,
+        gallery,
+        leakedUrls: ['https://re.bluepoch.com/home/detail.html'],
+        siteAssets,
+      },
     )
     expect(report.defects).toEqual({
       discoveryLeak: { count: 1, urls: ['https://re.bluepoch.com/home/detail.html'] },
@@ -162,7 +188,13 @@ describe('buildRunReport', () => {
   })
 
   it('flags emptyResult when nothing was found', () => {
-    const report = buildRunReport(meta, '2026-08-06T10:01:00.000Z', discovery, classifyOutcomes([]), [])
+    const report = buildRunReport(meta, '2026-08-06T10:01:00.000Z', {
+      discovery,
+      metrics: classifyOutcomes([]),
+      gallery,
+      leakedUrls: [],
+      siteAssets: [],
+    })
     expect(report.defects.emptyResult).toBe(true)
   })
 })

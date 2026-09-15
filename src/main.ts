@@ -1,4 +1,4 @@
-import type { DiscoveryStats, DownloadMetrics, DownloadOutcome, RunMeta } from './report/report.js'
+import type { DiscoveryStats, DownloadOutcome, RunMeta, RunReport } from './report/report.js'
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -6,6 +6,7 @@ import process from 'node:process'
 import {
   BASE_ORIGIN,
   BATCH_SIZE,
+  GALLERY_STATE_FILE,
   IMAGES_DIR,
   LOG_DIR,
   PAGE_HASH,
@@ -19,7 +20,15 @@ import {
 import { buildRunCodeScript } from './discovery/discovery-loader.js'
 import { downloadBatch, extractCookies } from './download/download.js'
 import { createLogger } from './logger.js'
+import {
+  countWallpapers,
+  isWallpaperFile,
+  mergeGalleryStats,
+  readGalleryStats,
+  writeGalleryStats,
+} from './report/gallery.js'
 import { buildRunReport, classifyOutcomes, detectLeaks } from './report/report.js'
+import { classifySiteAsset, describeSiteAssetRules, splitWallpaperUrls } from './wallpaper-url.js'
 
 // ── Playwright CLI wrapper ─────────────────────────────────────────
 
@@ -49,6 +58,8 @@ function newRunMeta(): { meta: RunMeta, config: Record<string, string | number |
       BATCH_SIZE,
       PLAYWRIGHT_CONFIG,
       USER_AGENT,
+      GALLERY_STATE_FILE,
+      SITE_ASSET_FILTER: describeSiteAssetRules(),
     },
   }
 }
@@ -78,11 +89,15 @@ function parseStats(rawStats: string): DiscoveryStats {
   }
 }
 
-function printSummary(logger: ReturnType<typeof createLogger>, m: DownloadMetrics): void {
+function printSummary(logger: ReturnType<typeof createLogger>, report: RunReport): void {
+  const m = report.download
+  const g = report.gallery
+
   logger.info('========================================')
   logger.info('           DOWNLOAD SUMMARY')
   logger.info('========================================')
-  logger.info(`  Total images found : ${m.total}`)
+  logger.info(`  Images captured    : ${report.discovery.combinedCount}  (Site assets filtered: ${report.siteAssets.count})`)
+  logger.info(`  Wallpapers found   : ${m.total}`)
   logger.info(`  Successfully saved : ${m.ok}`)
   logger.info(`  Skipped (existing) : ${m.skipped}`)
   logger.info(`  Failed             : ${m.failed}`)
@@ -98,12 +113,49 @@ function printSummary(logger: ReturnType<typeof createLogger>, m: DownloadMetric
   if (fs.existsSync(IMAGES_DIR)) {
     const totalSize = fs
       .readdirSync(IMAGES_DIR)
-      .filter(f => /\.(?:png|jpe?g|webp|gif)$/i.test(f))
+      .filter(isWallpaperFile)
       .reduce((s, f) => s + fs.statSync(path.join(IMAGES_DIR, f)).size, 0)
     const mb = (totalSize / 1024 / 1024).toFixed(1)
     logger.info(`  Total size on disk  : ${mb} MB`)
   }
+
   logger.info('========================================')
+  logger.info('           GALLERY TOTAL')
+  logger.info('========================================')
+  const delta = g.newSinceLastRun > 0 ? `+${g.newSinceLastRun}` : '+0'
+  if (g.firstRun)
+    logger.info(`  Official wallpapers : ${g.officialTotal}  (first record, ${delta} this run)`)
+  else
+    logger.info(`  Official wallpapers : ${g.officialTotal}  (previous ${g.previousOfficialTotal}, ${delta})`)
+  logger.info('========================================')
+}
+
+/**
+ * Refresh the cross-run gallery total: count the Wallpapers on disk, compare
+ * with the previous Run's record, and persist. A failure to persist must not
+ * cost the Run its report, so it only warns.
+ */
+function updateGalleryStats(
+  logger: ReturnType<typeof createLogger>,
+  meta: RunMeta,
+  at: string,
+  newThisRun: number,
+): ReturnType<typeof mergeGalleryStats> {
+  const files = fs.existsSync(IMAGES_DIR) ? fs.readdirSync(IMAGES_DIR) : []
+  const stats = mergeGalleryStats(
+    readGalleryStats(GALLERY_STATE_FILE),
+    countWallpapers(files),
+    newThisRun,
+    meta.runId,
+    at,
+  )
+  try {
+    writeGalleryStats(GALLERY_STATE_FILE, stats)
+  }
+  catch (err: unknown) {
+    logger.warn({ err: (err as Error).message }, 'failed to persist gallery state')
+  }
+  return stats
 }
 
 function finishRun(
@@ -112,10 +164,18 @@ function finishRun(
   discoveryStats: DiscoveryStats,
   outcomes: DownloadOutcome[],
   leakedUrls: string[],
-): void {
+  siteAssets: string[],
+): RunReport {
   const finishedAt = new Date().toISOString()
   const metrics = classifyOutcomes(outcomes)
-  const report = buildRunReport(meta, finishedAt, discoveryStats, metrics, leakedUrls)
+  const gallery = updateGalleryStats(logger, meta, finishedAt, metrics.ok)
+  const report = buildRunReport(meta, finishedAt, {
+    discovery: discoveryStats,
+    metrics,
+    gallery,
+    leakedUrls,
+    siteAssets,
+  })
 
   logger.info(report, 'run report')
 
@@ -130,6 +190,8 @@ function finishRun(
     logger.warn({ defect: 'persistentFailures', count: d.persistentFailures }, 'downloads failed even after retry')
   if (d.emptyFiles.length > 0)
     logger.warn({ defect: 'emptyFiles', files: d.emptyFiles }, 'downloaded files were empty (0 bytes)')
+
+  return report
 }
 
 // ── main ────────────────────────────────────────────────────────────
@@ -228,6 +290,19 @@ async function main() {
       logger.warn(`     - ${u}`)
   }
 
+  // 3a. Drop Site assets — the page HTML, analytics pixels, site UI art — so
+  // they never reach Download. The raw capture above is left untouched for the
+  // leak check, and the drop is recorded in the report.
+  const { wallpapers, siteAssets } = splitWallpaperUrls(allUrls)
+  if (siteAssets.length > 0) {
+    logger.info(`   Site assets filtered: ${siteAssets.length}`)
+    for (const u of siteAssets) {
+      const rule = classifySiteAsset(u)
+      logger.info(`     - ${u}  [${rule?.reason ?? 'unknown'}]`)
+    }
+  }
+  logger.info(`   Wallpapers to download: ${wallpapers.length}`)
+
   // 3b. Extract run-code diagnostic log
   try {
     const rawLog = execSync(
@@ -273,10 +348,9 @@ async function main() {
     discoveryStats = parseStats('')
   }
 
-  if (allUrls.length === 0) {
-    logger.warn('No images found. The page structure may have changed.')
-    finishRun(logger, meta, discoveryStats, [], leakedUrls)
-    printSummary(logger, classifyOutcomes([]))
+  if (wallpapers.length === 0) {
+    logger.warn('No Wallpapers found. The page structure may have changed.')
+    printSummary(logger, finishRun(logger, meta, discoveryStats, [], leakedUrls, siteAssets))
     return
   }
 
@@ -288,12 +362,10 @@ async function main() {
   logger.info('5. Downloading images...')
   fs.mkdirSync(IMAGES_DIR, { recursive: true })
 
-  const outcomes = await downloadBatch(allUrls, IMAGES_DIR, BATCH_SIZE, logger)
+  const outcomes = await downloadBatch(wallpapers, IMAGES_DIR, BATCH_SIZE, logger)
 
   // 6. Summarize, report and print
-  const metrics = classifyOutcomes(outcomes)
-  finishRun(logger, meta, discoveryStats, outcomes, leakedUrls)
-  printSummary(logger, metrics)
+  printSummary(logger, finishRun(logger, meta, discoveryStats, outcomes, leakedUrls, siteAssets))
 }
 
 main().catch((err) => {

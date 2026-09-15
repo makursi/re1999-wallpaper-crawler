@@ -23,6 +23,8 @@ _Avoid_: wallpaper (as a name for the raw captured artifact)
 **Wallpaper URL set**:
 The deduplicated, filtered collection of Wallpaper URLs produced by Discovery
 and consumed by Download (bridged across processes via `window.__wpUrls`).
+The raw capture may still carry Site assets; the Site asset filter drops them
+before Download sees the set.
 _Avoid_: URL list, allUrls, manifest
 
 **Browser session**:
@@ -72,6 +74,24 @@ no new image requests arrive and the page height is stable — proof that
 discovery is complete.
 _Avoid_: convergence, idle detection
 
+**Site asset**:
+A resource the page or the CDN serves alongside the gallery that is not a
+Wallpaper: the page's own HTML document, analytics pixels, and the site's UI
+art (page background, music-player covers, icons). Marked by the rules in
+`src/wallpaper-url.ts` and never downloaded.
+_Avoid_: junk, noise, non-image (a Site asset can be an image)
+
+**Site asset filter**:
+The stage that partitions the raw capture into Wallpapers and Site assets
+before Download, so the Wallpaper URL set Download consumes contains neither
+Site assets nor non-image URLs.
+_Avoid_: cleanup, sanitizer
+
+_Dropping happens in two passes_: the Discovery script's own `shouldKeep`
+drops the site's UI icon sprites by exact filename before publishing (a
+pre-existing, untested pass, invisible in the report), and this filter drops
+the rest. See docs/adr/0004.
+
 ### Download
 
 **Download**:
@@ -109,7 +129,8 @@ _Avoid_: execution, session run
 The degree to which a single Run completes both pipelines and produces a
 trustworthy outcome, measured by: discovery convergence, download success
 rate, 403 retry rescue rate, and absence of leak/anomaly signals. Cross-run
-consistency is a future, aggregation-phase signal.
+consistency is only tracked for the Gallery total; other aggregation-phase
+signals are future work.
 _Avoid_: reliability, health
 
 **Run parity (运行等价)**:
@@ -124,14 +145,28 @@ _Avoid_: run quality, 运行质量, no regression
 An anomaly detectable from the log that shows the crawl deviated from
 expectations. Classes: discovery leak, convergence failure, empty result,
 persistent failure, empty file. Cross-run drift is a future,
-aggregation-phase class.
+aggregation-phase class, except for the Gallery total, whose growth is
+reported per Run.
 _Avoid_: bug, error, failure (as a blanket term)
 
 **Run report**:
 The single structured log record (`type: run_report`) that aggregates one
-Run's stability signals and detected defects, so an Agent can assess the run
-without re-parsing the whole log.
+Run's stability signals, its Gallery total, the Site assets it filtered, and
+detected defects, so an Agent can assess the run without re-parsing the whole
+log.
 _Avoid_: summary, dashboard, report file
+
+**Gallery total**:
+The number of Wallpapers the official gallery has exposed so far — the
+Wallpaper files on disk. Cumulative, because the gallery page renders only the
+thumbnails in view, so no single Run can count the gallery. Never decreases.
+_Avoid_: image count, total images, 图片总数
+
+**Gallery state**:
+The persisted record of the Gallery total and the previous Run's value
+(`logs/gallery-state.json`), which is what lets a Run report how many
+Wallpapers are new since the last Run.
+_Avoid_: cache, checkpoint
 
 **run_meta**:
 The first log record of a Run carrying runId, timestamps, and a config
@@ -159,6 +194,9 @@ which unmounts off-screen images and makes DOM counting unreliable.
 5. Merge network captures with DOM `img[src]` URLs, filter through
    `shouldKeep` (drops icons, SVGs, data:/blob:), and publish the result as
    the Wallpaper URL set.
+6. Partition that set with the Site asset filter (`src/wallpaper-url.ts`) —
+   analytics pixels, site UI art, the page's own HTML — and hand only
+   Wallpapers to Download.
 
 ### Download pipeline
 
@@ -166,7 +204,8 @@ which unmounts off-screen images and makes DOM counting unreliable.
 2. Download in parallel batches of `BATCH_SIZE`; skip files that already exist
    (Content-hash skip).
 3. On 403, retry once with full browser headers (403 retry).
-4. Summarize ok / skipped / failed + total size on disk.
+4. Summarize ok / skipped / failed + total size on disk, then refresh the
+   Gallery total from the Wallpapers on disk.
 
 ## Gotchas
 

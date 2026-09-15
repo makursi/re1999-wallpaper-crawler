@@ -26,10 +26,23 @@ Then `npm install` for project dependencies.
 
 ## Git Conventions (every iteration)
 
-All work lands on `main` only through a merged PR. Every iteration ships via
-this exact flow, in order:
+All work lands on `main` only through a merged PR. **Never commit on `main`
+(or `master`), and never touch a file before the branch exists** — the first
+action of every iteration is step 1, not an edit.
+
+This is enforced, not just asked: `.githooks/pre-commit` refuses a commit when
+HEAD is on `main`/`master` or detached. Activate it in a fresh clone with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`git commit --no-verify` bypasses it — if you ever use it, say why in the PR.
+
+Every iteration ships via this exact flow, in order:
 
 1. `git checkout -b <type>/<short-slug>` — type: `feat` / `fix` / `refactor` / `docs` / `chore`
+   — **before** editing anything
 2. Commit in English, conventional style (never Chinese in commit messages)
 3. `git push -u origin <branch>`
 4. `gh pr create --base main` (title = commit subject), then after review:
@@ -61,10 +74,17 @@ assess run stability, find defects, and propose optimizations:
 How to judge a run:
 
 - **Discovery**: `discovery.converged` (false ⇒ not converged), `stableRounds`,
-  `totalIdleSec`, `combinedCount` (total wallpapers found).
+  `totalIdleSec`, `combinedCount` (URLs captured, Site assets included).
 - **Download**: `download.successRate` = ok / (ok+failed),
   `download.rescueRate` = 403s rescued by retry, `download.failed`,
   `download.statusHistogram`, `download.failureGroups`.
+- **Gallery**: `gallery.officialTotal` = Wallpapers known in total,
+  `gallery.newSinceLastRun` = added since the previous Run, `gallery.firstRun`
+  = there was no earlier record to compare against. `previousOfficialTotal`
+  should equal the previous Run's `officialTotal`.
+- **Site assets**: `siteAssets.count` / `siteAssets.urls` = resources the Site
+  asset filter dropped before Download — this is why `download.total` sits
+  below `discovery.combinedCount`.
 - **Defects** (auto-detected in `defects`): `discoveryLeak`, `nonConverged`,
   `emptyResult`, `persistentFailures`, `emptyFiles`.
 
@@ -72,19 +92,21 @@ Reading traps:
 - An all-skipped run reads `download.successRate: 0` **by design** — the
   rate is ok / (ok+failed), and every file already on disk is Content-hash
   skipped, so 0 ok / 0 failed is a clean re-scrape, not a failure.
-- A `combinedCount` far below baseline is **not automatically a defect**: if
-  `images/` already holds everything the site exposes (all downloads hitch
-  Content-hash skip) and a page probe shows only a handful of `.holder-img`
-  with no tabs/load-more, the official gallery is simply exhausted — the
-  run is clean, don't re-run for it. (Confirmed 2026-09-04: 971 files =
-  full site.)
+- A `combinedCount` below the Gallery total is expected and **not a defect**:
+  the page renders only the thumbnails in view, so a Run sees a subset. Read
+  `gallery.newSinceLastRun` to tell "nothing new on the site" (0) from "the
+  crawl regressed" — the latter surfaces as `nonConverged` or an empty
+  capture, not as a small `combinedCount`.
 - A `discoveryLeak` whose only URL is the page's own HTML URL (e.g.
-  `re.bluepoch.com/home/detail.html`) is benign — the page's canonical image
-  response is captured by the network listener but is not a Wallpaper and is
-  never downloaded; accept it, don't re-run for it.
-- **Cross-run trends**: compare `combinedCount` / `successRate` /
-  `defects` across files. A sharp drop in `combinedCount` suggests selector
-  drift. Aggregation across runs is not yet automated.
+  `re.bluepoch.com/home/detail.html`) is benign: it is also reported as a
+  Site asset, is never downloaded, and never counts toward the Gallery total.
+  Accept it, don't re-run for it. A leak naming anything else means the Site
+  asset rules need looking at.
+- **Cross-run trends**: compare `gallery.officialTotal` /
+  `gallery.newSinceLastRun` / `download.successRate` / `defects` across files.
+  The Gallery total is the cross-run signal (ADR 0005) — a drop in
+  `combinedCount` alone says nothing. Aggregation beyond that is not yet
+  automated.
 
 Optimization leads to look for: low `rescueRate` ⇒ retry/header policy;
 `failureGroups` dominated by one status ⇒ that status's handling;
@@ -97,14 +119,18 @@ stability-loop parameters or missing thumbnails.
 src/
 ├── config.ts                — zod-validated .env config, shared constants
 ├── logger.ts                — pino with pretty console + JSONL file output
-├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → download → report
+├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → report
+├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, Site asset rules, splitWallpaperUrls (unit-tested)
+├── wallpaper-url.test.ts    — unit tests for wallpaper-url.ts
 ├── discovery/
 │   └── discovery-loader.ts  — reads scripts/run-discovery.js and injects PAGE_HASH
 ├── download/
 │   └── download.ts          — parallel batch downloads via undici, cookie auth, 403 retry
 └── report/
     ├── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
-    └── report.test.ts       — unit tests for report.ts
+    ├── report.test.ts       — unit tests for report.ts
+    ├── gallery.ts           — cross-run Gallery total: count, merge, read/write gallery-state.json (unit-tested)
+    └── gallery.test.ts      — unit tests for gallery.ts
 scripts/
 └── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 ```
