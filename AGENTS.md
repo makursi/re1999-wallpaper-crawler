@@ -148,6 +148,13 @@ Reading traps:
   Accept it, don't re-run for it. Every non-image URL is a Site asset by
   definition, so the leak list is a subset of `siteAssets.urls`: a leak that
   appears there is explained, and one that does not means the rules need a look.
+- **A missing `run_report` is a log defect, not a clean Run.** An exit code of
+  0 does not prove the report was written: the logger can stop while the
+  pipeline keeps going and exits 0 (see the open question in HISTORY.md). Read
+  `images/.gallery-state.json` first — its `runId`/`updatedAt` are written at the
+  end of a Run, so they separate "finished, log lost" from "never got there" —
+  and verify the outcome against the official list instead of trusting the exit
+  code. The save-images runbook carries the operator's version of this check.
 - **Cross-run trends**: compare `gallery.officialTotal` /
   `gallery.newSinceLastRun` / `download.successRate` / `defects` across files.
   The Gallery numbers are the cross-run signal (ADR 0006) — a drop in

@@ -22,8 +22,10 @@ an existing Browser session first — the pipeline owns it (`src/main.ts`
 clears and reopens its own session: close-all + delete-data +
 open --persistent), so `Browser 'bluepoch' is not open` from an `eval` probe
 is the **expected** pre-run state, not a blocker. Login state rides in the
-persistent profile; an anonymous session would yield `emptyResult` or 403s
-on every Wallpaper. `.env` needs nothing from you: zod validates every key
+persistent profile, but it is not what makes the site readable: the Gallery
+list and the CDN both answered anonymously in the 2026-09-15 probe
+(ADR 0006), so a logged-out session is not the first thing to suspect.
+`.env` needs nothing from you: zod validates every key
 at startup and fails fast. The scrape drives a real headed Chrome for
 several minutes, so clear the machine first: a stray click or keystroke
 disturbs Discovery.
@@ -35,8 +37,9 @@ Watch the terminal as hash injection, the Stability loop's rounds, the Site
 assets it filters, and the download batches stream into
 `logs/save-wallpapers-<ts>.jsonl`. Touch nothing until it exits.
 
-_Done when the process exits 0 and prints the ok / skipped / failed counts,
-the size on disk, and the Gallery total._
+_Done when the process exits 0, prints the ok / skipped / failed counts and
+the Gallery total, **and has written a `run_report`** — an exit code of 0
+alone is not proof of a clean Run (see the missing-report trap below)._
 
 **Verify — the Run report.** Open the newest `logs/save-wallpapers-*.jsonl`
 and grep `"type":"run_report"` — one record per Run. Read its `gallery`
@@ -68,7 +71,7 @@ block against the site's own list:
   `download.statusHistogram` full of 403s points at the session Cookie
   header, not the CDN.
 
-Reading traps — three numbers misread easily:
+Reading traps — the numbers that get misread:
 
 - A re-scrape where every file already exists reports `download.successRate:
   0` with everything skipped / 0 failed — that is by design (ok / (ok+failed),
@@ -89,6 +92,16 @@ Reading traps — three numbers misread easily:
   total itself comes from the site's own list endpoint (ADR 0006), not from our
   copy, and it grows over time: the 2026-09-04 "the gallery is exhausted at
   971" reading was falsified when the 09-07 batch appeared.
+- **No `run_report` at all is a defect in the log, not proof the Run failed.**
+  Run `2026-09-15T09-36-50` exited 0 and finished its work while every log
+  record after the Site asset dump was lost, `run_report` included
+  (`src/logger.ts` logs through a pino transport, so the writing side can stop
+  while the pipeline keeps going). When the report is missing, read
+  `images/.gallery-state.json` first: its `runId` and `updatedAt` are written at
+  the end of a Run, which separates "the Run finished, the log is gone" from
+  "the Run never got that far". Then verify the outcome directly — fetch the
+  official list and diff it against `images/` — rather than accepting the Run as
+  clean on an exit code.
 
 Accept the Run when no defect is reported, or record the decision for every
 defect (accept / re-run / investigate) so the log stays the audit trail.
@@ -103,6 +116,8 @@ operator's runbook, not the project's memory:
 
 - **AGENTS.md** — "Analyzing a run's logs": the full run-report reading
   workflow and the optimization leads.
+- **HISTORY.md** — why the pipeline is shaped this way, the approaches already
+  rejected, and the open questions. Read it before trusting a defect as new.
 - **CONTEXT.md** — domain vocabulary: Wallpaper, Wallpaper URL set, Site
   asset, Gallery total, Stability loop, Content-hash skip, 403 retry,
   Run defect.
