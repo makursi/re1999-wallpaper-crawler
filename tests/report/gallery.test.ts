@@ -1,4 +1,4 @@
-import type { GalleryStats } from './gallery.js'
+import type { GalleryStats } from '../../src/report/gallery.js'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -9,7 +9,7 @@ import {
   mergeGalleryStats,
   readGalleryStats,
   writeGalleryStats,
-} from './gallery.js'
+} from '../../src/report/gallery.js'
 
 describe('isWallpaperFile', () => {
   it('accepts the extensions the CDN serves, case-insensitively', () => {
