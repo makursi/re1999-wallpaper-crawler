@@ -31,9 +31,9 @@
 |----------------------|----------------------------------|
 | Configuration (.env) | `src/config.ts`                  |
 | Logging              | `src/logger.ts`                  |
-| Wallpaper URL set / Site asset rules | `src/wallpaper-url.ts` (+ tests) |
-| Analysis/report      | `src/report/report.ts` (+ tests) |
-| Gallery total        | `src/report/gallery.ts` (+ tests) |
+| Wallpaper URL set / Site asset rules | `src/wallpaper-url.ts`           |
+| Analysis/report      | `src/report/report.ts`           |
+| Gallery total        | `src/report/gallery.ts`          |
 | Orchestration        | `src/main.ts`                    |
 | Discovery script     | `scripts/run-discovery.js`       |
 | Discovery loader     | `src/discovery/discovery-loader.ts` |

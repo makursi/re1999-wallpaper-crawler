@@ -228,6 +228,23 @@
 
 ---
 
+### 2026-09-15 — 测试移出 src（tests/ 镜像 + vitest include 护栏）
+
+**触因**：3 个测试文件与源文件同目录（417 行，占 src 下 TS 的 28%）；「src = 产品代码」这条边界在目录上不可见，只在人心里。
+
+**决策**（grill 两轮，全部按推荐）：
+- **仓根 `tests/` 镜像 src**：`tests/wallpaper-url.test.ts`、`tests/report/{report,gallery}.test.ts`，import 改用相对路径且带 `.js`（ADR 0003）。否决 `src/**/__tests__/`——src 里仍有测试，边界没画出来；否决维持同目录
+- **tsconfig**：删 `rootDir`（无 emit/build 脚本消费者，实际已废弃）+ `include` 加 `tests/**/*` 与 `vitest.config.ts`。两条失败模式均已实测：只加 include 不删 rootDir → `TS6059 not under rootDir`；不把测试加进 include → ESLint type-aware 报 `not found by the project service` 解析错误。`eslint.config.mjs` 无需改动
+- **新增 `vitest.config.ts`**（`test.include: ['tests/**/*.test.ts']`）：把「测试只住 `tests/`」从约定变成**配置层强制**。护栏实测有效——往 `src/` 丢一个 `.test.ts`，vitest 仍只报 3 files / 33 tests
+- 本次只动测试（gallery 归属、CI、`lint`/`typecheck` 脚本另开账）；纯移动零逻辑改动 → **不真跑**爬虫，按 09-04 同类先例只跑三件套
+- 文档：AGENTS.md 架构树拆成 `src/` 与 `tests/` 两块、CONTEXT-MAP 三处 `(+ tests)` 去掉（测试位置是文件布局事实，归 AGENTS.md 而非领域表）、CLAUDE.md 去重为 `@AGENTS.md` 指针；不写 ADR（可回滚、非惊讶、无僵化收益）
+
+**验证**：`npx tsc --noEmit` 零错误；`npm test` 33 passed（与基线同数）；`npx eslint .` 零错误；`git diff -M` 三个文件均识别为 rename（相似度 97/98/99%，改动仅限 import 路径行）。**未真跑爬虫**：理由见上；本类改动不触碰 `run_report` 的键集合与语义，故验证规范里的 **Run parity 不适用**（那条针对会改 run_report 的迁移）。
+
+**教训**：移动文件后 import 深度要按**新位置**数，不能按旧位置想当然——`tests/report/x.test.ts` 到 `src/` 是 `../../`，第一版写成 `../` 被 tsc 当场抓住（这就是边做边跑 typecheck 的价值）；目录约定若不落到配置层强制（vitest include），半年后必然被人放回去。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -242,6 +259,7 @@
 | 独立 report.json/.md | 与 JSONL run_report 双份事实源漂移 | ADR 0002 |
 | ts-node ESM / bundler resolution | 与 ESM+tsx 比语义不纯 | ADR 0003 |
 | skill Preflight 探测 session | 管线自管 session，探测必报 not open | 2026-09-03 |
+| 测试与源文件同目录 / `src/**/__tests__/` | 「src = 产品代码」的边界在目录上不可见，且无配置层护栏 | 2026-09-15 |
 
 ## 验证规范（所有迭代通用）
 

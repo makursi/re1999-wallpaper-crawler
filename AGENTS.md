@@ -121,19 +121,23 @@ src/
 ├── logger.ts                — pino with pretty console + JSONL file output
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → report
 ├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, Site asset rules, splitWallpaperUrls (unit-tested)
-├── wallpaper-url.test.ts    — unit tests for wallpaper-url.ts
 ├── discovery/
 │   └── discovery-loader.ts  — reads scripts/run-discovery.js and injects PAGE_HASH
 ├── download/
 │   └── download.ts          — parallel batch downloads via undici, cookie auth, 403 retry
 └── report/
     ├── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
-    ├── report.test.ts       — unit tests for report.ts
-    ├── gallery.ts           — cross-run Gallery total: count, merge, read/write gallery-state.json (unit-tested)
-    └── gallery.test.ts      — unit tests for gallery.ts
+    └── gallery.ts           — cross-run Gallery total: count, merge, read/write gallery-state.json (unit-tested)
+tests/
+├── wallpaper-url.test.ts
+└── report/
+    ├── report.test.ts
+    └── gallery.test.ts
 scripts/
 └── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 ```
+
+Tests mirror `src/` under `tests/` (`src/report/report.ts` → `tests/report/report.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in `src/` never runs.
 
 **Network-first design**: image URLs are captured via `page.on("response")` listening for `content-type: image/*`, _not_ from DOM scanning. DOM is only used to drive scrolling/clicking to trigger lazy loads.
 

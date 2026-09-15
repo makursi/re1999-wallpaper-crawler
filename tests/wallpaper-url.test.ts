@@ -5,7 +5,7 @@ import {
   isImageUrl,
   isSiteAsset,
   splitWallpaperUrls,
-} from './wallpaper-url.js'
+} from '../src/wallpaper-url.js'
 
 const WALLPAPER = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE/20260907/1012.%E7%AB%96%E7%89%88-2560x1440_5e7b2726dd044c39a526651bbebe75e6.jpg'
 
