@@ -37,9 +37,12 @@ failed download cannot make the gallery appear to shrink.
 ## Consequences
 
 - A first Run with no state file back-derives the previous total from that
-  Run's own downloads (`previousOfficialTotal = officialTotal - download.ok`)
-  and marks itself `firstRun`, so the growth number survives the upgrade
-  instead of being reported as zero.
+  Run's *own* downloads (`previousOfficialTotal = officialTotal - download.ok`)
+  and marks itself `firstRun` — but only that Run's growth survives. The
+  upgrade Run on 2026-09-15 downloaded nothing (every Wallpaper was already on
+  disk and hit Content-hash skip), so it recorded `newSinceLastRun: 0` although
+  the previous Run had added 36; that growth lives only in the older Run
+  reports. Nothing is lost from the second Run on: the delta is exact.
 - Deleting `logs/gallery-state.json` costs one Run of comparison and nothing
   else.
 - "Official total" means the *known* total: if the gallery ever retires a

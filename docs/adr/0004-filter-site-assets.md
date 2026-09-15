@@ -40,3 +40,9 @@ distinct URLs across `logs/`) and the icon filename embeds a build hash.
 - A non-image leak that cannot be explained as a Site asset is still flagged.
 - `images/` holds Wallpapers only, which is what makes the Gallery total
   (ADR 0005) a clean number.
+- Filtering happens in two passes and only this one is visible. The Discovery
+  script's `shouldKeep` already drops the site's UI icon sprites by exact
+  filename: a pre-existing list, no unit tests, and its drops never appear in
+  the report. Migrating that list into these rules is left for a later
+  iteration, because it would move those URLs back into `combinedCount`, whose
+  meaning this ADR deliberately preserves.

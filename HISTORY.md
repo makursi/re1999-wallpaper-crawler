@@ -210,13 +210,15 @@
   - 否决**把规则塞进 `scripts/run-discovery.js` 的 `shouldKeep`**：那份 JS 不可类型检查、不可单测
 - 过滤点放 `main.ts`（TS、可测）。`discovery.combinedCount` 语义**保持不变**（仍是原始捕获数，含杂项），被丢掉的杂项另立 `run_report.siteAssets`，以免破坏既有跨轮可比性
 - 新增 `src/report/gallery.ts` + `logs/gallery-state.json`：官方总数 = 磁盘上的壁纸文件数（累计），单调取 `max`，每轮写入并对比上一轮；无历史记录时用 `officialTotal - download.ok` 反推上一轮值，避免升级时把增量记成 0（ADR 0005，并明确区别于 ADR 0002 所否决的「同一轮数据的第二份表示」——这是跨轮记忆）
-- 删除那 6 个杂项文件（`1.png` / `BG2.png` / `icon-192_*.png` / `Vinyl record.png` / `hm.gif` / `detail.html`，共 3.6 MB）；`IMAGE_EXTENSIONS` 复用为 URL 与文件两处的统一判据
+- 删除那 6 个杂项文件（`1.png` / `BG2.png` / `icon-192_*.png` / `Vinyl record.png` / `hm.gif` / `detail.html`，共 3.6 MB）
+- `IMAGE_EXTENSIONS` 统一到 `src/wallpaper-url.ts` 单一来源：`report.ts` 那份随 `isImageUrl` 迁走时删掉，`config.ts` 那份在自审后也去掉，`download.ts` 改为从 `wallpaper-url.ts` 引入（本条目初版写的「复用为统一判据」当时并不成立，已纠正）
 
 **验证**：
 - 三件套：tsc / vitest（33 passed，新增 `wallpaper-url.test.ts` 与 `gallery.test.ts`）/ eslint 全绿
 - 突变测试确认用例有牙：删掉 `host` 规则 + 把 `Math.max` 换成直接赋值 → 4 个失败；还原后全绿（避免「写了个自证式测试」）
 - 实跑 `2026-09-15T03-43-08`：converged；combinedCount 97，siteAssets 7（2 个 `hm.gif` query 变体 + `/home/img/` 下 3 个 + `icon-192` + `detail.html`），download 90 全 skip / 0 failed；首轮 gallery 记录 `officialTotal 1001`、`firstRun true`
 - **过滤生效的直接证据**：6 个杂项文件已从磁盘删除，该轮结束后 `images/` 仍是 1001 个文件、杂项一个都没回来，而其余 90 个 URL 全部被重新尝试（否则会以 `ok` 重新落盘）
+- 提交前跑了双轴自审（standards / spec 两个独立子 agent），列出的问题全部采纳并修复：`CONTEXT-MAP.md` 同步、`IMAGE_EXTENSIONS` 真正统一到一处、ADR 0005 那句与首轮数据不符的承诺、「Images captured / Wallpapers found」标签、两道过滤的交代
 
 **教训**：
 - 「资源已爬完」是**可被证伪的结论**，写进文档必须附日期与当时的数字，不能当永久事实——09-04 的 971 全量结论 10 天后就被 09-07 批次推翻
@@ -250,4 +252,5 @@
 ## 开放问题
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
+- **过滤逻辑分两道**：`scripts/run-discovery.js` 的 `shouldKeep` 里还留着旧的「精确文件名」黑名单（约 25 个 UI 图标名），它是第一道、不可单测、丢弃量不进 `siteAssets`；第二道才是 `src/wallpaper-url.ts` 的结构化规则。合并成一道的代价是那些 URL 会重新计入 `combinedCount`（改变字段语义），留待单独一轮。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

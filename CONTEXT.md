@@ -87,6 +87,11 @@ before Download, so the Wallpaper URL set Download consumes contains neither
 Site assets nor non-image URLs.
 _Avoid_: cleanup, sanitizer
 
+_Dropping happens in two passes_: the Discovery script's own `shouldKeep`
+drops the site's UI icon sprites by exact filename before publishing (a
+pre-existing, untested pass, invisible in the report), and this filter drops
+the rest. See docs/adr/0004.
+
 ### Download
 
 **Download**:
