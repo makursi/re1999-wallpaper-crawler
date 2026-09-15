@@ -5,7 +5,9 @@ import {
   describeSiteAssetRules,
   isImageUrl,
   isSiteAsset,
+  isWallpaperFile,
   splitWallpaperUrls,
+  wallpaperNameOf,
 } from '../src/wallpaper-url.js'
 
 const WALLPAPER =
@@ -60,6 +62,20 @@ describe('classifySiteAsset', () => {
     expect(classifySiteAsset(icon)?.kind).toBe('filenamePrefix')
   })
 
+  it('marks the site UI icons by exact filename', () => {
+    // These are the names the discovery script used to drop in its own
+    // untested filter; they belong to the same decision, so they moved here.
+    expect(classifySiteAsset('https://re.bluepoch.com/static/pre.png')?.kind).toBe('filenameIn')
+    expect(classifySiteAsset('https://re.bluepoch.com/static/logo.png?x=1')?.kind).toBe(
+      'filenameIn',
+    )
+    expect(classifySiteAsset('https://re.bluepoch.com/static/PRE.PNG')?.kind).toBe('filenameIn')
+  })
+
+  it('does not mark a Wallpaper whose name only resembles an icon name', () => {
+    expect(classifySiteAsset('https://cdn.com/PICTURE/20260907/1012.pre.png')).toBeNull()
+  })
+
   it('does not mark same-host resources outside the asset paths', () => {
     expect(classifySiteAsset('https://re.bluepoch.com/home/other/pic.jpg')).toBeNull()
   })
@@ -69,7 +85,41 @@ describe('classifySiteAsset', () => {
     expect(described).toContain('host:hm.baidu.com')
     expect(described).toContain('pathPrefix:/home/img/')
     expect(described).toContain('filenamePrefix:icon-')
+    expect(described).toContain('filenameIn:pre.png')
     expect(described).toContain('nonImage')
+  })
+})
+
+describe('wallpaperNameOf', () => {
+  it('returns the decoded basename Download writes to disk', () => {
+    expect(wallpaperNameOf(WALLPAPER)).toBe(
+      '1012.竖版-2560x1440_5e7b2726dd044c39a526651bbebe75e6.jpg',
+    )
+    expect(wallpaperNameOf('https://cdn.com/a%20b.jpg?w=1920#top')).toBe('a b.jpg')
+  })
+
+  it('returns an empty name for a URL ending in a slash', () => {
+    expect(wallpaperNameOf('https://cdn.com/folder/')).toBe('')
+    expect(wallpaperNameOf('https://cdn.com/folder')).toBe('folder')
+  })
+
+  it('leaves a malformed escape sequence alone instead of throwing', () => {
+    expect(wallpaperNameOf('https://cdn.com/%E0%A4%A.jpg')).toBe('%E0%A4%A.jpg')
+  })
+})
+
+describe('isWallpaperFile', () => {
+  it('accepts the extensions the CDN serves, case-insensitively', () => {
+    expect(isWallpaperFile('1012.竖版-2560x1440_5e7b.jpg')).toBe(true)
+    expect(isWallpaperFile('161 1125x2436_7ab568b5.jpeg')).toBe(true)
+    expect(isWallpaperFile('x.WEBP')).toBe(true)
+  })
+
+  it('rejects non-image files and extension-less names', () => {
+    expect(isWallpaperFile('detail.html')).toBe(false)
+    expect(isWallpaperFile('README')).toBe(false)
+    expect(isWallpaperFile('.jpg')).toBe(false)
+    expect(isWallpaperFile('.gallery-state.json')).toBe(false)
   })
 })
 

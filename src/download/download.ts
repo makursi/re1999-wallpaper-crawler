@@ -7,7 +7,7 @@ import { fetch } from 'undici'
 
 import { BASE_ORIGIN, PAGE_URL, USER_AGENT } from '../config.js'
 import type { DownloadOutcome } from '../report/report.js'
-import { IMAGE_EXTENSIONS } from '../wallpaper-url.js'
+import { wallpaperNameOf } from '../wallpaper-url.js'
 
 // ── error carrying an HTTP status ──────────────────────────────────
 
@@ -47,20 +47,9 @@ function getCookieHeader(): string {
 // ── URL utilities ──────────────────────────────────────────────────
 
 export function getFilenameFromUrl(url: string): string {
-  const withoutQuery = url.split('?')[0].split('#')[0]
-  const segments = withoutQuery.split('/')
-  let raw = segments[segments.length - 1] || 'image'
-  try {
-    raw = decodeURIComponent(raw)
-  } catch {}
-
-  const dotIdx = raw.lastIndexOf('.')
-  if (dotIdx !== -1) {
-    const ext = raw.substring(dotIdx).toLowerCase()
-    if (IMAGE_EXTENSIONS.includes(ext)) return raw
-  }
-  // No recognized extension — leave as-is
-  return raw
+  // Same basename the Gallery mirror check compares against, with a fallback
+  // for URLs that carry no name at all.
+  return wallpaperNameOf(url) || 'image'
 }
 
 export function resolveUrl(url: string, base: string): string {

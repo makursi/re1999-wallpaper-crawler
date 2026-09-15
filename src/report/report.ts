@@ -1,7 +1,7 @@
 // ── types ──────────────────────────────────────────────────────────
 
+import type { GalleryStats } from '../gallery/gallery-state.js'
 import { isImageUrl } from '../wallpaper-url.js'
-import type { GalleryStats } from './gallery.js'
 
 export type DownloadOutcome =
   | {
@@ -52,6 +52,12 @@ export interface DiscoveryStats {
   combinedCount: number
   thumbnailsClicked: number
   discoveryDurationMs: number
+  /**
+   * Share of the official list this Run's capture contained, or `null` when the
+   * list was unavailable. The gate for judging whether scrolling the page is
+   * still worth it next to asking the list endpoint (docs/adr/0006).
+   */
+  coverage: number | null
 }
 
 export interface RunMeta {
@@ -76,6 +82,9 @@ export interface RunReport {
     emptyResult: boolean
     persistentFailures: number
     emptyFiles: string[]
+    siteAssetFalsePositive: { count: number; urls: string[] }
+    gallerySourceUnavailable: boolean
+    mirrorGap: { missing: number; extra: number } | null
   }
   failures: { url: string; status?: number; reason: string; retried: boolean }[]
 }
@@ -168,12 +177,14 @@ export interface RunInputs {
   gallery: GalleryStats
   leakedUrls: string[]
   siteAssets: string[]
+  /** Site assets that the official list says are Wallpapers — rule mistakes. */
+  siteAssetFalsePositive: string[]
 }
 
 export function buildRunReport(
   meta: RunMeta,
   finishedAt: string,
-  { discovery, metrics, gallery, leakedUrls, siteAssets }: RunInputs,
+  { discovery, metrics, gallery, leakedUrls, siteAssets, siteAssetFalsePositive }: RunInputs,
 ): RunReport {
   return {
     type: 'run_report',
@@ -191,6 +202,18 @@ export function buildRunReport(
       emptyResult: metrics.total === 0,
       persistentFailures: metrics.persistentFailures,
       emptyFiles: metrics.emptyFilenames,
+      siteAssetFalsePositive: {
+        count: siteAssetFalsePositive.length,
+        urls: siteAssetFalsePositive,
+      },
+      gallerySourceUnavailable: gallery.officialTotal === null,
+      mirrorGap:
+        gallery.mirror === null
+          ? null
+          : {
+              missing: gallery.mirror.missingFromDisk.count,
+              extra: gallery.mirror.extraOnDisk.count,
+            },
     },
     failures: metrics.failures,
   }

@@ -6,6 +6,7 @@ import process from 'node:process'
 import {
   BASE_ORIGIN,
   BATCH_SIZE,
+  GALLERY_LIST_URL,
   GALLERY_STATE_FILE,
   IMAGES_DIR,
   LOG_DIR,
@@ -19,17 +20,25 @@ import {
 } from './config.js'
 import { buildRunCodeScript } from './discovery/discovery-loader.js'
 import { downloadBatch, extractCookies } from './download/download.js'
-import { createLogger } from './logger.js'
+import type { GalleryList } from './gallery/gallery-source.js'
+import { fetchGalleryList } from './gallery/gallery-source.js'
+import type { GalleryStats } from './gallery/gallery-state.js'
 import {
-  countWallpapers,
-  isWallpaperFile,
   mergeGalleryStats,
-  readGalleryStats,
-  writeGalleryStats,
-} from './report/gallery.js'
+  readGalleryState,
+  unavailableGalleryStats,
+  writeGalleryState,
+} from './gallery/gallery-state.js'
+import { createLogger } from './logger.js'
 import type { DiscoveryStats, DownloadOutcome, RunMeta, RunReport } from './report/report.js'
 import { buildRunReport, classifyOutcomes, detectLeaks } from './report/report.js'
-import { classifySiteAsset, describeSiteAssetRules, splitWallpaperUrls } from './wallpaper-url.js'
+import {
+  classifySiteAsset,
+  describeSiteAssetRules,
+  isWallpaperFile,
+  splitWallpaperUrls,
+  wallpaperNameOf,
+} from './wallpaper-url.js'
 
 // ── Playwright CLI wrapper ─────────────────────────────────────────
 
@@ -62,6 +71,7 @@ function newRunMeta(): {
       BATCH_SIZE,
       PLAYWRIGHT_CONFIG,
       USER_AGENT,
+      GALLERY_LIST_URL,
       GALLERY_STATE_FILE,
       SITE_ASSET_FILTER: describeSiteAssetRules(),
     },
@@ -113,6 +123,7 @@ function parseStats(rawStats: string): DiscoveryStats {
     combinedCount: 0,
     thumbnailsClicked: 0,
     discoveryDurationMs: 0,
+    coverage: null,
   }
   if (!rawStats) return fallback
   try {
@@ -127,9 +138,42 @@ function parseStats(rawStats: string): DiscoveryStats {
       combinedCount: numberOr(parsed.combinedCount, fallback.combinedCount),
       thumbnailsClicked: numberOr(parsed.thumbnailsClicked, fallback.thumbnailsClicked),
       discoveryDurationMs: numberOr(parsed.discoveryDurationMs, fallback.discoveryDurationMs),
+      // Filled in by the caller, which is what asks the gallery list.
+      coverage: null,
     }
   } catch {
     return fallback
+  }
+}
+
+/**
+ * Share of the official list this Run's raw capture contained. This is the
+ * number that says whether rendering the page is still worth it next to asking
+ * the list endpoint (see the discovery-coverage open question in HISTORY.md).
+ */
+function coverageOf(
+  captured: readonly string[],
+  officialNames: ReadonlySet<string>,
+): number | null {
+  if (officialNames.size === 0) return null
+  const hits = new Set(captured.map(wallpaperNameOf).filter(name => officialNames.has(name)))
+  return Math.round((hits.size / officialNames.size) * 10_000) / 10_000
+}
+
+/**
+ * Ask the site's own gallery list. A failure is not fatal — the Run still
+ * has a capture and a mirror — but it is reported instead of guessed at.
+ */
+async function loadGalleryList(
+  logger: ReturnType<typeof createLogger>,
+): Promise<GalleryList | null> {
+  try {
+    const list = await fetchGalleryList({ endpoint: GALLERY_LIST_URL })
+    logger.info(`   Official list: ${list.total} entries`)
+    return list
+  } catch (err: unknown) {
+    logger.warn({ err: errorMessage(err) }, 'gallery list unavailable')
+    return null
   }
 }
 
@@ -168,37 +212,45 @@ function printSummary(logger: ReturnType<typeof createLogger>, report: RunReport
   logger.info('========================================')
   logger.info('           GALLERY TOTAL')
   logger.info('========================================')
-  const delta = g.newSinceLastRun > 0 ? `+${g.newSinceLastRun}` : '+0'
-  if (g.firstRun)
-    logger.info(`  Official wallpapers : ${g.officialTotal}  (first record, ${delta} this run)`)
-  else
-    logger.info(
-      `  Official wallpapers : ${g.officialTotal}  (previous ${g.previousOfficialTotal}, ${delta})`,
-    )
+  if (g.officialTotal === null) {
+    logger.info('  Official wallpapers : unavailable (list endpoint failed)')
+  } else {
+    const delta =
+      g.newSinceLastRun === null ? 'new: unknown (first record)' : `+${g.newSinceLastRun} new`
+    logger.info(`  Official wallpapers : ${g.officialTotal}  (${delta})`)
+    if (g.newFiles.length > 0) logger.info(`  New this run        : ${g.newFiles.join(', ')}`)
+    if (g.mirror) {
+      logger.info(`  Missing from disk   : ${g.mirror.missingFromDisk.count}`)
+      logger.info(`  Not in the gallery  : ${g.mirror.extraOnDisk.count}`)
+    }
+  }
+  const coverage = report.discovery.coverage
+  logger.info(
+    `  Discovery coverage  : ${
+      coverage === null ? 'unknown' : `${(coverage * 100).toFixed(1)}% of the gallery list`
+    }`,
+  )
   logger.info('========================================')
 }
 
 /**
- * Refresh the cross-run gallery total: count the Wallpapers on disk, compare
- * with the previous Run's record, and persist. A failure to persist must not
- * cost the Run its report, so it only warns.
+ * Refresh the cross-run gallery state from the official list: what is new since
+ * the previous Run, and how the mirror compares to the list. A failure to
+ * persist must not cost the Run its report, so it only warns.
  */
 function updateGalleryStats(
   logger: ReturnType<typeof createLogger>,
   meta: RunMeta,
   at: string,
-  newThisRun: number,
-): ReturnType<typeof mergeGalleryStats> {
-  const files = fs.existsSync(IMAGES_DIR) ? fs.readdirSync(IMAGES_DIR) : []
-  const stats = mergeGalleryStats(
-    readGalleryStats(GALLERY_STATE_FILE),
-    countWallpapers(files),
-    newThisRun,
-    meta.runId,
-    at,
-  )
+  list: GalleryList | null,
+): GalleryStats {
+  const previous = readGalleryState(GALLERY_STATE_FILE)
+  if (list === null) return unavailableGalleryStats(previous)
+
+  const diskFiles = fs.existsSync(IMAGES_DIR) ? fs.readdirSync(IMAGES_DIR) : []
+  const { state, stats } = mergeGalleryStats(previous, { list, diskFiles }, meta.runId, at)
   try {
-    writeGalleryStats(GALLERY_STATE_FILE, stats)
+    writeGalleryState(GALLERY_STATE_FILE, state)
   } catch (err: unknown) {
     logger.warn({ err: errorMessage(err) }, 'failed to persist gallery state')
   }
@@ -212,16 +264,19 @@ function finishRun(
   outcomes: DownloadOutcome[],
   leakedUrls: string[],
   siteAssets: string[],
+  siteAssetFalsePositive: string[],
+  galleryList: GalleryList | null,
 ): RunReport {
   const finishedAt = new Date().toISOString()
   const metrics = classifyOutcomes(outcomes)
-  const gallery = updateGalleryStats(logger, meta, finishedAt, metrics.ok)
+  const gallery = updateGalleryStats(logger, meta, finishedAt, galleryList)
   const report = buildRunReport(meta, finishedAt, {
     discovery: discoveryStats,
     metrics,
     gallery,
     leakedUrls,
     siteAssets,
+    siteAssetFalsePositive,
   })
 
   logger.info(report, 'run report')
@@ -248,6 +303,34 @@ function finishRun(
     logger.warn(
       { defect: 'emptyFiles', files: d.emptyFiles },
       'downloaded files were empty (0 bytes)',
+    )
+  if (d.siteAssetFalsePositive.count > 0)
+    logger.warn(
+      {
+        defect: 'siteAssetFalsePositive',
+        count: d.siteAssetFalsePositive.count,
+        urls: d.siteAssetFalsePositive.urls,
+      },
+      'the Site asset filter dropped URLs the official list calls Wallpapers',
+    )
+  if (d.gallerySourceUnavailable)
+    logger.warn(
+      { defect: 'gallerySourceUnavailable' },
+      'gallery list unavailable — total and mirror check unknown',
+    )
+  if (d.mirrorGap !== null && d.mirrorGap.missing > 0)
+    logger.warn(
+      {
+        defect: 'mirrorGap',
+        missing: d.mirrorGap.missing,
+        files: gallery.mirror?.missingFromDisk.files,
+      },
+      'the official gallery lists Wallpapers that are not on disk',
+    )
+  if (d.mirrorGap !== null && d.mirrorGap.extra > 0)
+    logger.warn(
+      { defect: 'mirrorGap', extra: d.mirrorGap.extra, files: gallery.mirror?.extraOnDisk.files },
+      'files on disk that the official gallery does not list',
     )
 
   return report
@@ -352,6 +435,14 @@ async function main() {
   }
   logger.info(`   Wallpapers to download: ${wallpapers.length}`)
 
+  // 3a-1. Ask the site's own gallery list. It is the authority on what the
+  // gallery holds, and therefore on whether the filter above kept the right
+  // things — a URL it lists is a Wallpaper by definition.
+  const galleryList = await loadGalleryList(logger)
+  const officialNames = new Set(galleryList?.entries.map(entry => wallpaperNameOf(entry.url)) ?? [])
+  const siteAssetFalsePositive =
+    galleryList === null ? [] : siteAssets.filter(url => officialNames.has(wallpaperNameOf(url)))
+
   // 3b. Extract run-code diagnostic log
   try {
     const rawLog = execSync(
@@ -385,6 +476,7 @@ async function main() {
       },
     ).trim()
     discoveryStats = parseStats(rawStats)
+    discoveryStats.coverage = coverageOf(allUrls, officialNames)
   } catch {
     logger.warn('Failed to extract discovery stats.')
     discoveryStats = parseStats('')
@@ -392,7 +484,19 @@ async function main() {
 
   if (wallpapers.length === 0) {
     logger.warn('No Wallpapers found. The page structure may have changed.')
-    printSummary(logger, finishRun(logger, meta, discoveryStats, [], leakedUrls, siteAssets))
+    printSummary(
+      logger,
+      finishRun(
+        logger,
+        meta,
+        discoveryStats,
+        [],
+        leakedUrls,
+        siteAssets,
+        siteAssetFalsePositive,
+        galleryList,
+      ),
+    )
     return
   }
 
@@ -407,7 +511,19 @@ async function main() {
   const outcomes = await downloadBatch(wallpapers, IMAGES_DIR, BATCH_SIZE, logger)
 
   // 6. Summarize, report and print
-  printSummary(logger, finishRun(logger, meta, discoveryStats, outcomes, leakedUrls, siteAssets))
+  printSummary(
+    logger,
+    finishRun(
+      logger,
+      meta,
+      discoveryStats,
+      outcomes,
+      leakedUrls,
+      siteAssets,
+      siteAssetFalsePositive,
+      galleryList,
+    ),
+  )
 }
 
 main().catch(err => {
