@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 
 import type { Logger } from 'pino'
-import pino from "pino"
+import pino from 'pino'
 
 export type { Logger } from 'pino'
 
