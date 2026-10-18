@@ -25,9 +25,11 @@ import {
 } from './config.js'
 import type { ConsoleConfig } from './console/console-config.js'
 import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console/console-config.js'
-import type { RunStarter } from './console/server.js'
+import { missingPrerequisites, tsxEntryPath } from './console/prerequisites.js'
+import { createRunLauncher, createRunStarter } from './console/run-control.js'
+import { createRunLogSource } from './console/run-log-source.js'
 import { startConsoleServer } from './console/server.js'
-import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from './console/status.js'
+import { UNREAD_GALLERY_FACTS } from './console/status.js'
 
 interface ConsoleOptions {
   port: number
@@ -103,22 +105,39 @@ function openerFor(platform: NodeJS.Platform, url: string): [string, string[]] {
   return ['xdg-open', [url]]
 }
 
-/** #34 implements the Run starter; #32 only fixes the seam's shape. */
-const notImplementedYet: RunStarter = async () => ({
-  started: false,
-  reason: 'starting a Run is not implemented yet',
-})
-
 async function main(options: ConsoleOptions): Promise<void> {
   const config = consoleConfig()
   await ensureBundle(config)
 
+  // Run control (#34). The launcher owns the child; the log source reads the
+  // Runs — its own and the ones a terminal started — from the Run log
+  // directory, because a Run's truth is its log, never a handle (ADR 0009). The
+  // starter is the one-at-a-time rule plus the global prerequisite check.
+  const launcher = createRunLauncher({
+    nodePath: process.execPath,
+    tsxEntry: tsxEntryPath(config.projectRoot),
+    mainEntry: path.join(config.projectRoot, 'src', 'main.ts'),
+    projectRoot: config.projectRoot,
+  })
+  const runLogSource = createRunLogSource({
+    logDir: config.logDir,
+    galleryStateFile: config.galleryStateFile,
+    imagesDir: config.imagesDir,
+    liveChild: () => launcher.isAlive(),
+  })
+  const startRun = createRunStarter({
+    launcher,
+    isRunInFlight: () => runLogSource.facts().state === 'running',
+    missingPrerequisites: () => missingPrerequisites({ projectRoot: config.projectRoot }),
+  })
+
   const service = await startConsoleServer(config, {
-    // #32 shows one true number and nothing else: the Run half is the fixed
-    // idle state and the list half is "not read". #33/#34 replace both readers.
-    runState: () => IDLE_RUN_FACTS,
+    // The Run half is read from the Run log directory, so a Run started from a
+    // terminal appears exactly like one started here. The Gallery list half is
+    // still #33's, which is why it is the unread value.
+    runState: () => runLogSource.facts(),
     galleryFacts: () => UNREAD_GALLERY_FACTS,
-    startRun: notImplementedYet,
+    startRun,
     token: randomBytes(16).toString('hex'),
     port: options.port,
   })

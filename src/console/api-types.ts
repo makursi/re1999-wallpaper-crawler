@@ -33,6 +33,101 @@ export interface ConsoleDefects {
   mirrorGap: { missing: number; extra: number } | null
 }
 
+/** One side of the Mirror gap (`GalleryStats['mirror']`). */
+export interface ConsoleMirrorGap {
+  count: number
+  files: string[]
+}
+
+/** The Run report's Gallery numbers, verbatim (`GalleryStats`). */
+export interface ConsoleGalleryStats {
+  /** What the list said the gallery held; `null` when the list was unavailable. */
+  officialTotal: number | null
+  /** Entries new since the previous Run; `null` when there was nothing to compare. */
+  newSinceLastRun: number | null
+  newFiles: string[]
+  firstRun: boolean
+  /** `null` = the Mirror check was not performed, because the list was unavailable. */
+  mirror: { missingFromDisk: ConsoleMirrorGap; extraOnDisk: ConsoleMirrorGap } | null
+}
+
+/** The Run report's Discovery numbers, verbatim (`DiscoveryStats`). */
+export interface ConsoleDiscoveryStats {
+  converged: boolean
+  stableRounds: number
+  totalIdleSec: number
+  networkCount: number
+  domCount: number
+  combinedCount: number
+  thumbnailsClicked: number
+  discoveryDurationMs: number
+  coverage: number | null
+}
+
+/** One Download failure, verbatim (`RunReport['failures']`). */
+export interface ConsoleFailure {
+  url: string
+  status?: number
+  reason: string
+  retried: boolean
+}
+
+/** The Run report's Download numbers, verbatim (`DownloadMetrics`). */
+export interface ConsoleDownloadMetrics {
+  total: number
+  ok: number
+  skipped: number
+  failed: number
+  successRate: number
+  retryRescued: number
+  retryTotal: number
+  rescueRate: number
+  emptyFiles: number
+  emptyFilenames: string[]
+  persistentFailures: number
+  totalBytes: number
+  avgDownloadMs: number
+  statusHistogram: Record<string, number>
+  failureGroups: { status: string; count: number }[]
+  failures: ConsoleFailure[]
+}
+
+/**
+ * The newest Run report, verbatim (`RunReport`).
+ *
+ * Structural for the same reason `ConsoleDefects` is: importing
+ * `src/report/report.ts` would pull `src/gallery/gallery-state.ts`, and its
+ * `node:fs`, into the page's type program. `src/console/status.ts` carries the
+ * compile-time check that the two stay the same type, so the page cannot
+ * quietly lose a field the Run report grew.
+ *
+ * Ticket #34 shows the Gallery numbers, Download numbers and defects together,
+ * which is why the whole report travels rather than the numbers being
+ * re-summarised here — a re-summary is a second representation of a Run.
+ */
+export interface ConsoleRunReport {
+  type: 'run_report'
+  runId: string
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+  discovery: ConsoleDiscoveryStats
+  download: ConsoleDownloadMetrics
+  gallery: ConsoleGalleryStats
+  siteAssets: { count: number; urls: string[] }
+  defects: ConsoleDefects
+  failures: ConsoleFailure[]
+}
+
+/** `POST /api/run` — the start, or the reason it was refused. */
+export interface ConsoleRunStartPayload {
+  started: boolean
+  /** Why a start was refused; `null` when one was started. */
+  reason: string | null
+  /** The missing global prerequisites, on the `412` refusal (#34). */
+  missing?: string[]
+}
+
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
 export interface ConsoleStatusPayload {
   /** The Run the verdict is about; `null` when no Run log names one. */
@@ -50,4 +145,17 @@ export interface ConsoleStatusPayload {
   defects: ConsoleDefects | null
   /** `false` when the Gallery list could not be read — never "nothing missing". */
   listAvailable: boolean
+  /**
+   * The newest Run report, verbatim (#34): the Gallery numbers, Download
+   * numbers and detected defects the owner judges together. `null` while a Run
+   * is in flight and when no readable report was found.
+   */
+  report: ConsoleRunReport | null
+  /**
+   * Whether the newest Run log carries a `run_report` record at all, readable
+   * or not. `report === null && reportPresent` is a report this Console cannot
+   * read — an older Run contract — which is a different statement from a
+   * missing one, and the page must not merge them.
+   */
+  reportPresent: boolean
 }

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 
 import type { ConsoleStatusPayload } from '../../src/console/api-types.js'
+import RunPanel from './RunPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
 const failure = ref<string | null>(null)
@@ -34,6 +35,7 @@ onMounted(() => {
     <p v-if="failure !== null">{{ failure }}</p>
     <p v-else-if="status === null">Reading the Mirror…</p>
     <p v-else>{{ status.mirrorCount }} Wallpapers in the Mirror</p>
+    <RunPanel />
   </main>
 </template>
 
