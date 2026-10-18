@@ -73,14 +73,32 @@ _Done when the process exits 0, prints the ok / skipped / failed counts and
 the Gallery total, **and has written a `run_report`** — an exit code of 0
 alone is not proof of a clean Run (see the missing-report trap below)._
 
-**Verify — the Run report.** Each Run writes one JSONL file in `logs/`
-(`save-wallpapers-<runId>.jsonl`); read the newest. Grep `"type":"run_report"` —
-one structured record with all metrics and the detected defects, the basis for
-judging stability, finding defects and proposing optimizations. Two neighbours
-set it in context: `"type":"run_meta"` carries the runId, the start time and the
-config snapshot (to rule out config drift), and `"phase":"run-code"` carries the
-Discovery diagnostics (`[stability]`, `[final]`, `[thumbnails]`) behind the
-convergence numbers.
+**Verify — the Run report.** One command reads the newest Run log and prints the
+Run's verdict: `pnpm check-run`. It compares the Gallery state's `runId` with the
+report's, checks that the report's claimed new files are on disk with non-zero
+size, passes the report's defect block through verbatim, and separates the
+routine classes from the rest:
+
+- `clean` (exit 0) — no defect at all.
+- `explained` (exit 0) — only a `discoveryLeak` whose leaked URLs are **all**
+  also in the report's `siteAssets.urls` (the subset rule below), or only extra
+  files on the Mirror (`mirrorGap.extra`, the routine retired-art case). They are
+  still printed and named, so the decision gets recorded; the verdict only keeps
+  them from reading as failures.
+- `defect` (exit 1) — anything else, including a missing `run_report`, a Gallery
+  state whose `runId` does not match (or an unreadable one), a claimed new file
+  the check rejects, and every not-checked reading.
+
+Gate on the exit code when you only need the verdict; read the output when you
+need the numbers. It is `tsx src/check-run.ts` underneath, so it needs the same
+sandbox access as the Run. When the output is not enough, read the log by hand:
+each Run writes one JSONL file in `logs/` (`save-wallpapers-<runId>.jsonl`); read
+the newest. Grep `"type":"run_report"` — one structured record with all metrics
+and the detected defects, the basis for judging stability, finding defects and
+proposing optimizations. Two neighbours set it in context: `"type":"run_meta"`
+carries the runId, the start time and the config snapshot (to rule out config
+drift), and `"phase":"run-code"` carries the Discovery diagnostics (`[stability]`,
+`[final]`, `[thumbnails]`) behind the convergence numbers.
 
 Judge the report block by block:
 

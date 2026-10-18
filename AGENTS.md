@@ -20,6 +20,7 @@ Then `pnpm install` for project dependencies.
 | Task | Command |
 |------|---------|
 | Scrape wallpapers | `pnpm save-wallpapers` (`tsx src/main.ts`) |
+| Check the newest Run | `pnpm check-run` (`tsx src/check-run.ts`) |
 | Tests | `pnpm test` (`vitest run`) |
 | Typecheck | `pnpm typecheck` (`tsc --noEmit`) |
 | Lint | `pnpm lint` (`oxlint --type-aware .`) |
@@ -102,6 +103,7 @@ src/
 ├── config.ts                — zod-validated .env config, shared constants
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
+├── check-run.ts             — the verdict CLI: newest Run log + Gallery state + file probe → print, exit 0/1
 ├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, wallpaperNameOf, isWallpaperFile, Site asset rules, splitWallpaperUrls (unit-tested)
 ├── discovery/
 │   └── discovery-loader.ts  — reads scripts/run-discovery.js and injects PAGE_HASH
@@ -111,7 +113,8 @@ src/
 │   ├── gallery-source.ts    — the site's gallery list endpoint: fetch + validate (unit-tested)
 │   └── gallery-state.ts     — cross-run id set + mirror check, writes images/.gallery-state.json (unit-tested)
 └── report/
-    └── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
+    ├── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
+    └── run-log.ts           — the reverse: parseRunReport + assessRun, the three-state verdict (unit-tested)
 tests/
 ├── logger.test.ts
 ├── wallpaper-url.test.ts
@@ -119,7 +122,8 @@ tests/
 │   ├── gallery-source.test.ts
 │   └── gallery-state.test.ts
 └── report/
-    └── report.test.ts
+    ├── report.test.ts
+    └── run-log.test.ts
 scripts/
 ├── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
