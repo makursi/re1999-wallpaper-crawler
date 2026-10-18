@@ -16,6 +16,7 @@ import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'node:path'
 
+import type { ConsoleRunStartPayload } from './api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { buildGalleryView, toGalleryPayload } from './gallery-view.js'
@@ -31,11 +32,14 @@ import {
   THUMBNAIL_CACHE_DIR_NAME,
 } from './thumbnails.js'
 
-/** What a start request answers. Declared here so #34 implements one shape. */
-export interface RunStartResult {
-  started: boolean
-  /** Why a start was refused; `null` when one was started. */
-  reason: string | null
+/**
+ * What a start request answers. Declared here so #34 implements one shape: the
+ * body is the page's `ConsoleRunStartPayload`, and `status` is the HTTP status
+ * the refusal carries (409 when a Run is already in flight, 412 when a global
+ * prerequisite is missing).
+ */
+export interface RunStartResult extends ConsoleRunStartPayload {
+  status?: number
 }
 
 /** Starts a Run (spec decision 6). #32 fixes the seam; #34 implements it. */
@@ -85,7 +89,7 @@ export interface ConsoleServerDeps {
   runState: () => ConsoleRunFacts
   /** The status's Gallery half. #32 injects "not read"; #33 fetches the list. */
   galleryFacts: () => ConsoleGalleryFacts | Promise<ConsoleGalleryFacts>
-  /** The Run starter. #32 stores it; `POST /api/run` arrives with #34. */
+  /** The Run starter (`createRunStarter`): `POST /api/run`'s whole answer. */
   startRun: RunStarter
   /** This start's access token, generated per start and never persisted. */
   token: string
@@ -347,6 +351,27 @@ async function handleRequest(
     return
   }
   // ── end GET /api/thumbnail/<name> and GET /api/image/<name> ───────
+
+  // ── POST /api/run (#34) ───────────────────────────────────────────
+  //
+  // The answer is only whether the start was accepted, and why it was refused:
+  // a Run's identity is its Run log, never this handle, so the next
+  // `/api/status` reports it from the log directory and a Run started from a
+  // terminal looks identical (spec decision 7). The refusals are the two the
+  // page can act on — 409 for a Run already in flight, 412 with the missing
+  // prerequisite's name — and the starter decides which (run-control.ts).
+  if (url.pathname === '/api/run') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'POST' })
+      return
+    }
+    const result = await deps.startRun()
+    const payload: ConsoleRunStartPayload = { started: result.started, reason: result.reason }
+    if (result.missing !== undefined) payload.missing = result.missing
+    sendJson(res, result.status ?? (result.started ? 202 : 409), payload)
+    return
+  }
+  // ── end POST /api/run ─────────────────────────────────────────────
 
   if (req.method !== 'GET') {
     sendJson(res, 404, { error: 'not found' })
