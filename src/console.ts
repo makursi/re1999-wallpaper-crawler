@@ -25,11 +25,14 @@ import {
 } from './config.js'
 import type { ConsoleConfig } from './console/console-config.js'
 import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console/console-config.js'
+import { createGalleryListSource } from './console/gallery-list-source.js'
 import { missingPrerequisites, tsxEntryPath } from './console/prerequisites.js'
 import { createRunLauncher, createRunStarter } from './console/run-control.js'
 import { createRunLogSource } from './console/run-log-source.js'
+import { readNewestRunReport } from './console/run-report-source.js'
 import { startConsoleServer } from './console/server.js'
-import { UNREAD_GALLERY_FACTS } from './console/status.js'
+import { galleryFactsOf } from './console/status.js'
+import { fetchGalleryList } from './gallery/gallery-source.js'
 
 interface ConsoleOptions {
   port: number
@@ -109,6 +112,14 @@ async function main(options: ConsoleOptions): Promise<void> {
   const config = consoleConfig()
   await ensureBundle(config)
 
+  // One cached read of the Gallery list serves both `/api/status` (its
+  // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
+  // polls, so the endpoint is read once per TTL, and a refused read is
+  // remembered rather than retried once per request (spec decision 19; #33).
+  const galleryList = createGalleryListSource({
+    fetchList: () => fetchGalleryList({ endpoint: config.galleryListEndpoint }),
+  })
+
   // Run control (#34). The launcher owns the child; the log source reads the
   // Runs — its own and the ones a terminal started — from the Run log
   // directory, because a Run's truth is its log, never a handle (ADR 0009). The
@@ -133,10 +144,14 @@ async function main(options: ConsoleOptions): Promise<void> {
 
   const service = await startConsoleServer(config, {
     // The Run half is read from the Run log directory, so a Run started from a
-    // terminal appears exactly like one started here. The Gallery list half is
-    // still #33's, which is why it is the unread value.
+    // terminal appears exactly like one started here (ADR 0009).
     runState: () => runLogSource.facts(),
-    galleryFacts: () => UNREAD_GALLERY_FACTS,
+    galleryFacts: async () => galleryFactsOf(await galleryList.get()),
+    galleryList,
+    // The one Run number the gallery view needs (#33), read from the newest Run
+    // log exactly as `check-run` reads it — never recomputed from the Gallery
+    // state, which would give 0.
+    newSinceLastRun: () => readNewestRunReport(config.logDir)?.gallery.newSinceLastRun ?? null,
     startRun,
     token: randomBytes(16).toString('hex'),
     port: options.port,

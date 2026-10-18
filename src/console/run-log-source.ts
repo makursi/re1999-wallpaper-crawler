@@ -17,6 +17,7 @@ import * as path from 'node:path'
 import { readGalleryState } from '../gallery/gallery-state.js'
 import type { FileProbe } from '../report/run-log.js'
 import { runReportRecordPresent } from '../report/run-log.js'
+import { newestRunLogName } from './run-report-source.js'
 import type { ConsoleRunFacts } from './status.js'
 import { deriveRunFacts } from './status.js'
 
@@ -52,7 +53,14 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
 
   return {
     facts(): ConsoleRunFacts {
-      const file = newestRunLog(options.logDir)
+      // The newest Run log, by **name** — the ordering `check-run` uses
+      // (`toSorted().at(-1)`), never by mtime: the filename carries the
+      // timestamp, so the last name in ascending order is exact, while a copy or
+      // a touch would make mtime name a different Run. #33's source owns that
+      // rule (`newestRunLogName`); the page and the command must pick the same
+      // file, so it is reused rather than re-implemented.
+      const name = newestRunLogName(options.logDir)
+      const file = name === null ? null : path.join(options.logDir, name)
       let logText: string | null = null
       let mtimeMs: number | null = null
       if (file !== null) {
@@ -89,20 +97,9 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
 }
 
 /**
- * The newest Run log, by **name** — the ordering `check-run` uses
- * (`toSorted().at(-1)`), never by mtime: the filename carries the timestamp, so
- * the last name in ascending order is exact, while a copy or a touch would make
- * mtime name a different Run. The page and the command must pick the same file.
+ * A log directory that is not there holds no Runs. The start-up listing is the
+ * one read that has to see *every* name, not just the newest one.
  */
-function newestRunLog(dir: string): string | null {
-  const names = listNames(dir).filter(
-    name => name.startsWith('save-wallpapers-') && name.endsWith('.jsonl'),
-  )
-  const newest = names.toSorted().at(-1)
-  return newest === undefined ? null : path.join(dir, newest)
-}
-
-/** A log directory that is not there holds no Runs. */
 function listNames(dir: string): string[] {
   try {
     return fs.readdirSync(dir)

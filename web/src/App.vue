@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 
 import type { ConsoleStatusPayload } from '../../src/console/api-types.js'
+import GalleryView from './GalleryView.vue'
 import RunPanel from './RunPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
@@ -36,6 +37,7 @@ onMounted(() => {
     <p v-else-if="status === null">Reading the Mirror…</p>
     <p v-else>{{ status.mirrorCount }} Wallpapers in the Mirror</p>
     <RunPanel />
+    <GalleryView />
   </main>
 </template>
 

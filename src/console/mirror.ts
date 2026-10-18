@@ -31,3 +31,19 @@ export function countMirrorWallpapers(imagesDir: string): number {
     return 0
   }
 }
+
+/**
+ * The Mirror's entry names, as `readdirSync` returns them — dotfiles included.
+ *
+ * The raw list, because its two consumers apply the predicate they need:
+ * `countMirrorNames` for the count, and the gallery view's own non-dot filter
+ * for the rows (§4a). One `readdirSync` per request either way, and neither
+ * consumer can quietly start reading a different directory.
+ */
+export function readMirrorNames(imagesDir: string): string[] {
+  try {
+    return fs.readdirSync(imagesDir)
+  } catch {
+    return []
+  }
+}

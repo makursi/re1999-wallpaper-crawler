@@ -159,3 +159,37 @@ export interface ConsoleStatusPayload {
    */
   reportPresent: boolean
 }
+
+/** How a gallery row stands against the Mirror (spec decision 17). */
+export type ConsoleGalleryRowState = 'on-disk' | 'missing' | 'not-in-gallery'
+
+/** One row of the gallery: a Gallery list entry, or a Mirror extra. */
+export interface ConsoleGalleryRow {
+  /** The gallery's own id; `null` for a Mirror file the list does not contain. */
+  id: number | null
+  /** The Wallpaper's file name (the secondary label). */
+  name: string
+  state: ConsoleGalleryRowState
+}
+
+/**
+ * `GET /api/gallery` — the Gallery list read against the Mirror.
+ *
+ * The row model is `src/console/gallery-view.ts`'s `GalleryView`, which is
+ * checked against this declaration at compile time (`toGalleryPayload`), plus
+ * the Mirror's count.
+ */
+export interface ConsoleGalleryPayload {
+  /** One row per Gallery list entry, then the Mirror's extras, sorted. */
+  rows: ConsoleGalleryRow[]
+  /** What the Gallery list says the gallery holds; `null` = not read. */
+  officialTotal: number | null
+  /** The newest Run report's "new since the last Run"; `null` = none read. */
+  newSinceLastRun: number | null
+  /** `false` when the Gallery list could not be read — never "nothing missing". */
+  listAvailable: boolean
+  /** Both directions of the gap; `null` = not checked, never `{0, 0}`. */
+  mirrorGap: { missing: number; extra: number } | null
+  /** Wallpapers in the Mirror: every non-dot entry (src/console/mirror.ts). */
+  mirrorCount: number
+}
