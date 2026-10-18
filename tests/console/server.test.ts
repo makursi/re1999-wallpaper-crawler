@@ -160,6 +160,10 @@ describe('GET /api/status', () => {
       verdict: null,
       defects: null,
       listAvailable: false,
+      // #34's additive fields: the newest Run report, and whether the newest
+      // log carries a `run_report` record at all.
+      report: null,
+      reportPresent: false,
     })
   })
 
@@ -171,6 +175,8 @@ describe('GET /api/status', () => {
         startedAt: '2026-10-18T01:03:31.856Z',
         verdict: null,
         defects: null,
+        report: null,
+        reportPresent: false,
       }),
       galleryFacts: () => ({ officialTotal: 1010, listAvailable: true }),
     })

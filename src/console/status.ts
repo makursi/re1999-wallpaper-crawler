@@ -1,17 +1,36 @@
 // ── The status payload's assembly ───────────────────────────────────
 //
-// One pure function, fed by facts that arrive by injection. #32 injects the
-// fixed idle state and an unread Gallery list; #33/#34/#36 replace those two
-// readers without touching the server (spec decision 16).
+// Two layers, deliberately:
+//
+//   - `deriveRunFacts` is the pure Run half. The newest log's text and mtime,
+//     the Gallery state and the file probe go in; the verdict and the state
+//     come out. Every input is injected, so it needs no filesystem and no
+//     clock, and a test can pin every verdict `check-run` prints.
+//   - `buildStatus` is the assembly #32 declared, and the seam the server
+//     injects against.
+//
+// The verdict is `parseRunReport` + `assessRun` on the newest log `check-run`
+// would pick, with the same `FileProbe` semantics and `logRunIdOf(name)` as the
+// fourth argument — that is what makes "the page and the command cannot
+// disagree" a structural fact rather than a promise (spec decision 16). The
+// report is carried verbatim beside it, because #34 shows the Run's Gallery
+// numbers, Download numbers and defects together.
+//
+// #34 extends this file; #33 owns `ConsoleGalleryFacts`, which is untouched.
 
 import type { GalleryList } from '../gallery/gallery-source.js'
-import type { RunDefects } from '../report/run-log.js'
+import type { GalleryState } from '../gallery/gallery-state.js'
+import type { RunReport } from '../report/report.js'
+import type { FileProbe, RunDefects } from '../report/run-log.js'
+import { assessRun, logRunIdOf, parseRunReport } from '../report/run-log.js'
 import type {
   ConsoleDefects,
+  ConsoleRunReport,
   ConsoleRunState,
   ConsoleStatusPayload,
   ConsoleVerdict,
 } from './api-types.js'
+import { decideRunState, parseRunMeta } from './run-state.js'
 
 /** `true` only while `A` and `B` are the same type, in both directions. */
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
@@ -32,6 +51,17 @@ function toApiDefects(
   return defects
 }
 
+/**
+ * The whole Run report, held to the page's structural declaration by the same
+ * `Same` check `toApiDefects` uses: the page cannot quietly lose a field the
+ * Run report grew (Gallery numbers, Download numbers and defects all travel).
+ */
+function toApiReport(
+  report: Same<RunReport, ConsoleRunReport> extends true ? RunReport | null : never,
+): ConsoleRunReport | null {
+  return report
+}
+
 /** The Run half of the status, as a reader hands it over. */
 export interface ConsoleRunFacts {
   runId: string | null
@@ -39,6 +69,13 @@ export interface ConsoleRunFacts {
   startedAt: string | null
   verdict: ConsoleVerdict | null
   defects: RunDefects | null
+  /** The newest Run report, verbatim (#34); `null` when none was read. */
+  report: RunReport | null
+  /**
+   * Whether the newest Run log carries a `run_report` record at all — the fact
+   * `parseRunReport`'s `null` cannot carry on its own.
+   */
+  reportPresent: boolean
 }
 
 /** The Gallery half: what the list contributed, or that it was not read. */
@@ -55,19 +92,83 @@ export interface ConsoleStatusFacts {
   gallery: ConsoleGalleryFacts
 }
 
-/** No Run is in flight and no Run log has been read — that half is #34's. */
+/** No Run is in flight and no Run log has been read. */
 export const IDLE_RUN_FACTS: ConsoleRunFacts = {
   runId: null,
   state: 'idle',
   startedAt: null,
   verdict: null,
   defects: null,
+  report: null,
+  reportPresent: false,
 }
 
 /** Before #33 reads the list: "not read", never "nothing missing". */
 export const UNREAD_GALLERY_FACTS: ConsoleGalleryFacts = {
   officialTotal: null,
   listAvailable: false,
+}
+
+/**
+ * The Run half's raw facts: everything `deriveRunFacts` is allowed to know. A
+ * reader supplies the log's text and name, its mtime, the clock, whether the log
+ * was in the start-up listing, whether a child of ours lives, the Gallery state
+ * and the file probe — nothing here touches a filesystem itself.
+ */
+export interface ConsoleRunLogFacts {
+  /** The newest Run log's whole text, or `null` when there is none. */
+  logText: string | null
+  /** Its file name, for `logRunIdOf`; `null` when there is no log. */
+  logName: string | null
+  /** `runReportRecordPresent(logText)` — carried, never re-derived here. */
+  reportPresent: boolean
+  /** The newest log's `statSync().mtimeMs`, or `null`. */
+  mtimeMs: number | null
+  /** Epoch milliseconds; injected so the derivation needs no clock. */
+  now: number
+  /** Whether the log directory listing at service start-up held this log. */
+  seenAtStartup: boolean
+  /** Whether a Run this Console started still has a live child. */
+  liveChild: boolean
+  /** `images/.gallery-state.json` read, or `null` when unreadable. */
+  galleryState: GalleryState | null
+  /** `check-run`'s probe: is this Wallpaper on disk with a non-zero size? */
+  probe: FileProbe
+}
+
+/**
+ * The Run half, derived purely from the raw facts.
+ *
+ * While a Run is in flight the verdict, its defects and the report are withheld
+ * (`null`): the newest log may still be the previous Run's, and the page must
+ * not present a finished Run's verdict as the one now running. Everything else —
+ * the state, the identity, the record's presence — is reported as read.
+ */
+export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
+  const report = parseRunReport(input.logText ?? '')
+  // The log's own name says which Run it is, which is what a *missing* report
+  // still needs in order to be told from a Run that never finished.
+  const logRunId = input.logName === null ? null : logRunIdOf(input.logName)
+  const verdict = assessRun(report, input.galleryState, input.probe, logRunId)
+  const state = decideRunState({
+    logText: input.logText,
+    mtimeMs: input.mtimeMs,
+    now: input.now,
+    seenAtStartup: input.seenAtStartup,
+    liveChild: input.liveChild,
+  })
+  const inFlight = state === 'running'
+  const meta = parseRunMeta(input.logText)
+
+  return {
+    runId: meta?.runId ?? logRunId,
+    state,
+    startedAt: meta?.startedAt ?? null,
+    verdict: inFlight ? null : verdict.verdict,
+    defects: inFlight ? null : verdict.defects,
+    report: inFlight ? null : report,
+    reportPresent: input.reportPresent,
+  }
 }
 
 /**
@@ -101,5 +202,7 @@ export function buildStatus({
     verdict: run.verdict,
     defects: toApiDefects(run.defects),
     listAvailable: gallery.listAvailable,
+    report: toApiReport(run.report),
+    reportPresent: run.reportPresent,
   }
 }
