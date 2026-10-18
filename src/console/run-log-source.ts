@@ -15,13 +15,10 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { readGalleryState } from '../gallery/gallery-state.js'
-import type { FileProbe } from '../report/run-log.js'
 import { runReportRecordPresent } from '../report/run-log.js'
-import { newestRunLogName } from './run-report-source.js'
+import { createFileProbe, newestRunLogName } from '../run-log-file.js'
 import type { ConsoleRunFacts } from './status.js'
 import { deriveRunFacts } from './status.js'
-
-export { ORPHAN_WINDOW_MS } from './run-state.js'
 
 export interface RunLogSource {
   /** The newest Run log's facts — the status view's whole Run half. */
@@ -127,7 +124,10 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
         ownChildExited: own !== null && own === logName,
         acknowledged: logName !== null && acknowledged.has(logName),
         galleryState: readGalleryState(options.galleryStateFile),
-        probe: mirrorProbe(options.imagesDir),
+        // `check-run`'s own probe (`src/run-log-file.ts`), not a copy of it:
+        // the probe is one of `assessRun`'s inputs, so a drift between this
+        // reader and the command would make them disagree about the same log.
+        probe: createFileProbe(options.imagesDir),
       })
     },
   }
@@ -142,21 +142,5 @@ function listNames(dir: string): string[] {
     return fs.readdirSync(dir)
   } catch {
     return []
-  }
-}
-
-/**
- * `check-run`'s probe exactly (`src/check-run.ts`): the claimed new file is a
- * Wallpaper filename resolved inside the Mirror, and it counts only with a
- * non-zero size. Using the same rule is what keeps the page's verdict and the
- * command's from disagreeing about the same log.
- */
-function mirrorProbe(imagesDir: string): FileProbe {
-  return filename => {
-    try {
-      return fs.statSync(path.join(imagesDir, filename)).size > 0
-    } catch {
-      return false
-    }
   }
 }

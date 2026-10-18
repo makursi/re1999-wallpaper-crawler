@@ -16,9 +16,7 @@ import type { GalleryList } from '../gallery/gallery-source.js'
 import { officialNamesOf } from '../gallery/gallery-source.js'
 import { wallpaperNameOf } from '../wallpaper-url.js'
 import type { ConsoleGalleryPayload } from './api-types.js'
-
-/** `true` only while `A` and `B` are the same type, in both directions. */
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+import type { Same } from './same.js'
 
 /** How a row stands against the Mirror. */
 export type GalleryRowState = 'on-disk' | 'missing' | 'not-in-gallery'

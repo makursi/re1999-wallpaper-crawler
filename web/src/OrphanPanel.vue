@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 
 import type { ConsoleRunCleanupPayload, ConsoleStatusPayload } from '../../src/console/api-types.js'
+import { consoleToken } from './console-token'
 
 /**
  * An Orphaned Run, and the one action the page offers for it (#36).
@@ -20,11 +21,6 @@ const refusal = ref<string | null>(null)
 
 /** The log name the status carries; the Run's id is all there is without one. */
 const logName = computed(() => props.status.runLogName ?? 'its newest Run log')
-
-/** The token this page was opened with; the service wants it on every request. */
-function consoleToken(): string {
-  return new URLSearchParams(window.location.search).get('token') ?? ''
-}
 
 async function cleanUp(): Promise<void> {
   cleaning.value = true

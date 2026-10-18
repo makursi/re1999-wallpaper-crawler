@@ -21,7 +21,7 @@
 import type { GalleryList } from '../gallery/gallery-source.js'
 import type { GalleryState } from '../gallery/gallery-state.js'
 import type { RunReport } from '../report/report.js'
-import type { FileProbe, RunDefects } from '../report/run-log.js'
+import type { FileProbe, RunDefects, RunVerdict } from '../report/run-log.js'
 import { assessRun, logRunIdOf, parseRunReport } from '../report/run-log.js'
 import type {
   ConsoleDefects,
@@ -29,11 +29,10 @@ import type {
   ConsoleRunState,
   ConsoleStatusPayload,
   ConsoleVerdict,
+  ConsoleVerdictReasons,
 } from './api-types.js'
 import { decideRunState, parseRunMeta } from './run-state.js'
-
-/** `true` only while `A` and `B` are the same type, in both directions. */
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+import type { Same } from './same.js'
 
 /**
  * The API's defect block, checked against the Run report's on the way through.
@@ -62,6 +61,19 @@ function toApiReport(
   return report
 }
 
+/**
+ * The verdict's own reasons, as the API declares them — held to that declaration
+ * by the same `Same` check the defect block uses, so the page cannot quietly
+ * lose one of the three reasons a `defect` can be made of.
+ */
+type RunVerdictReasons = Pick<RunVerdict, 'stateMatchesReport' | 'missingOnDisk' | 'explained'>
+
+function toApiVerdictReasons(
+  reasons: Same<RunVerdictReasons, ConsoleVerdictReasons> extends true ? RunVerdictReasons : never,
+): ConsoleVerdictReasons {
+  return reasons
+}
+
 /** The Run half of the status, as a reader hands it over. */
 export interface ConsoleRunFacts {
   runId: string | null
@@ -69,6 +81,12 @@ export interface ConsoleRunFacts {
   startedAt: string | null
   verdict: ConsoleVerdict | null
   defects: RunDefects | null
+  /**
+   * `assessRun`'s own reasons for the verdict (#34 story 11), so the page can
+   * explain a `defect` the report's own defect block does not. `null` while a
+   * Run is in flight, like the verdict itself.
+   */
+  verdictReasons: ConsoleVerdictReasons | null
   /** The newest Run report, verbatim (#34); `null` when none was read. */
   report: RunReport | null
   /**
@@ -105,6 +123,7 @@ export const IDLE_RUN_FACTS: ConsoleRunFacts = {
   startedAt: null,
   verdict: null,
   defects: null,
+  verdictReasons: null,
   report: null,
   reportPresent: false,
   logName: null,
@@ -157,10 +176,11 @@ export interface ConsoleRunLogFacts {
 /**
  * The Run half, derived purely from the raw facts.
  *
- * While a Run is in flight the verdict, its defects and the report are withheld
- * (`null`): the newest log may still be the previous Run's, and the page must
- * not present a finished Run's verdict as the one now running. Everything else —
- * the state, the identity, the record's presence — is reported as read.
+ * While a Run is in flight the verdict, its defects, its reasons and the report
+ * are withheld (`null`): the newest log may still be the previous Run's, and the
+ * page must not present a finished Run's verdict as the one now running.
+ * Everything else — the state, the identity, the record's presence — is reported
+ * as read.
  */
 export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
   const report = parseRunReport(input.logText ?? '')
@@ -179,6 +199,13 @@ export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
   })
   const inFlight = state === 'running'
   const meta = parseRunMeta(input.logText)
+  // The verdict's own reasons travel even when the newest log's report is the
+  // previous Run's: they belong to the verdict the page is showing.
+  const reasons = toApiVerdictReasons({
+    stateMatchesReport: verdict.stateMatchesReport,
+    missingOnDisk: verdict.missingOnDisk,
+    explained: verdict.explained,
+  })
 
   return {
     runId: meta?.runId ?? logRunId,
@@ -186,6 +213,7 @@ export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
     startedAt: meta?.startedAt ?? null,
     verdict: inFlight ? null : verdict.verdict,
     defects: inFlight ? null : verdict.defects,
+    verdictReasons: inFlight ? null : reasons,
     report: inFlight ? null : report,
     reportPresent: input.reportPresent,
     logName: input.logName,
@@ -222,6 +250,7 @@ export function buildStatus({
     officialTotal: gallery.officialTotal,
     verdict: run.verdict,
     defects: toApiDefects(run.defects),
+    verdictReasons: run.verdictReasons,
     listAvailable: gallery.listAvailable,
     report: toApiReport(run.report),
     reportPresent: run.reportPresent,

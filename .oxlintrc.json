@@ -19,6 +19,11 @@
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "warn"
   },
+  // `dist` (the built page) and `.console-cache/` (the thumbnail cache) are
+  // deliberately NOT listed below: `.gitignore` owns both exclusions and this
+  // tool honours it on its walk (conventions §8.2), so listing them here again
+  // would only duplicate the reason. An explicit path is still visited — which
+  // is why the build output stays gitignored rather than being linted.
   "ignorePatterns": [
     "node_modules",
     "images",

@@ -74,8 +74,12 @@ is a defect in the log, not evidence that the Run failed.
 - The progress number is the Mirror's file count, so no per-file log record is
   required for the page to show how far a Run has got.
 - The whole-tree kill and the stop confirmation have no HTTP representation, so
-  they are checked by reading the code and by one manual run rather than by the
-  test suite.
+  their pure decision seams are unit-tested — `stopDecision`, `killProcessTree`'s
+  command shape and the cleanup/start refusals in
+  `tests/console/run-control-lifetimes.test.ts`, and the state table in
+  `tests/console/run-state-lifetimes.test.ts` — while the actual process-tree
+  kill and the confirmation prompt still need a manual run, and are otherwise
+  checked by reading the code rather than by the test suite.
 
 Related: ADR 0002 (why the Run report lives inside the JSONL), ADR 0007 (why a
 missing `run_report` is a log defect), ADR 0008 (why the Console stays out of

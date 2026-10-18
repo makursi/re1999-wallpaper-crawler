@@ -82,22 +82,51 @@ export async function ensureThumbnail(name: string, options: ThumbnailOptions): 
 }
 
 /**
+ * A sibling path to write before renaming onto `file`: the atomic-write half of
+ * the cache contract, shared by the real generator and the real cache.
+ *
+ * The suffix keeps the target's own extension, because the image library infers
+ * its output format from the file name — a temp path without it would make the
+ * render fail rather than silently write a wrong format. The pid and the clock
+ * keep two writers from colliding, and the `.pending-` marker keeps a leftover
+ * out of the cache's name space (the same name keys a Wallpaper's thumbnail).
+ */
+function pendingPathFor(file: string): string {
+  const extension = path.extname(file)
+  const stem = file.slice(0, file.length - extension.length)
+  return `${stem}.pending-${process.pid}-${Date.now()}${extension}`
+}
+
+/**
  * The pinned call, verified by measurement (notes 02 §5): `fit: 'inside'` fits
  * within a 400×400 box and preserves aspect, so the longest edge is exactly 400
  * with no orientation branch; `withoutEnlargement` guards a source smaller than
  * the pin. The output format follows the target file's extension, so the
  * source's extension is preserved by the caller's name.
+ *
+ * The write is atomic for the reason the cache contract gives: a render that
+ * fails part-way must not leave a partial thumbnail at the cache path, which
+ * every later request would serve as a hit forever. `sharp` writes straight to
+ * the path it is given, so it is given a sibling temp path and the rename is
+ * what publishes the file.
  */
 export const realThumbnailGenerator: ThumbnailGenerator = async (sourcePath, targetFile) => {
   const { default: sharp } = await import('sharp')
-  await sharp(sourcePath)
-    .resize({
-      width: THUMBNAIL_MAX_EDGE,
-      height: THUMBNAIL_MAX_EDGE,
-      fit: 'inside',
-      withoutEnlargement: true,
-    })
-    .toFile(targetFile)
+  const pending = pendingPathFor(targetFile)
+  try {
+    await sharp(sourcePath)
+      .resize({
+        width: THUMBNAIL_MAX_EDGE,
+        height: THUMBNAIL_MAX_EDGE,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .toFile(pending)
+    fs.renameSync(pending, targetFile)
+  } catch (error) {
+    fs.rmSync(pending, { force: true })
+    throw error
+  }
 }
 
 /** The real filesystem, with the atomic write the cache contract asks for. */
@@ -106,7 +135,7 @@ export const realThumbnailCache: ThumbnailCache = {
   ensureDir: dir => fs.mkdirSync(dir, { recursive: true }),
   writeFile: (file, bytes) => {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    const pending = `${file}.pending-${process.pid}-${Date.now()}`
+    const pending = pendingPathFor(file)
     try {
       fs.writeFileSync(pending, bytes)
       fs.renameSync(pending, file)
