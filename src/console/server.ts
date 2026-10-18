@@ -20,9 +20,17 @@ import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from './api-typ
 import type { ConsoleConfig } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { buildGalleryView, toGalleryPayload } from './gallery-view.js'
+import { resolveMirrorFile, MIRROR_REFUSALS } from './mirror-files.js'
 import { countMirrorNames, countMirrorWallpapers, readMirrorNames } from './mirror.js'
 import type { ConsoleGalleryFacts, ConsoleRunFacts } from './status.js'
 import { buildStatus } from './status.js'
+import type { ThumbnailGenerator } from './thumbnails.js'
+import {
+  ensureThumbnail,
+  realThumbnailCache,
+  realThumbnailGenerator,
+  THUMBNAIL_CACHE_DIR_NAME,
+} from './thumbnails.js'
 
 /**
  * What a start request answers. Declared here so #34 implements one shape: the
@@ -47,6 +55,45 @@ export interface RunCleanupResult extends ConsoleRunCleanupPayload {
 
 /** Cleans an Orphaned Run up (ADR 0009). #36 implements it. */
 export type RunCleaner = () => Promise<RunCleanupResult>
+
+/**
+ * Image bytes for one thumbnail, generated — or read back from the cache —
+ * after the request has been validated (#35).
+ *
+ * Injected like every other outside touch (spec decision 29), for one specific
+ * reason: the image library's native addon may be absent or broken, and a test
+ * must be able to assert the 500 that follows without owning that failure mode.
+ * `src/console.ts` injects the real one; a service given none answers a named
+ * 500 rather than crashing.
+ */
+export interface ThumbnailSource {
+  thumbnail: (name: string, sourceFile: string) => Promise<Buffer>
+}
+
+/**
+ * The real source: the cached thumbnail, generated once if it is missing. The
+ * cache lives under the project root — never inside the Mirror (ADR 0010) —
+ * and the name that keys it is the Wallpaper's own, which embeds a content
+ * hash, so a hit needs no invalidation.
+ */
+export function realThumbnailSource(
+  projectRoot: string,
+  generator: ThumbnailGenerator = realThumbnailGenerator,
+): ThumbnailSource {
+  const cacheDir = path.join(projectRoot, THUMBNAIL_CACHE_DIR_NAME)
+  return {
+    thumbnail: async (name, sourceFile) => {
+      const imagesDir = path.dirname(sourceFile)
+      const file = await ensureThumbnail(name, {
+        imagesDir,
+        cacheDir,
+        generate: generator,
+        cache: realThumbnailCache,
+      })
+      return fs.readFileSync(file)
+    },
+  }
+}
 
 export interface ConsoleServerDeps {
   /** The status's Run half. #32 injects the idle state; #34/#36 read the log. */
@@ -85,6 +132,12 @@ export interface ConsoleServerDeps {
    * (recomputing gives 0). Absent or `null` = nothing to report.
    */
   newSinceLastRun?: () => number | null
+  /**
+   * The thumbnail generator (#35). `src/console.ts` injects the real one;
+   * absent means "this service cannot render", which the route answers as a
+   * named 500 — never a crash and never a 404.
+   */
+  thumbnailSource?: ThumbnailSource
 }
 
 export interface ConsoleService {
@@ -100,6 +153,42 @@ export interface ConsoleService {
 }
 
 const ASSET_PREFIX = '/assets/'
+const THUMBNAIL_PREFIX = '/api/thumbnail/'
+const THUMBNAIL_ROUTE = '/api/thumbnail'
+const IMAGE_PREFIX = '/api/image/'
+const IMAGE_ROUTE = '/api/image'
+
+/** What a served file's extension means over HTTP (notes 02 §7). */
+const IMAGE_CONTENT_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+}
+
+/** `true` for either image route's path, with or without a name after it. */
+function isImageRoute(pathname: string): boolean {
+  for (const route of [THUMBNAIL_ROUTE, IMAGE_ROUTE]) {
+    if (pathname === route || pathname.startsWith(`${route}/`)) return true
+  }
+  return false
+}
+
+/**
+ * One image response: the bytes, their type, and `nosniff` so a browser cannot
+ * decide the type for itself. A year-long cache is honest on both routes — a
+ * Wallpaper's name embeds a content hash, and so does the thumbnail derived
+ * from it (notes 02 §7).
+ */
+function sendImageBytes(res: http.ServerResponse, bytes: Buffer, contentType: string): void {
+  res.writeHead(200, {
+    'content-type': contentType,
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+  })
+  res.end(bytes)
+}
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -221,6 +310,67 @@ async function handleRequest(
     return
   }
   // ── end GET /api/gallery ──────────────────────────────────────────
+
+  // ── GET /api/thumbnail/<name> and GET /api/image/<name> (#35) ─────
+  //
+  // Two routes, one block, because they share the whole of their safety: the
+  // name comes from the URL, `resolveMirrorFile` is what turns it into a path
+  // (or a refusal), and that resolution — not the image library — is what the
+  // 404/500 boundary is made of. A well-formed name that is not in the Mirror
+  // is a missing file; only a name that resolved can fail to render.
+  if (isImageRoute(url.pathname)) {
+    const isThumbnail = url.pathname.startsWith(THUMBNAIL_PREFIX)
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
+      return
+    }
+
+    // The token is already checked: `isAuthorized` refuses an absent, wrong,
+    // foreign or misdirected request before any route is reached.
+    const prefix = isThumbnail ? THUMBNAIL_PREFIX : IMAGE_PREFIX
+    // `/api/image` with no name is an empty name, which the resolver refuses —
+    // the route does not need its own case for it.
+    const name = url.pathname.length <= prefix.length ? '' : url.pathname.slice(prefix.length)
+    const resolved = resolveMirrorFile(config.imagesDir, name)
+    if (!resolved.ok) {
+      // A malformed name and a name that is merely not there are different
+      // answers: 400 says the request was wrong, 404 says the Wallpaper is not
+      // in the Mirror. The invalid-name message never carries a path.
+      sendJson(
+        res,
+        resolved.reason === MIRROR_REFUSALS.notListed ? 404 : 400,
+        resolved.reason === MIRROR_REFUSALS.notListed
+          ? { error: 'missing file' }
+          : { error: 'invalid name' },
+      )
+      return
+    }
+
+    const extension = path.extname(resolved.path).toLowerCase()
+    const contentType = IMAGE_CONTENT_TYPES[extension] ?? 'application/octet-stream'
+    if (!isThumbnail) {
+      sendImageBytes(res, fs.readFileSync(resolved.path), contentType)
+      return
+    }
+
+    if (deps.thumbnailSource === undefined) {
+      // A service that cannot render (a broken native binary surfaces as a
+      // rejected dynamic import at this very call site) answers a named 500;
+      // the route survives and the next request retries.
+      sendJson(res, 500, { error: 'thumbnail failed' })
+      return
+    }
+    let bytes: Buffer
+    try {
+      bytes = await deps.thumbnailSource.thumbnail(path.basename(resolved.path), resolved.path)
+    } catch {
+      sendJson(res, 500, { error: 'thumbnail failed' })
+      return
+    }
+    sendImageBytes(res, bytes, contentType)
+    return
+  }
+  // ── end GET /api/thumbnail/<name> and GET /api/image/<name> ───────
 
   // ── POST /api/run (#34) ───────────────────────────────────────────
   //

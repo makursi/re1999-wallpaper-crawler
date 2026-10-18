@@ -42,7 +42,7 @@ import {
 import { createRunLogSource } from './console/run-log-source.js'
 import { newestRunLogName, readNewestRunReport } from './console/run-report-source.js'
 import type { ConsoleService } from './console/server.js'
-import { startConsoleServer } from './console/server.js'
+import { realThumbnailSource, startConsoleServer } from './console/server.js'
 import { galleryFactsOf } from './console/status.js'
 import { fetchGalleryList } from './gallery/gallery-source.js'
 
@@ -263,6 +263,10 @@ async function main(options: ConsoleOptions): Promise<void> {
     // log exactly as `check-run` reads it — never recomputed from the Gallery
     // state, which would give 0.
     newSinceLastRun: () => readNewestRunReport(config.logDir)?.gallery.newSinceLastRun ?? null,
+    // The image library's one call site (#35). Its import is dynamic and lives
+    // inside `src/console/thumbnails.ts`, so a broken native binary is a 500 on
+    // one tile — never a crash, and never a failed Run.
+    thumbnailSource: realThumbnailSource(config.projectRoot),
     startRun,
     cleanupRun,
     token: randomBytes(16).toString('hex'),
