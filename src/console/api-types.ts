@@ -128,6 +128,20 @@ export interface ConsoleRunStartPayload {
   missing?: string[]
 }
 
+/**
+ * `POST /api/run/cleanup` — the answer to "clean this Orphaned Run up" (#36).
+ *
+ * `cleaned: false` is a refusal with its reason, and `409` is the only refusal:
+ * a Run in flight is never cleaned under. `cleaned: true` means the leftover
+ * Browser session was asked to close and the log's claim was acknowledged in
+ * memory. No Run log is deleted or rewritten by either answer.
+ */
+export interface ConsoleRunCleanupPayload {
+  cleaned: boolean
+  /** Why the cleanup was refused; `null` when it happened. */
+  reason: string | null
+}
+
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
 export interface ConsoleStatusPayload {
   /** The Run the verdict is about; `null` when no Run log names one. */
@@ -158,6 +172,12 @@ export interface ConsoleStatusPayload {
    * missing one, and the page must not merge them.
    */
   reportPresent: boolean
+  /**
+   * The newest Run log's file name (#36), so the page can name the log whose
+   * claim it is offering to clean up. Absent when no log was read, which is
+   * why it is optional rather than `null`-valued here.
+   */
+  runLogName?: string
 }
 
 /** How a gallery row stands against the Mirror (spec decision 17). */

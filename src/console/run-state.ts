@@ -85,6 +85,20 @@ export interface RunStateFacts {
   seenAtStartup: boolean
   /** Whether a Run this Console started still has a live child. */
   liveChild: boolean
+  /**
+   * This Console started the Run the newest log names, and its child has exited
+   * since. §6a's "appeared after start-up" arm is evidence of a *terminal*
+   * Run's life; it is not evidence about a child the Console watched die — the
+   * consequence §6a spells out is that such a Run reads `orphaned`, because the
+   * Console knows it is dead.
+   */
+  ownChildExited?: boolean
+  /**
+   * The newest log's claim was acknowledged by the page's cleanup (#36). It is
+   * an acknowledgement, not a change to the log: the log stays exactly as it
+   * was, and a Console restart re-reads it as orphaned again.
+   */
+  acknowledged?: boolean
   /** The recency window; §6a's value unless a caller overrides it. */
   orphanWindowMs?: number
 }
@@ -104,10 +118,17 @@ export function decideRunState(facts: RunStateFacts): ConsoleRunState {
   // currently is: a Run's first seconds have no log of their own yet.
   if (facts.liveChild) return 'running'
   // Unfinished, appeared after start-up and still being written: a Run in
-  // flight that no handle of ours knows about (started from a terminal).
-  if (unfinished && !facts.seenAtStartup && recent) return 'running'
-  // Unfinished and recent, but already there when the Console started: the
-  // honest reading is "a leftover, or a Run still writing" — never hidden.
+  // flight that no handle of ours knows about (started from a terminal). Our
+  // own Run is the exception — we watched its child exit, so it is not alive.
+  if (unfinished && !facts.seenAtStartup && recent && facts.ownChildExited !== true) {
+    return 'running'
+  }
+  // Unfinished and recent, but its claim was cleaned from the page: the state
+  // is idle so another Run can start. The log still says what it always said.
+  if (unfinished && recent && facts.acknowledged === true) return 'idle'
+  // Unfinished and recent, but already there when the Console started, or a
+  // child of ours that died: the honest reading is "a leftover, or a Run still
+  // writing" — never hidden.
   if (unfinished && recent) return 'orphaned'
   return 'idle'
 }

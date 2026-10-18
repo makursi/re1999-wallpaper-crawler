@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import type { ConsoleRunStartPayload, ConsoleStatusPayload } from '../../src/console/api-types.js'
+import OrphanPanel from './OrphanPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
 /** A refusal's own words, shown verbatim rather than swallowed. */
@@ -129,10 +130,9 @@ onUnmounted(stopPolling)
 
     <template v-else>
       <p v-if="status.state === 'running'">A Run is in flight: {{ progress }}.</p>
-      <p v-else-if="status.state === 'orphaned'">
-        Orphaned Run {{ status.runId }}: a Run log with no Run report, written recently. It may
-        still be writing — cleaning it up is offered, not forced.
-      </p>
+      <!-- An Orphaned Run has its own component: it is the one state with an
+           action, and the action is a POST the page must not get wrong. -->
+      <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="readStatus" />
       <p v-else-if="status.runId === null">No Run log has been read.</p>
       <template v-else>
         <p>
