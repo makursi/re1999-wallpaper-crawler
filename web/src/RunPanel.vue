@@ -132,11 +132,7 @@ onUnmounted(stopPolling)
       <p v-if="status.state === 'running'">A Run is in flight: {{ progress }}.</p>
       <!-- An Orphaned Run has its own component: it is the one state with an
            action, and the action is a POST the page must not get wrong. -->
-      <OrphanPanel
-        v-else-if="status.state === 'orphaned'"
-        :status="status"
-        @cleaned="readStatus"
-      />
+      <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="readStatus" />
       <p v-else-if="status.runId === null">No Run log has been read.</p>
       <template v-else>
         <p>

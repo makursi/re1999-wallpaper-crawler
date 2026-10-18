@@ -52,8 +52,8 @@ async function cleanUp(): Promise<void> {
 <template>
   <section class="orphan">
     <p>
-      Orphaned Run <strong>{{ status.runId }}</strong> — the Run log
-      <code>{{ logName }}</code> has no Run report and was written recently.
+      Orphaned Run <strong>{{ status.runId }}</strong> — the Run log <code>{{ logName }}</code> has
+      no Run report and was written recently.
     </p>
     <p class="caveat">
       Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log
