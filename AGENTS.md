@@ -83,93 +83,17 @@ CONTEXT.md, and in `docs/adr/`.
 
 ## Analyzing a run's logs
 
-Each run writes one JSONL file in `logs/`: `save-wallpapers-<runId>.jsonl`. To
-assess run stability, find defects, and propose optimizations:
+The Run-log reading reference has exactly one home: the runbook
+`.agents/skills/save-images/SKILL.md`, step **"Verify — the Run report"** — the
+log workflow, the field-by-field reading, every reading trap and the
+optimization leads. This pointer is how a session that never loads the runbook
+— one answering "was last night's Run clean?" — still reaches the rules.
 
-1. Pick the newest file in `logs/`.
-2. Grep `"type":"run_report"` — one structured record with all metrics and
-   detected defects.
-3. Grep `"type":"run_meta"` — runId, start time, and the config snapshot
-   (to rule out config drift).
-4. Grep `"phase":"run-code"` — the discovery diagnostics (`[stability]`,
-   `[final]`, `[thumbnails]`).
-
-How to judge a run:
-
-- **Discovery**: `discovery.converged` (false ⇒ not converged), `stableRounds`,
-  `totalIdleSec`, `combinedCount` (the raw capture: every image URL, Site assets
-  included), `discovery.coverage` (the share of the official list this Run's
-  capture contained; `null` when the list was unavailable).
-- **Download**: `download.successRate` = ok / (ok+failed),
-  `download.rescueRate` = 403s rescued by retry, `download.failed`,
-  `download.statusHistogram`, `download.failureGroups`.
-- **Gallery**: `gallery.officialTotal` = what the site's own list says the
-  gallery holds (`null` ⇒ the list call failed, see
-  `defects.gallerySourceUnavailable`), `gallery.newSinceLastRun` = entries new
-  since the previous Run (`null` ⇒ nothing to compare against, and `firstRun`
-  says so), `gallery.newFiles` = their filenames, `gallery.mirror` = the list
-  diffed against `images/` in both directions.
-- **Site assets**: `siteAssets.count` / `siteAssets.urls` = resources the Site
-  asset filter dropped before Download — this is why `download.total` sits
-  below `discovery.combinedCount`. A dropped URL that the list calls a Wallpaper
-  appears in `defects.siteAssetFalsePositive` instead.
-- **Defects** (auto-detected in `defects`): `discoveryLeak`, `nonConverged`,
-  `emptyResult`, `persistentFailures`, `emptyFiles`,
-  `siteAssetFalsePositive`, `gallerySourceUnavailable`, `mirrorGap`. The last
-  two, plus `siteAssetFalsePositive`, are `null` when the gallery list was
-  unavailable: **not checked is not the same as checked-and-clean**.
-- **Discovery coverage**: `discovery.coverage` = the share of the gallery list
-  that Run's capture contained (`null` when the list was unavailable).
-
-Reading traps:
-- An all-skipped run reads `download.successRate: 0` **by design** — the
-  rate is ok / (ok+failed), and every file already on disk is Content-hash
-  skipped, so 0 ok / 0 failed is a clean re-scrape, not a failure.
-- `newSinceLastRun: null` is **not** 0: it means there was no previous record
-  to compare against (`firstRun: true`), or the list was unavailable. Only a
-  number answers "did the site add anything?".
-- `mirrorGap: null` means **not checked** (the list was unavailable), not
-  "clean"; `mirrorGap: { missing: 0, extra: 0 }` is the clean reading.
-  `missing` = official entries with no local file; `extra` = local files the
-  list does not contain (retired art, or junk the filter let through).
-  `defects.siteAssetFalsePositive: null` reads the same way.
-- A `combinedCount` below the Gallery total is expected and **not a defect**:
-  the page renders only the thumbnails in view, so a Run sees a subset
-  (`discovery.coverage` measures how small). Read `gallery.newSinceLastRun` to
-  tell "nothing new on the site" (0) from "the crawl regressed" — the latter
-  surfaces as `nonConverged` or an empty capture, not as a small
-  `combinedCount`.
-- `combinedCount` grew by design on 2026-09-15 (172 → 484 in the same session):
-  the Discovery script's own filter was removed, so the UI icons it used to drop
-  invisibly now count as captured and show up in `siteAssets` (7 → 34).
-- A `discoveryLeak` whose only URL is the page's own HTML URL (e.g.
-  `re.bluepoch.com/home/detail.html`) is benign: it is also reported as a
-  Site asset, is never downloaded, and never counts toward the Gallery total.
-  Accept it, don't re-run for it. Every non-image URL is a Site asset by
-  definition, so the leak list is a subset of `siteAssets.urls`: a leak that
-  appears there is explained, and one that does not means the rules need a look.
-- **A missing `run_report` is a log defect, not a clean Run.** An exit code of
-  0 does not prove the report was written: a Run can be killed, or die, before
-  its last step. (The one mechanism that used to do this silently — the Run
-  log's file target living in a pino transport worker — is gone; it is written
-  synchronously on the main thread, ADR 0007.) Read
-  `images/.gallery-state.json` first — its `runId`/`updatedAt` are written at the
-  end of a Run, so they separate "finished, log lost" from "never got there" —
-  and verify the outcome against the official list instead of trusting the exit
-  code. The save-images runbook carries the operator's version of this check.
-- **Cross-run trends**: compare `gallery.officialTotal` /
-  `gallery.newSinceLastRun` / `download.successRate` / `defects` across files.
-  The Gallery numbers are the cross-run signal (ADR 0006) — a drop in
-  `combinedCount` alone says nothing. Aggregation beyond that is not yet
-  automated.
-
-Optimization leads to look for: low `rescueRate` ⇒ retry/header policy;
-`failureGroups` dominated by one status ⇒ that status's handling;
-high `avgDownloadMs` ⇒ batch-size/parallelism tuning; `nonConverged` ⇒
-stability-loop parameters or missing thumbnails; `gallery.mirror.missingFromDisk`
-⇒ a Wallpaper we do not have (the list carries the URL, so a re-download is
-possible); `extraOnDisk` ⇒ junk or a retired entry; low `discovery.coverage` ⇒
-the scrolling walk is doing less of the work than the list endpoint could.
+One fact stays here because it is the one most often misread: **a missing
+`run_report` is a defect in the log, not evidence that the Run failed** — an
+exit code of 0 does not prove the report was written. The runbook's Verify step
+carries the check that separates "the Run finished, the log is lost" from "the
+Run never got there".
 
 ## Architecture
 
