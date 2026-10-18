@@ -135,12 +135,16 @@ onUnmounted(stopPolling)
       </p>
       <p v-else-if="status.runId === null">No Run log has been read.</p>
       <template v-else>
-        <p>Run {{ status.runId }} — verdict: <strong>{{ status.verdict }}</strong></p>
+        <p>
+          Run {{ status.runId }} — verdict: <strong>{{ status.verdict }}</strong>
+        </p>
         <p v-if="status.report === null" class="refusal">{{ missingReport }}</p>
         <template v-else>
           <p>Gallery: {{ galleryLine }}</p>
           <p>Download: {{ downloadLine }}</p>
-          <p>Defects: <code>{{ defects }}</code></p>
+          <p>
+            Defects: <code>{{ defects }}</code>
+          </p>
         </template>
       </template>
     </template>
