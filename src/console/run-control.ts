@@ -2,10 +2,10 @@
 //
 // A Run is spawned as the current Node binary with the tsx entry as its first
 // argument, in the repository root — never through a shell, never through `npx`
-// or `pnpm` (spec decision 6; .console-notes/01-run-contract-and-mirror.md §6.1).
+// or `pnpm` (spec decision 6).
 // The Console adds no pipe of its own: the Run's own children need pipes and a
 // confined host refuses a second one, so the child inherits the Console's
-// stdout/stderr (`stdio: ['ignore', 'inherit', 'inherit']`, §6.3). Its output is
+// stdout/stderr (`stdio: ['ignore', 'inherit', 'inherit']`). Its output is
 // not the Run's truth in any case — the Run log is (ADR 0009).
 
 import { spawn as defaultSpawn } from 'node:child_process'
@@ -53,7 +53,7 @@ export interface RunLauncherDeps {
 }
 
 /**
- * The launcher seam (spec decision 6; .console-notes/00-conventions.md §6).
+ * The launcher seam (spec decision 6).
  *
  * The child is never `npx` and never a shell: on Windows both are `.cmd`/`.ps1`
  * shims that need `shell: true`, and cmd.exe mangles the arguments a launcher
@@ -194,7 +194,7 @@ export interface RunStarterDeps {
  * The prerequisites are checked here rather than left to the child so a missing
  * `playwright-cli` or Chrome is a named message; `pwc('close-all')` swallows
  * that failure, so the Run would otherwise die at `pwc('open …')` with the
- * reason buried in stderr (.console-notes/01 §5.1).
+ * reason buried in stderr.
  */
 export function createRunStarter(deps: RunStarterDeps): RunStarter {
   return async (): Promise<RunStartResult> => {

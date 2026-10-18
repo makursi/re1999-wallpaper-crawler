@@ -174,8 +174,8 @@ describe('GET /api/thumbnail/<name>', () => {
     const source = copyingSource()
     const { service } = await serve({ thumbnailSource: source })
 
-    // Every one of them is refused, and never served from outside the Mirror
-    // (notes 02 §7). The encoded forms are the interesting half: WHATWG URL
+    // Every one of them is refused, and never served from outside the Mirror.
+    // The encoded forms are the interesting half: WHATWG URL
     // leaves them in the pathname, so only a single decode plus these checks
     // turns them into the `/api/status` they would otherwise reach.
     const malformed = [

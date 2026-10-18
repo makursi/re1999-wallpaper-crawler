@@ -38,8 +38,8 @@ function scratch(): { imagesDir: string; cacheDir: string } {
 /**
  * One pinned size, aspect preserved: the longest edge is exactly the pinned
  * maximum and the shorter edge is proportional — for a 1440×2560 source the
- * real numbers are 225×400, and for a landscape 2436×1125 they are 400×185
- * (notes 02 §5, measured). The fixture is 200×400 so the expected pair is a
+ * real numbers are 225×400, and for a landscape 2436×1125 they are 400×185.
+ * The fixture is 200×400 so the expected pair is a
  * literal the test knows independently of the production call.
  */
 describe('ensureThumbnail', () => {

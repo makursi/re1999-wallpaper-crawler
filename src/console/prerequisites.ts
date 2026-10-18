@@ -3,8 +3,7 @@
 // The Run dies cryptically when one of these is missing: `pwc('close-all')` and
 // `pwc('delete-data')` swallow a failed `playwright-cli` silently, so the Run
 // only fails later at `pwc('open …')`, and a missing `.env` throws a `ZodError`
-// at module load before any record is written (.console-notes/
-// 01-run-contract-and-mirror.md §5.1). Checking the four here turns each of
+// at module load before any record is written. Checking the four here turns each of
 // those into a named message the page can show.
 //
 // Notes on the two machine-shaped checks:

@@ -68,8 +68,8 @@ describe('resolveMirrorFile', () => {
 
     // The trap this test exists for: on Windows and macOS the filesystem is
     // case-insensitive, so `existsSync` would say the upper-cased name is there.
-    // The exact-string Set lookup is the check that refuses it (notes 02 §7,
-    // measured), and that refusal is what holds on every platform — including
+    // The exact-string Set lookup is the check that refuses it, and that
+    // refusal is what holds on every platform — including
     // the CI runner's case-sensitive ext4, where no pre-assertion about
     // `existsSync` would even be true.
     expect(resolveMirrorFile(imagesDir, VALID.toUpperCase())).toEqual({
@@ -113,7 +113,7 @@ describe('resolveMirrorFile', () => {
     ['999999_deadbeef.jpg', MIRROR_REFUSALS.notListed],
   ])('refuses %j as %s', (name, reason) => {
     // Every case is a refusal and never a path — outside the Mirror is the one
-    // outcome the contract forbids (notes 02 §7, the measured corpus).
+    // outcome the contract forbids.
     expect(resolveMirrorFile(mirror(), name)).toEqual({ ok: false, reason })
   })
 

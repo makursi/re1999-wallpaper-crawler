@@ -5,7 +5,7 @@
 // out of the Mirror, and Windows is case-insensitive so `existsSync` accepts a
 // casing the listing never returned. This module is the one place that turns a
 // name into a path, so the whole attack corpus is testable without a server
-// (spec decision 25; .console-notes/02-gallery-and-thumbnails.md §7).
+// (spec decision 25).
 //
 // The decisive check is exact-string membership in the Mirror's own listing:
 // a name `readdirSync` did not produce cannot be opened, whatever it contains.
