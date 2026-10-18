@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "save-wallpapers": "tsx src/main.ts",
+    "check-run": "tsx src/check-run.ts",
     "lint": "oxlint --type-aware .",
     "lint:fix": "oxlint --type-aware --fix .",
     "typecheck": "tsc --noEmit",
