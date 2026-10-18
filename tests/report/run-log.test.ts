@@ -6,7 +6,7 @@ import type { Mock } from 'vitest'
 import type { GalleryState } from '../../src/gallery/gallery-state.js'
 import type { RunReport } from '../../src/report/report.js'
 import type { RunDefects, FileProbe } from '../../src/report/run-log.js'
-import { assessRun, parseRunReport } from '../../src/report/run-log.js'
+import { assessRun, logRunIdOf, parseRunReport } from '../../src/report/run-log.js'
 
 const EOL = os.EOL
 
@@ -166,6 +166,18 @@ describe('parseRunReport', () => {
   })
 })
 
+describe('logRunIdOf', () => {
+  it('reads the Run out of a Run log filename', () => {
+    expect(logRunIdOf('save-wallpapers-2026-10-18T01-03-31.jsonl')).toBe('2026-10-18T01-03-31')
+  })
+
+  it('returns null for a name that is not a Run log', () => {
+    expect(logRunIdOf('save-wallpapers.jsonl')).toBeNull()
+    expect(logRunIdOf('notes.jsonl')).toBeNull()
+    expect(logRunIdOf('save-wallpapers-2026-10-18T01-03-31.jsonl.bak')).toBeNull()
+  })
+})
+
 describe('assessRun', () => {
   it('calls a clean Run clean', () => {
     const verdict = assessRun(report(), stateOf(), present)
@@ -179,7 +191,7 @@ describe('assessRun', () => {
   })
 
   it('names a missing Run report a defect rather than a failed Run', () => {
-    const verdict = assessRun(null, stateOf(), present)
+    const verdict = assessRun(null, stateOf(), present, RUN_ID)
 
     expect(verdict.verdict).toBe('defect')
     expect(verdict.runId).toBeNull()
@@ -192,14 +204,19 @@ describe('assessRun', () => {
   })
 
   it('still tells a lost report from a Run that never got there', () => {
-    const lost = assessRun(null, stateOf(), present)
+    const lost = assessRun(null, stateOf(), present, RUN_ID)
     expect(lost.stateMatchesReport).toBe(true)
 
-    const neverFinished = assessRun(null, stateOf({ runId: 'older-run' }), present)
+    const neverFinished = assessRun(null, stateOf({ runId: 'older-run' }), present, RUN_ID)
     expect(neverFinished.stateMatchesReport).toBe(false)
 
-    const noState = assessRun(null, null, present)
+    const noState = assessRun(null, null, present, RUN_ID)
     expect(noState.stateMatchesReport).toBeNull()
+  })
+
+  it('cannot claim the Run finished when the log name is unreadable', () => {
+    // No log Run to compare against, so the state is not evidence either way.
+    expect(assessRun(null, stateOf(), present).stateMatchesReport).toBe(false)
   })
 
   it('checks the claimed new files through the probe', () => {

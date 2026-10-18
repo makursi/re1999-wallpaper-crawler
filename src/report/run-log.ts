@@ -168,6 +168,20 @@ export function parseRunReport(logText: string): RunReport | null {
   return null
 }
 
+/**
+ * The Run a log file belongs to, from its name (`save-wallpapers-<runId>.jsonl`),
+ * or `null` when the name is not one of ours.
+ *
+ * This is what lets a *missing* Run report still answer "did the Run finish?".
+ * The Gallery state's `runId` is written by a Run's last step, so a state naming
+ * this log's Run means the Run finished and only its report is lost, while a
+ * state naming an older Run means this one never got that far.
+ */
+export function logRunIdOf(filename: string): string | null {
+  const match = /^save-wallpapers-(.+)\.jsonl$/.exec(filename)
+  return match?.[1] ?? null
+}
+
 // ── the verdict ────────────────────────────────────────────────────
 
 /** Every defect class the runbook does not call routine. */
@@ -194,16 +208,21 @@ function unexplainedDefects(defects: RunDefects, siteAssetUrls: readonly string[
 
 /** The routine classes that were detected, named for the output. */
 function explainedDefects(defects: RunDefects, siteAssetUrls: readonly string[]): string[] {
-  const named = defects.discoveryLeak.urls
-    .filter(url => siteAssetUrls.includes(url))
-    .map(url => `discoveryLeak: ${url}`)
+  const named: string[] = []
+  const leaked = defects.discoveryLeak.urls
+  // The leak is routine only as a whole: one URL outside the Site asset list
+  // makes it a defect, and naming the covered URLs beside it would give two
+  // answers to one question.
+  if (leaked.length > 0 && leaked.every(url => siteAssetUrls.includes(url)))
+    named.push(`discoveryLeak: ${leaked.join(', ')}`)
   if (defects.mirrorGap !== null && defects.mirrorGap.extra > 0)
     named.push(`mirrorGap: extra ${defects.mirrorGap.extra}`)
   return named
 }
 
 /**
- * The verdict for one Run. Pure: the file check arrives as the `probe`.
+ * The verdict for one Run. Pure: the file check arrives as the `probe`, and the
+ * Run the log belongs to as `logRunId` (`logRunIdOf`, from the log's filename).
  *
  * A defect is anything the report found that the runbook does not call routine
  * — non-convergence, an empty result, persistent failures, empty files, a Site
@@ -211,18 +230,23 @@ function explainedDefects(defects: RunDefects, siteAssetUrls: readonly string[])
  * files missing — plus a claimed new file the probe rejects, plus a Gallery
  * state that does not match the report (or cannot be read). A missing report is
  * a defect in the log, stated as such rather than implied by empty output.
+ *
+ * With no report there is no `runId` to compare, so the Gallery state is matched
+ * against `logRunId` instead — without it a lost report cannot be told from a
+ * Run that never reached its last step.
  */
 export function assessRun(
   report: RunReport | null,
   state: GalleryState | null,
   probe: FileProbe,
+  logRunId: string | null = null,
 ): RunVerdict {
   if (report === null) {
     return {
       verdict: 'defect',
       runId: null,
       reportPresent: false,
-      stateMatchesReport: state === null ? null : false,
+      stateMatchesReport: state === null ? null : logRunId !== null && state.runId === logRunId,
       missingOnDisk: [],
       defects: null,
       explained: [],

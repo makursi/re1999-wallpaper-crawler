@@ -16,7 +16,7 @@ import { GALLERY_STATE_FILE, LOG_DIR } from './config.js'
 import { readGalleryState } from './gallery/gallery-state.js'
 import type { RunReport } from './report/report.js'
 import type { RunVerdict } from './report/run-log.js'
-import { assessRun, parseRunReport } from './report/run-log.js'
+import { assessRun, logRunIdOf, parseRunReport } from './report/run-log.js'
 
 /** One line of the verdict, on stdout, so the output can be piped and read. */
 function line(text: string): void {
@@ -135,7 +135,10 @@ async function main(): Promise<void> {
   // than configured separately.
   const imagesDir = path.dirname(GALLERY_STATE_FILE)
   const state = readGalleryState(GALLERY_STATE_FILE)
-  const verdict = assessRun(report, state, fileProbe(imagesDir))
+  // The log's own name says which Run it is, which is what a *missing* report
+  // still needs in order to be told from a Run that never finished.
+  const logRunId = logFile === null ? null : logRunIdOf(path.basename(logFile))
+  const verdict = assessRun(report, state, fileProbe(imagesDir), logRunId)
 
   printVerdict(verdict, logFile, report, state?.runId ?? null)
   process.exitCode = verdict.verdict === 'defect' ? 1 : 0
