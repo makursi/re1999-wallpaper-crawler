@@ -108,7 +108,12 @@ function rowKey(row: ConsoleGalleryRow): string {
           <!-- A Wallpaper with no local file is a state, not a fault: a local
                placeholder, never a broken image and never a fetch to the CDN
                (spec decision 25; #35 AC 5). -->
-          <div v-else class="tile placeholder" role="img" :aria-label="`${row.name} is not on disk`">
+          <div
+            v-else
+            class="tile placeholder"
+            role="img"
+            :aria-label="`${row.name} is not on disk`"
+          >
             <span>not on disk</span>
           </div>
           <p class="meta">

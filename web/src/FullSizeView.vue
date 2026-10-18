@@ -48,7 +48,9 @@ onBeforeUnmount(() => {
     <figure role="dialog" aria-modal="true" :aria-label="name">
       <img :src="imageUrl()" :alt="name" @error="failure = true" />
       <figcaption>
-        <span>Gallery id <strong>{{ id ?? '—' }}</strong></span>
+        <span
+          >Gallery id <strong>{{ id ?? '—' }}</strong></span
+        >
         <code>{{ name }}</code>
         <button type="button" @click="emit('close')">Close (Esc)</button>
       </figcaption>
