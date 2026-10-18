@@ -5,7 +5,7 @@ How the engineering skills should consume this repo's domain documentation when 
 ## Before exploring, read these
 
 - **`CONTEXT-MAP.md`** at the repo root: it names the contexts (Discovery, Download,
-  Gallery tracking) and how they relate. Read it first.
+  Gallery tracking, Console) and how they relate. Read it first.
 - **`CONTEXT.md`** at the repo root: the glossary. The map points into it by section
   (`Vocabulary in CONTEXT.md → Discovery`).
 - **`docs/adr/`**: read the ADRs touching the area you're about to work in before
@@ -40,7 +40,8 @@ and don't create one to match a template.
     ├── discovery/          ← traverses the page, produces the raw capture
     ├── download/           ← consumes the Wallpaper URL set, writes files
     ├── gallery/            ← the site's list, the mirror check, cross-Run memory
-    └── report/             ← pure analysis: metrics, defects, the Run report
+    ├── report/             ← pure analysis: metrics, defects, the Run report
+    └── console/            ← the human entry point: the service and its page
 ```
 
 ## Use the glossary's vocabulary

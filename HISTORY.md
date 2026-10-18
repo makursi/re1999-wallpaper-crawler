@@ -132,7 +132,7 @@
 **决策**：
 - `module/moduleResolution: nodenext`；相对导入全加 `.js` 后缀（11 处机械改动）
 - `__dirname` → `import.meta.dirname`（Node ≥20.11）；`config.ts` 抽 `PROJECT_ROOT`（5 处重复收敛单点）
-- `verbatimModuleSyntax: true` 编译期拦截类型误导入；删 declaration/outDir/sourceMap，`noEmit: true`（无构建需求，tsx 直跑）
+- `verbatimModuleSyntax: true` 编译期拦截类型误导入；删 declaration/outDir/sourceMap，`noEmit: true`（爬虫无构建需求，tsx 直跑）
 - ADR 0003：ESM + tsx 选型，否决 ts-node ESM / bundler resolution
 
 **验证**：tsc/eslint 零错误；10 passed（vitest 原生支持 ESM）；真跑与基准深比较：14 键契约一致、combinedCount=972 一致、download/defects/failures 深比较相等、thumbnailsClicked 165 vs 135 属运行时抖动。
@@ -234,7 +234,7 @@
 
 **决策**（grill 两轮，全部按推荐）：
 - **仓根 `tests/` 镜像 src**：`tests/wallpaper-url.test.ts`、`tests/report/{report,gallery}.test.ts`，import 改用相对路径且带 `.js`（ADR 0003）。否决 `src/**/__tests__/`——src 里仍有测试，边界没画出来；否决维持同目录
-- **tsconfig**：删 `rootDir`（无 emit/build 脚本消费者，实际已废弃）+ `include` 加 `tests/**/*` 与 `vitest.config.ts`。两条失败模式均已实测：只加 include 不删 rootDir → `TS6059 not under rootDir`；不把测试加进 include → ESLint type-aware 报 `not found by the project service` 解析错误。`eslint.config.mjs` 无需改动
+- **tsconfig**：删 `rootDir`（爬虫无 emit/build 脚本消费者，实际已废弃）+ `include` 加 `tests/**/*` 与 `vitest.config.ts`。两条失败模式均已实测：只加 include 不删 rootDir → `TS6059 not under rootDir`；不把测试加进 include → ESLint type-aware 报 `not found by the project service` 解析错误。`eslint.config.mjs` 无需改动
 - **新增 `vitest.config.ts`**（`test.include: ['tests/**/*.test.ts']`）：把「测试只住 `tests/`」从约定变成**配置层强制**。护栏实测有效——往 `src/` 丢一个 `.test.ts`，vitest 仍只报 3 files / 33 tests
 - 本次只动测试（gallery 归属、CI、`lint`/`typecheck` 脚本另开账）；纯移动零逻辑改动 → **不真跑**爬虫，按 09-04 同类先例只跑三件套
 - 文档：AGENTS.md 架构树拆成 `src/` 与 `tests/` 两块、CONTEXT-MAP 三处 `(+ tests)` 去掉（测试位置是文件布局事实，归 AGENTS.md 而非领域表）、CLAUDE.md 去重为 `@AGENTS.md` 指针；不写 ADR（可回滚、非惊讶、无僵化收益）
@@ -253,7 +253,7 @@
 - **lint：eslint → oxlint 1.82**（`oxlint --type-aware .`，type-aware 由 `oxlint-tsgolint` 7.0.2001 提供）。`.oxlintrc.json` = `correctness: error` + `suspicious: warn` + `oxc / typescript / unicorn / import / node / promise / vitest` 插件；只有两处用配置豁免而非改代码：`eqeqeq` 允许 `!= null`（本意就是同时吃 null 与 undefined）、`import/no-unassigned-import` 允许 `dotenv/config`（副作用导入）。否决「eslint 并存一段时间」——两套规则互相打架。
 - **钩子：simple-git-hooks 接管，`.githooks/` 删除**。分支门禁的逻辑搬进 `scripts/check-branch.mjs`（原 shell 钩子的等价物：拦 `main` / `master` / detached HEAD），作为 pre-commit 第一步，之后接 `lint-staged`（`oxlint --fix --deny-warnings`）；pre-push = `typecheck && test`。否决「只留 lint-staged、放弃门禁」——`AGENTS.md` 明写这条是 "enforced, not just asked"；否决「两套钩子并存」——机制重复且 `core.hooksPath` 会让 simple-git-hooks 静默失效。
 - **npm → pnpm 12.3.4**（删 `package-lock.json`，加 `packageManager` + `engines.node >=22.22.1`）。理由：工作区所有兄弟仓都是 pnpm，且 CI 的参考实现（toolbox）与 `sxzz/workflows` 都按 pnpm 设计。
-- **CI：手写 `.github/workflows/ci.yml`**（`pnpm/setup@v2` + `runtime: node@24` + `cache` + `require-lockfile`，跑 lint → typecheck → test）。否决直接用 `sxzz/workflows` 的 `unit-test.yml` reusable：其 test job 会无条件跑 `pnpm run build`，本仓无 build 脚本，绕过要传 `build: ''` 这种 hack；30 行手写 CI 更可控、可读。
+- **CI：手写 `.github/workflows/ci.yml`**（`pnpm/setup@v2` + `runtime: node@24` + `cache` + `require-lockfile`，跑 lint → typecheck → test）。否决直接用 `sxzz/workflows` 的 `unit-test.yml` reusable：其 test job 会无条件跑 `pnpm run build`，当时本仓（爬虫）无 build 脚本，绕过要传 `build: ''` 这种 hack；30 行手写 CI 更可控、可读。（**2026-10-18 限定**：这条只对爬虫成立；Console 的页面即本仓第一个构建产物，见 ADR 0011。）
 - **顺手修掉 oxlint 报出的真问题**（不是补规则，具体行为差异见下方「行为差异」）：`main.ts` 4 处不安全类型断言改成运行时校验（`errorMessage()` 收窄、`window.__wpUrls` / `__wpLog` 的 JSON 加数组+字符串校验）、`wallpaper-url.ts` 的 `matchesRule` 补 `never` 穷尽守卫、`download.ts` 的 `_cachedCookieHeader` 去掉下划线前缀、`report.ts` 的 `.sort()` → `.toSorted()`（`lib` 提到 ES2023）。自审后又补了 `parseStats` 的逐字段校验（`numberOr` / `booleanOr` / `isRecord`）与 `parseJsonPayload`（三处重复的双层 `JSON.parse` 收成一个），因为原先还留着一处 `as Partial<DiscoveryStats>`——它不在 oxlint 的报错里，但会让脏数据直接进 `run_report.discovery`。
 - **oxlint 忽略名单只放 `scripts/run-discovery.js`**（不是整个 `scripts/`）：自审指出新写的 `scripts/check-branch.mjs` 被误伤；实测 type-aware 对它是干净通过的。（**2026-09-15 晚更正**：当时写的理由是“它不在 tsconfig 的 `include` 里，纳入需先开 `allowJs`”——真正的原因比这硬：它是 playwright-cli 的协议载荷，详见下一条；`allowJs` 只是当时以为的前置条件。）
 - **oxfmt 全量重排留到单独一轮**：实测 `oxfmt --check` 报 21 个文件里 16 个要改；其中 `src` + `tests` 共 11 个文件 +237/-169 行，`scripts/run-discovery.js`（无 lint、无类型、无测试的浏览器脚本）一个文件就 +189/-140。一次性重排会淹没本轮真正的逻辑改动。
@@ -433,7 +433,7 @@
 | 放宽 pnpm 供应链策略（`minimumReleaseAge`）以装当日最新版 | 该策略挡的是「投毒版本 24h 窗口」，正确做法是 pin 前一版 | 2026-09-15 |
 | 继续用 npm | 与工作区兄弟仓、`pnpm/setup@v2` CI、pnpm 化的 lint-staged 形态都不一致 | 2026-09-15 |
 | 在同一个轮次里对 `scripts/run-discovery.js` 做格式化 / 自动修 | 它是 playwright-cli 的协议载荷（`(\n<file>\n)(page);`），formatter 会在裸表达式前插 `;` → `SyntaxError`，crawl 直接抓不到任何东西 | 2026-09-15 |
-| 直接复用 `sxzz/workflows` 的 `unit-test.yml` | 其 test job 无条件跑 `pnpm run build`，本仓无 build 脚本 | 2026-09-15 |
+| 直接复用 `sxzz/workflows` 的 `unit-test.yml` | 其 test job 无条件跑 `pnpm run build`；当时本仓（爬虫）无 build 脚本——2026-10-18 起 Console 的页面是本仓第一个构建产物（ADR 0011） | 2026-09-15 |
 | 继续用「磁盘文件数 + 单调 max」当官方总数 | 分不清「站点没上新」和「我们丢了文件」，且一次删除或一次杂项漏进就让 delta 永久为 0 | 2026-09-15 |
 | 用文件名前导数字当官网编号 | 1001 条里 625 条与真实 id 不符，id 6–20 连 title 都没有（实测） | 2026-09-15 |
 | 结构化「画廊家族」判据（`/PICTURE/` + 数字开头） | 有权威清单后属于多余的猜测；判据越少越不会自己出错 | 2026-09-15 |

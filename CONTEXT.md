@@ -160,6 +160,16 @@ The cookie header extracted from the Browser session and attached to downloads
 so gated images succeed.
 _Avoid_: auth, login
 
+### Console
+
+**Console**:
+The human entry point to this repository: one command starts a local service
+that serves a page in the browser. It starts a Run as a child process and never
+imports the pipeline; it knows Runs by reading the Run log directory rather than
+a handle it holds; and it reads the Mirror and the Gallery list without writing
+either. The CLI entries stay the agent's interface. See docs/adr/0008.
+_Avoid_: GUI, dashboard, admin panel, web app
+
 ### Diagnostics
 
 **Run**:
@@ -173,6 +183,14 @@ The one JSONL file a Run writes, from its first `run_meta` record to its
 through it: a Run log that stops before `run_report` is a defect in the log,
 **not** evidence that the Run failed. See docs/adr/0007.
 _Avoid_: log file, log output, 日志
+
+**Orphaned Run**:
+A Run left over from an earlier session, identified from the Run log directory
+alone: a log with a `run_meta`, no `run_report` and a recent modification time.
+A state, not an error path — a missing Run report is a defect in the log, not
+evidence that the Run failed (see docs/adr/0007). The Console reports it and can
+clean it up, after which a new Run can start.
+_Avoid_: stuck Run, zombie Run, dead Run, hung Run
 
 **Run 稳定性 (Run stability)**:
 The degree to which a single Run completes both pipelines and produces a
