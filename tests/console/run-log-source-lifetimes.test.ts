@@ -6,14 +6,19 @@
 // not — hide.
 
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { RunLogSourceOptions } from '../../src/console/run-log-source.js'
 import { createRunLogSource } from '../../src/console/run-log-source.js'
-import { LOG_NAME, plainLine, runLog } from './run-fixtures.js'
+import {
+  fixtureProjectRoot,
+  LOG_NAME,
+  plainLine,
+  runLog,
+  runLogSourceOptionsIn,
+} from './run-fixtures.js'
 
 const roots: string[] = []
 
@@ -22,13 +27,9 @@ afterEach(() => {
 })
 
 function fixture(): RunLogSourceOptions {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'console-run-log-lifetime-'))
+  const root = fixtureProjectRoot('console-run-log-lifetime-')
   roots.push(root)
-  const logDir = path.join(root, 'logs')
-  const imagesDir = path.join(root, 'images')
-  fs.mkdirSync(logDir)
-  fs.mkdirSync(imagesDir)
-  return { logDir, imagesDir, galleryStateFile: path.join(imagesDir, '.gallery-state.json') }
+  return runLogSourceOptionsIn(root)
 }
 
 function writeLog(logDir: string, name: string, text: string): void {

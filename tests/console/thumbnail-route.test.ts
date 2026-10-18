@@ -1,5 +1,4 @@
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,9 +10,9 @@ import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../src/console/status.j
 import { THUMBNAIL_CACHE_DIR_NAME } from '../../src/console/thumbnails.js'
 import type { GalleryList } from '../../src/gallery/gallery-source.js'
 import { mergeGalleryStats } from '../../src/gallery/gallery-state.js'
+import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
 import { writeTestImage } from './test-image.js'
 
-const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 const ON_DISK = '1013_8dee54e8bf644722981751524fb54356.png'
 const NOT_ON_DISK = '1014_11a9938e23a347ca8580098ddfd5a190.jpg'
 
@@ -49,29 +48,15 @@ interface Fixture {
  * The real `images/` is never read or written.
  */
 async function fixture(): Promise<Fixture> {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'console-thumbnail-route-test-'))
+  const root = fixtureProjectRoot('console-thumbnail-route-test-')
   roots.push(root)
+  const config = consoleConfigIn(root)
 
-  const imagesDir = path.join(root, 'images')
-  fs.mkdirSync(imagesDir)
-  await writeTestImage(path.join(imagesDir, ON_DISK), 200, 400)
-  fs.writeFileSync(path.join(imagesDir, 'notes.txt'), 'c')
-  fs.writeFileSync(path.join(imagesDir, '.gallery-state.json'), '{}')
+  await writeTestImage(path.join(config.imagesDir, ON_DISK), 200, 400)
+  fs.writeFileSync(path.join(config.imagesDir, 'notes.txt'), 'c')
+  fs.writeFileSync(config.galleryStateFile, '{}')
 
-  const logDir = path.join(root, 'logs')
-  fs.mkdirSync(logDir)
-
-  return {
-    config: {
-      projectRoot: root,
-      imagesDir,
-      logDir,
-      galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-      distDir: path.join(root, 'dist'),
-      galleryListEndpoint: 'https://gallery.test/query',
-    },
-    cacheDir: path.join(root, THUMBNAIL_CACHE_DIR_NAME),
-  }
+  return { config, cacheDir: path.join(root, THUMBNAIL_CACHE_DIR_NAME) }
 }
 
 /**

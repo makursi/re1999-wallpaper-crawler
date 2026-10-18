@@ -69,9 +69,17 @@ describe('deriveStatus', () => {
     expect(status.verdict).toBe(expected)
     expect(status.verdict).toBe(command.verdict)
     expect(status.defects).toEqual(command.defects)
+    // The verdict's own reasons travel with it: the same three `check-run`
+    // prints, so a `defect` the report's defect block does not explain still
+    // reaches the page with its cause (#34 story 11).
+    expect(status.verdictReasons).toEqual({
+      stateMatchesReport: command.stateMatchesReport,
+      missingOnDisk: command.missingOnDisk,
+      explained: command.explained,
+    })
   })
 
-  it('reports claimed new files the Mirror does not hold as a defect', () => {
+  it('reports claimed new files the Mirror does not hold as a defect, with that cause', () => {
     const logText = runLog(JSON.stringify(runReport()))
 
     const status = statusOf({
@@ -89,6 +97,31 @@ describe('deriveStatus', () => {
     )
     expect(status.verdict).toBe('defect')
     expect(status.verdict).toBe(command.verdict)
+    // The report's defect block is entirely clean; the missing files are the
+    // whole reason, and they reach the page instead of an unexplained verdict.
+    expect(status.defects).toEqual(defects())
+    expect(status.verdictReasons).toEqual({
+      stateMatchesReport: true,
+      missingOnDisk: NEW_FILES,
+      explained: [],
+    })
+  })
+
+  it('carries a Gallery state that names another Run as the verdict’s cause', () => {
+    const status = statusOf({
+      logText: runLog(JSON.stringify(runReport())),
+      galleryState: galleryState({ runId: '2026-10-17T00-00-00' }),
+    })
+
+    // Same shape as above, the other cause the report cannot carry: clean
+    // defects, and `defect` because the state is not this Run's.
+    expect(status.defects).toEqual(defects())
+    expect(status.verdict).toBe('defect')
+    expect(status.verdictReasons).toEqual({
+      stateMatchesReport: false,
+      missingOnDisk: [],
+      explained: [],
+    })
   })
 
   it('reports a log that stops before its run_report as a defect in the log', () => {
@@ -166,6 +199,8 @@ describe('deriveStatus', () => {
     expect(status.state).toBe('running')
     expect(status.verdict).toBeNull()
     expect(status.defects).toBeNull()
+    // The reasons belong to the verdict, so they are withheld with it.
+    expect(status.verdictReasons).toBeNull()
     expect(status.report).toBeNull()
   })
 

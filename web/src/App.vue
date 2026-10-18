@@ -2,16 +2,12 @@
 import { onMounted, ref } from 'vue'
 
 import type { ConsoleStatusPayload } from '../../src/console/api-types.js'
+import { consoleToken } from './console-token'
 import GalleryView from './GalleryView.vue'
 import RunPanel from './RunPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
 const failure = ref<string | null>(null)
-
-/** The token this page was opened with; the service wants it on every request. */
-function consoleToken(): string {
-  return new URLSearchParams(window.location.search).get('token') ?? ''
-}
 
 async function loadStatus(): Promise<void> {
   try {

@@ -17,29 +17,11 @@ import { readGalleryState } from './gallery/gallery-state.js'
 import type { RunReport } from './report/report.js'
 import type { RunVerdict } from './report/run-log.js'
 import { assessRun, logRunIdOf, parseRunReport, runReportRecordPresent } from './report/run-log.js'
+import { createFileProbe, newestRunLogPath } from './run-log-file.js'
 
 /** One line of the verdict, on stdout, so the output can be piped and read. */
 function line(text: string): void {
   process.stdout.write(`${text}\n`)
-}
-
-/**
- * The newest Run log, or `null` when there is none. The filename carries the
- * timestamp, so the last name in ascending order is the newest Run — the
- * ordering is exact, not a guess from mtimes.
- */
-function newestLogFile(dir: string): string | null {
-  let names: string[]
-  try {
-    names = fs.readdirSync(dir)
-  } catch {
-    return null
-  }
-  const runLogs = names.filter(
-    name => name.startsWith('save-wallpapers-') && name.endsWith('.jsonl'),
-  )
-  const newest = runLogs.toSorted().at(-1)
-  return newest === undefined ? null : path.join(dir, newest)
 }
 
 /**
@@ -53,7 +35,10 @@ type LogReading =
   | { kind: 'text'; file: string; text: string }
 
 function readNewestLog(dir: string): LogReading {
-  const file = newestLogFile(dir)
+  // The newest log is `src/run-log-file.ts`'s pick — the same function the
+  // Console's reader calls, so the page and this command can never disagree
+  // about which Run is the newest.
+  const file = newestRunLogPath(dir)
   if (file === null) return { kind: 'none' }
   try {
     return { kind: 'text', file, text: fs.readFileSync(file, 'utf8') }
@@ -66,21 +51,6 @@ function describeLog(reading: LogReading): string {
   if (reading.kind === 'none') return 'none (no save-wallpapers-*.jsonl in the log directory)'
   if (reading.kind === 'unreadable') return `${reading.file} — could not be read`
   return reading.file
-}
-
-/**
- * A Run report's claimed new files are Wallpaper filenames, named the way
- * Download names them (ADR 0004 / the Mirror check), so the probe resolves them
- * inside the Mirror rather than re-deriving anything from a URL.
- */
-function fileProbe(imagesDir: string): (filename: string) => boolean {
-  return filename => {
-    try {
-      return fs.statSync(path.join(imagesDir, filename)).size > 0
-    } catch {
-      return false
-    }
-  }
 }
 
 /** Everything the printer reports, assembled once in `main`. */
@@ -172,7 +142,7 @@ async function main(): Promise<void> {
   // The log's own name says which Run it is, which is what a *missing* report
   // still needs in order to be told from a Run that never finished.
   const logRunId = reading.kind === 'text' ? logRunIdOf(path.basename(reading.file)) : null
-  const verdict = assessRun(report, state, fileProbe(imagesDir), logRunId)
+  const verdict = assessRun(report, state, createFileProbe(imagesDir), logRunId)
 
   printVerdict({
     verdict,

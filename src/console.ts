@@ -40,11 +40,18 @@ import {
   stopDecision,
 } from './console/run-control.js'
 import { createRunLogSource } from './console/run-log-source.js'
-import { newestRunLogName, readNewestRunReport } from './console/run-report-source.js'
-import type { ConsoleService } from './console/server.js'
-import { realThumbnailSource, startConsoleServer } from './console/server.js'
+import { readNewestRunReport } from './console/run-report-source.js'
+import type { ConsoleService, ThumbnailSource } from './console/server.js'
+import { startConsoleServer } from './console/server.js'
 import { galleryFactsOf } from './console/status.js'
+import {
+  ensureThumbnail,
+  realThumbnailCache,
+  realThumbnailGenerator,
+  THUMBNAIL_CACHE_DIR_NAME,
+} from './console/thumbnails.js'
 import { fetchGalleryList } from './gallery/gallery-source.js'
+import { newestRunLogName } from './run-log-file.js'
 
 interface ConsoleOptions {
   port: number
@@ -60,6 +67,34 @@ function consoleConfig(): ConsoleConfig {
     galleryStateFile: GALLERY_STATE_FILE,
     distDir: path.join(PROJECT_ROOT, DIST_DIR_NAME),
     galleryListEndpoint: GALLERY_LIST_URL,
+  }
+}
+
+/**
+ * The thumbnail source the service is given (#35; spec decision 29). This is the
+ * composition root, so it is the one place that knows the project root, the real
+ * filesystem and the image library: `src/console/server.ts` receives the source
+ * whole and never reaches for `sharp` or for a cache path itself.
+ *
+ * The cache lives under the project root — never inside the Mirror (ADR 0010) —
+ * and the name that keys it is the Wallpaper's own, which embeds a content hash,
+ * so a hit needs no invalidation. `src/console/thumbnails.ts` is the image
+ * library's only import site, and the import is dynamic on purpose: a broken or
+ * absent native addon arrives as a rejected `await import('sharp')` — a named
+ * 500 at the request site, never a crashed process and never a failed Run.
+ */
+function realThumbnailSource(projectRoot: string): ThumbnailSource {
+  const cacheDir = path.join(projectRoot, THUMBNAIL_CACHE_DIR_NAME)
+  return {
+    thumbnail: async (name, sourceFile) => {
+      const file = await ensureThumbnail(name, {
+        imagesDir: path.dirname(sourceFile),
+        cacheDir,
+        generate: realThumbnailGenerator,
+        cache: realThumbnailCache,
+      })
+      return fs.readFileSync(file)
+    },
   }
 }
 

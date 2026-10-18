@@ -9,6 +9,8 @@
 
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
+import { consoleToken } from './console-token'
+
 const props = defineProps<{
   /** The gallery's own id; `null` for a Mirror file the list no longer holds. */
   id: number | null
@@ -16,11 +18,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
-
-/** The token this page was opened with; the service wants it on every request. */
-function consoleToken(): string {
-  return new URLSearchParams(window.location.search).get('token') ?? ''
-}
 
 function imageUrl(): string {
   return `/api/image/${encodeURIComponent(props.name)}?token=${encodeURIComponent(consoleToken())}`

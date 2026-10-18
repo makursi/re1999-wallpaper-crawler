@@ -1,5 +1,4 @@
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,8 +11,8 @@ import { startConsoleServer } from '../../src/console/server.js'
 import { galleryFactsOf, IDLE_RUN_FACTS } from '../../src/console/status.js'
 import type { GalleryList } from '../../src/gallery/gallery-source.js'
 import { GallerySourceError } from '../../src/gallery/gallery-source.js'
+import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
 
-const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'
 const RETIRED = '978.竖版-2560x1440_61032b056992416faaf041b01d7c1633.jpg'
 
@@ -27,27 +26,16 @@ afterEach(async () => {
 
 /** A directory tree standing in for the repository, built as data. */
 function fixture(): ConsoleConfig {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'console-gallery-test-'))
+  const projectRoot = fixtureProjectRoot('console-gallery-test-')
   roots.push(projectRoot)
+  const config = consoleConfigIn(projectRoot)
 
-  const imagesDir = path.join(projectRoot, 'images')
-  fs.mkdirSync(imagesDir)
-  fs.writeFileSync(path.join(imagesDir, '1012_hash.jpg'), 'a')
-  fs.writeFileSync(path.join(imagesDir, RETIRED), 'b')
-  fs.writeFileSync(path.join(imagesDir, 'notes.txt'), 'c')
-  fs.writeFileSync(path.join(imagesDir, '.gallery-state.json'), '{}')
+  fs.writeFileSync(path.join(config.imagesDir, '1012_hash.jpg'), 'a')
+  fs.writeFileSync(path.join(config.imagesDir, RETIRED), 'b')
+  fs.writeFileSync(path.join(config.imagesDir, 'notes.txt'), 'c')
+  fs.writeFileSync(config.galleryStateFile, '{}')
 
-  const logDir = path.join(projectRoot, 'logs')
-  fs.mkdirSync(logDir)
-
-  return {
-    projectRoot,
-    imagesDir,
-    logDir,
-    galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    distDir: path.join(projectRoot, 'dist'),
-    galleryListEndpoint: 'https://gallery.test/query',
-  }
+  return config
 }
 
 /** The list the site would answer: 1012 is on disk, 1011 is not. */

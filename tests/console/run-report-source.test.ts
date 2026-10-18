@@ -4,8 +4,9 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { newestRunLogName, readNewestRunReport } from '../../src/console/run-report-source.js'
+import { readNewestRunReport } from '../../src/console/run-report-source.js'
 import type { RunReport } from '../../src/report/report.js'
+import { newestRunLogName } from '../../src/run-log-file.js'
 
 const dirs: string[] = []
 

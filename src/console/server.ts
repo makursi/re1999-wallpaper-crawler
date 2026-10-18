@@ -16,6 +16,7 @@ import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'node:path'
 
+import { IMAGE_EXTENSIONS } from '../wallpaper-url.js'
 import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from './api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
@@ -24,13 +25,6 @@ import { resolveMirrorFile, MIRROR_REFUSALS } from './mirror-files.js'
 import { countMirrorNames, countMirrorWallpapers, readMirrorNames } from './mirror.js'
 import type { ConsoleGalleryFacts, ConsoleRunFacts } from './status.js'
 import { buildStatus } from './status.js'
-import type { ThumbnailGenerator } from './thumbnails.js'
-import {
-  ensureThumbnail,
-  realThumbnailCache,
-  realThumbnailGenerator,
-  THUMBNAIL_CACHE_DIR_NAME,
-} from './thumbnails.js'
 
 /**
  * What a start request answers. Declared here so #34 implements one shape: the
@@ -63,36 +57,11 @@ export type RunCleaner = () => Promise<RunCleanupResult>
  * Injected like every other outside touch (spec decision 29), for one specific
  * reason: the image library's native addon may be absent or broken, and a test
  * must be able to assert the 500 that follows without owning that failure mode.
- * `src/console.ts` injects the real one; a service given none answers a named
- * 500 rather than crashing.
+ * `src/console.ts` — the composition root — builds the real one; a service given
+ * none answers a named 500 rather than crashing.
  */
 export interface ThumbnailSource {
   thumbnail: (name: string, sourceFile: string) => Promise<Buffer>
-}
-
-/**
- * The real source: the cached thumbnail, generated once if it is missing. The
- * cache lives under the project root — never inside the Mirror (ADR 0010) —
- * and the name that keys it is the Wallpaper's own, which embeds a content
- * hash, so a hit needs no invalidation.
- */
-export function realThumbnailSource(
-  projectRoot: string,
-  generator: ThumbnailGenerator = realThumbnailGenerator,
-): ThumbnailSource {
-  const cacheDir = path.join(projectRoot, THUMBNAIL_CACHE_DIR_NAME)
-  return {
-    thumbnail: async (name, sourceFile) => {
-      const imagesDir = path.dirname(sourceFile)
-      const file = await ensureThumbnail(name, {
-        imagesDir,
-        cacheDir,
-        generate: generator,
-        cache: realThumbnailCache,
-      })
-      return fs.readFileSync(file)
-    },
-  }
 }
 
 export interface ConsoleServerDeps {
@@ -159,13 +128,32 @@ const IMAGE_PREFIX = '/api/image/'
 const IMAGE_ROUTE = '/api/image'
 
 /** What a served file's extension means over HTTP (notes 02 §7). */
-const IMAGE_CONTENT_TYPES: Record<string, string> = {
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
 }
+
+/**
+ * The image routes' answer, for exactly the extensions a Wallpaper can have
+ * (`IMAGE_EXTENSIONS`, src/wallpaper-url.ts): derived from `CONTENT_TYPES` so
+ * the two tables cannot disagree about what a `.jpg` is, and from the Wallpaper
+ * URL set's own list so the routes serve what the pipeline downloads.
+ */
+const IMAGE_CONTENT_TYPES: Record<string, string> = Object.fromEntries(
+  IMAGE_EXTENSIONS.map(extension => [extension, CONTENT_TYPES[extension]]),
+)
 
 /** `true` for either image route's path, with or without a name after it. */
 function isImageRoute(pathname: string): boolean {
@@ -190,23 +178,6 @@ function sendImageBytes(res: http.ServerResponse, bytes: Buffer, contentType: st
   res.end(bytes)
 }
 
-const CONTENT_TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-}
-
 /**
  * Bind the service. The preferred port is tried first and an OS-assigned one
  * is used when it is taken — a page that refuses to start because a port is
@@ -221,7 +192,9 @@ export async function startConsoleServer(
   // `listen` has resolved and this assignment has run.
   let boundPort = 0
   const server = http.createServer((req, res) => {
-    handleRequest(req, res, config, deps, boundPort).catch(() => {
+    // `port` is read here, at request time, because `boundPort` is only known
+    // once `listen` has resolved.
+    handleRequest(req, res, { config, deps, port: boundPort }).catch(() => {
       // The handler threw before answering: a socket left open would be worse
       // than a named 500.
       if (res.headersSent) res.destroy()
@@ -242,12 +215,23 @@ export async function startConsoleServer(
   }
 }
 
+/**
+ * What one request needs from the service: the configuration value, the
+ * injected readers, and the port actually bound — which is what the guard
+ * compares the `Host` header against. The two per-request values (the request
+ * and the response) stay positional, so the split between "the service this
+ * request reached" and "this request" is visible at the call site.
+ */
+interface RequestContext {
+  config: ConsoleConfig
+  deps: ConsoleServerDeps
+  port: number
+}
+
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  config: ConsoleConfig,
-  deps: ConsoleServerDeps,
-  port: number,
+  { config, deps, port }: RequestContext,
 ): Promise<void> {
   if (port === 0) {
     sendJson(res, 500, { error: 'the Console is not listening' })

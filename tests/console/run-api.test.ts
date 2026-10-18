@@ -1,6 +1,5 @@
 import * as fs from 'node:fs'
 import * as http from 'node:http'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,9 +10,17 @@ import { createRunStarter } from '../../src/console/run-control.js'
 import { createRunLogSource } from '../../src/console/run-log-source.js'
 import type { ConsoleService } from '../../src/console/server.js'
 import { startConsoleServer } from '../../src/console/server.js'
-import { galleryState, LOG_NAME, NEW_FILES, plainLine, runLog, runReport } from './run-fixtures.js'
-
-const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+import {
+  consoleConfigIn,
+  fixtureProjectRoot,
+  galleryState,
+  LOG_NAME,
+  NEW_FILES,
+  plainLine,
+  runLog,
+  runReport,
+  TOKEN,
+} from './run-fixtures.js'
 
 const roots: string[] = []
 const services: ConsoleService[] = []
@@ -43,21 +50,9 @@ interface ServeOptions {
  * injected so nothing is ever spawned.
  */
 async function serve(options: ServeOptions = {}): Promise<Harness> {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'console-run-api-'))
+  const projectRoot = fixtureProjectRoot('console-run-api-')
   roots.push(projectRoot)
-  const imagesDir = path.join(projectRoot, 'images')
-  const logDir = path.join(projectRoot, 'logs')
-  fs.mkdirSync(imagesDir)
-  fs.mkdirSync(logDir)
-
-  const config: ConsoleConfig = {
-    projectRoot,
-    imagesDir,
-    logDir,
-    galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    distDir: path.join(projectRoot, 'dist'),
-    galleryListEndpoint: 'https://gallery.test/query',
-  }
+  const config = consoleConfigIn(projectRoot)
 
   let alive = false
   let starts = 0
@@ -73,9 +68,9 @@ async function serve(options: ServeOptions = {}): Promise<Harness> {
   }
 
   const source = createRunLogSource({
-    logDir,
+    logDir: config.logDir,
     galleryStateFile: config.galleryStateFile,
-    imagesDir,
+    imagesDir: config.imagesDir,
     liveChild: () => launcher.isAlive(),
   })
   const startRun = createRunStarter({

@@ -66,9 +66,12 @@ describe('resolveMirrorFile', () => {
   it('refuses the case variant of a real file: the listing decides, not the filesystem', () => {
     const imagesDir = mirror()
 
-    // Windows is case-insensitive, so `existsSync` says yes; the exact-string
-    // Set lookup is the check that says no (notes 02 §7, measured).
-    expect(fs.existsSync(path.join(imagesDir, VALID.toUpperCase()))).toBe(true)
+    // The trap this test exists for: on Windows and macOS the filesystem is
+    // case-insensitive, so `existsSync` would say the upper-cased name is there.
+    // The exact-string Set lookup is the check that refuses it (notes 02 §7,
+    // measured), and that refusal is what holds on every platform — including
+    // the CI runner's case-sensitive ext4, where no pre-assertion about
+    // `existsSync` would even be true.
     expect(resolveMirrorFile(imagesDir, VALID.toUpperCase())).toEqual({
       ok: false,
       reason: MIRROR_REFUSALS.notListed,

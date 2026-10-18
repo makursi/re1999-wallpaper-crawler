@@ -1,6 +1,5 @@
 import * as fs from 'node:fs'
 import * as http from 'node:http'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,8 +8,7 @@ import type { ConsoleConfig } from '../../src/console/console-config.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../src/console/server.js'
 import { startConsoleServer } from '../../src/console/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../src/console/status.js'
-
-const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
 
 /** The names Vite emits: one content hash per asset, referenced relatively. */
 const ASSET_JS = 'assets/index-BO_xJMyK.js'
@@ -46,35 +44,23 @@ afterEach(async () => {
  * directory, and a built page.
  */
 function fixture(): ConsoleConfig {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'console-test-'))
+  const projectRoot = fixtureProjectRoot('console-test-')
   roots.push(projectRoot)
+  const config = consoleConfigIn(projectRoot)
 
-  const imagesDir = path.join(projectRoot, 'images')
-  fs.mkdirSync(imagesDir)
-  fs.writeFileSync(path.join(imagesDir, '1013_8dee54e8bf644722981751524fb54356.png'), 'a')
-  fs.writeFileSync(path.join(imagesDir, '1014_11a9938e23a347ca8580098ddfd5a190.jpg'), 'b')
+  fs.writeFileSync(path.join(config.imagesDir, '1013_8dee54e8bf644722981751524fb54356.png'), 'a')
+  fs.writeFileSync(path.join(config.imagesDir, '1014_11a9938e23a347ca8580098ddfd5a190.jpg'), 'b')
   // A non-image name and a dotfile: the Mirror count has to include the first
   // and skip the second (see tests/console/mirror.test.ts).
-  fs.writeFileSync(path.join(imagesDir, 'notes.txt'), 'c')
-  fs.writeFileSync(path.join(imagesDir, '.gallery-state.json'), '{}')
+  fs.writeFileSync(path.join(config.imagesDir, 'notes.txt'), 'c')
+  fs.writeFileSync(config.galleryStateFile, '{}')
 
-  const logDir = path.join(projectRoot, 'logs')
-  fs.mkdirSync(logDir)
+  fs.mkdirSync(path.join(config.distDir, 'assets'), { recursive: true })
+  fs.writeFileSync(path.join(config.distDir, 'index.html'), INDEX_HTML)
+  fs.writeFileSync(path.join(config.distDir, ASSET_JS), 'export {}\n')
+  fs.writeFileSync(path.join(config.distDir, ASSET_CSS), 'body { margin: 0 }\n')
 
-  const distDir = path.join(projectRoot, 'dist')
-  fs.mkdirSync(path.join(distDir, 'assets'), { recursive: true })
-  fs.writeFileSync(path.join(distDir, 'index.html'), INDEX_HTML)
-  fs.writeFileSync(path.join(distDir, ASSET_JS), 'export {}\n')
-  fs.writeFileSync(path.join(distDir, ASSET_CSS), 'body { margin: 0 }\n')
-
-  return {
-    projectRoot,
-    imagesDir,
-    logDir,
-    galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    distDir,
-    galleryListEndpoint: 'https://gallery.test/query',
-  }
+  return config
 }
 
 async function serve(overrides: Partial<ConsoleServerDeps> = {}): Promise<ConsoleService> {
@@ -159,9 +145,10 @@ describe('GET /api/status', () => {
       officialTotal: null,
       verdict: null,
       defects: null,
+      // #34's additive fields: the verdict's own reasons (#34 story 11), and the
+      // newest Run report with whether the log carries a report record at all.
+      verdictReasons: null,
       listAvailable: false,
-      // #34's additive fields: the newest Run report, and whether the newest
-      // log carries a `run_report` record at all.
       report: null,
       reportPresent: false,
     })
@@ -175,6 +162,7 @@ describe('GET /api/status', () => {
         startedAt: '2026-10-18T01:03:31.856Z',
         verdict: null,
         defects: null,
+        verdictReasons: null,
         report: null,
         reportPresent: false,
       }),

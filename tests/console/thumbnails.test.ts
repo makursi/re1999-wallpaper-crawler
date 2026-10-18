@@ -114,6 +114,34 @@ describe('the real cache', () => {
 })
 
 /**
+ * The real writer's own contract, tested where the `ensureThumbnail` seam cannot
+ * reach it: the generator renders into a sibling temp file and renames it onto
+ * the cache path, so a failure after the render leaves nothing behind for every
+ * later request to serve as a permanent cache hit.
+ */
+describe('realThumbnailGenerator', () => {
+  it('leaves no file behind when the publish step fails after a real render', async () => {
+    const { imagesDir, cacheDir } = scratch()
+    const source = path.join(imagesDir, '1013_portrait_hash.png')
+    await writeTestImage(source, 200, 400)
+    fs.mkdirSync(cacheDir, { recursive: true })
+    // The rename's target is occupied by a directory: the render itself
+    // succeeds (the temp path is a sibling that keeps the target's extension,
+    // which is what the image library infers its output format from) and the
+    // publish fails — the one failure point the temp file exists to survive.
+    const target = path.join(cacheDir, '1013_portrait_hash.png')
+    fs.mkdirSync(target)
+
+    await expect(realThumbnailGenerator(source, target)).rejects.toThrow(/rename/)
+
+    // Nothing but the blocker: the temp file the render wrote was removed, so
+    // no partial thumbnail sits in the cache under this name.
+    expect(fs.readdirSync(cacheDir)).toEqual(['1013_portrait_hash.png'])
+    expect(fs.statSync(target).isDirectory()).toBe(true)
+  })
+})
+
+/**
  * The dimensions of a PNG or JPEG read out of its own header — no image
  * library in the assertion, so the widest edge is checked against the bytes
  * rather than against the code that produced them.

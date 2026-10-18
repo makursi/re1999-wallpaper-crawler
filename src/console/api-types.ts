@@ -142,6 +142,27 @@ export interface ConsoleRunCleanupPayload {
   reason: string | null
 }
 
+/**
+ * Why the verdict is what it is — `assessRun`'s own reasons, which the Run
+ * report's `defects` block does not carry.
+ *
+ * A `defect` is decided from three things beyond the report's defect classes:
+ * whether the Gallery state names this Run (`stateMatchesReport`), the claimed
+ * new files the probe rejected (`missingOnDisk`), and the routine classes the
+ * verdict explained. `check-run` prints all three next to the report's defects
+ * (src/check-run.ts › `printVerdict`), so the page can show them too: a Run
+ * whose report's defect block is entirely clean must never read `defect` with
+ * nothing to explain why (#34 story 11).
+ */
+export interface ConsoleVerdictReasons {
+  /** `null` when the Gallery state is unreadable — never confused with `false`. */
+  stateMatchesReport: boolean | null
+  /** Claimed new files the probe rejected (absent, or zero bytes). */
+  missingOnDisk: string[]
+  /** The routine defect classes that were detected, named. */
+  explained: string[]
+}
+
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
 export interface ConsoleStatusPayload {
   /** The Run the verdict is about; `null` when no Run log names one. */
@@ -157,6 +178,11 @@ export interface ConsoleStatusPayload {
   verdict: ConsoleVerdict | null
   /** The Run report's defect block, verbatim, so the two cannot disagree. */
   defects: ConsoleDefects | null
+  /**
+   * Why the verdict is what it is — `assessRun`'s own reasons, which the report's
+   * `defects` block does not carry. `null` while a Run is in flight.
+   */
+  verdictReasons: ConsoleVerdictReasons | null
   /** `false` when the Gallery list could not be read — never "nothing missing". */
   listAvailable: boolean
   /**

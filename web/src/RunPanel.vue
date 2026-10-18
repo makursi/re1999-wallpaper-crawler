@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import type { ConsoleRunStartPayload, ConsoleStatusPayload } from '../../src/console/api-types.js'
+import { consoleToken } from './console-token'
 import OrphanPanel from './OrphanPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
@@ -53,11 +54,36 @@ const missingReport = computed(() =>
     : 'The Run log stops before its Run report — a defect in the log, not proof the Run failed.',
 )
 
-/** The token this page was opened with; the service wants it on every request. */
-function consoleToken(): string {
-  return new URLSearchParams(window.location.search).get('token') ?? ''
-}
+/**
+ * Why the verdict is `defect`, in the verdict's own terms: the two facts the
+ * report's `defects` block does not carry — a Gallery state that names another
+ * Run (or could not be read), and claimed new files the probe rejected. The
+ * third kind of cause, a defect class the runbook does not call routine, is in
+ * that defects block, which the page shows beside this.
+ */
+const defectCauses = computed(() => {
+  const payload = status.value
+  const reasons = payload?.verdictReasons ?? null
+  if (payload?.verdict !== 'defect' || reasons === null) return []
+  const causes: string[] = []
+  if (reasons.stateMatchesReport === false) {
+    causes.push('the Gallery state names another Run')
+  } else if (reasons.stateMatchesReport === null) {
+    causes.push('the Gallery state could not be read, so the report was not matched against it')
+  }
+  if (reasons.missingOnDisk.length > 0) {
+    causes.push(`claimed new files missing on disk: ${reasons.missingOnDisk.join(', ')}`)
+  }
+  return causes
+})
 
+/** The routine classes an `explained` verdict was made of, named the way `check-run` names them. */
+const explainedCauses = computed(() => {
+  const payload = status.value
+  return payload?.verdict === 'explained' ? (payload.verdictReasons?.explained ?? []) : []
+})
+
+/** The status poll's handle; `null` when the page is not polling. */
 let timer: ReturnType<typeof setInterval> | null = null
 
 /**
@@ -138,6 +164,18 @@ onUnmounted(stopPolling)
         <p>
           Run {{ status.runId }} — verdict: <strong>{{ status.verdict }}</strong>
         </p>
+        <!-- The causes the report's `defects` block cannot carry: a `defect`
+             whose defect block reads clean still has one of these to show
+             (#34 story 11). -->
+        <p v-if="defectCauses.length > 0" class="verdict-reasons">
+          Why: {{ defectCauses.join('; ') }}
+        </p>
+        <template v-if="explainedCauses.length > 0">
+          <p class="verdict-reasons">Explained (routine, recorded rather than failed):</p>
+          <ul class="verdict-reasons">
+            <li v-for="cause in explainedCauses" :key="cause">{{ cause }}</li>
+          </ul>
+        </template>
         <p v-if="status.report === null" class="refusal">{{ missingReport }}</p>
         <template v-else>
           <p>Gallery: {{ galleryLine }}</p>
@@ -178,5 +216,10 @@ code {
 
 .refusal {
   color: #a33;
+}
+
+.verdict-reasons {
+  color: #555;
+  font-size: 0.9rem;
 }
 </style>

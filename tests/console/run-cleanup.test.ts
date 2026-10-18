@@ -7,7 +7,6 @@
 // it never edits the audit trail.
 
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -23,9 +22,15 @@ import type { RunLogSource } from '../../src/console/run-log-source.js'
 import { createRunLogSource } from '../../src/console/run-log-source.js'
 import type { ConsoleService } from '../../src/console/server.js'
 import { startConsoleServer } from '../../src/console/server.js'
-import { LOG_NAME, plainLine, runLog, RUN_ID } from './run-fixtures.js'
-
-const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+import {
+  consoleConfigIn,
+  fixtureProjectRoot,
+  LOG_NAME,
+  plainLine,
+  runLog,
+  RUN_ID,
+  TOKEN,
+} from './run-fixtures.js'
 
 const roots: string[] = []
 const services: ConsoleService[] = []
@@ -45,21 +50,6 @@ interface Harness {
   sessionCloses: () => number
 }
 
-function configIn(projectRoot: string): ConsoleConfig {
-  const imagesDir = path.join(projectRoot, 'images')
-  const logDir = path.join(projectRoot, 'logs')
-  fs.mkdirSync(imagesDir)
-  fs.mkdirSync(logDir)
-  return {
-    projectRoot,
-    imagesDir,
-    logDir,
-    galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    distDir: path.join(projectRoot, 'dist'),
-    galleryListEndpoint: 'https://gallery.test/query',
-  }
-}
-
 function writeLog(config: ConsoleConfig, text: string): void {
   fs.writeFileSync(path.join(config.logDir, LOG_NAME), `${text}\n`, 'utf8')
 }
@@ -77,9 +67,9 @@ function logPath(config: ConsoleConfig): string {
  * than a Run that appeared while the Console was open (§6a's `seenAtStartup`).
  */
 async function serve(seed: (config: ConsoleConfig) => void = () => {}): Promise<Harness> {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'console-cleanup-'))
+  const projectRoot = fixtureProjectRoot('console-cleanup-')
   roots.push(projectRoot)
-  const config = configIn(projectRoot)
+  const config = consoleConfigIn(projectRoot)
   seed(config)
 
   let alive = false

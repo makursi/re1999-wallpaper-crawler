@@ -4,10 +4,24 @@
 // shapes `tests/report/run-log.test.ts` uses, shared by the Console's tests so
 // every one of them is talking about the same Run. Nothing here invents a
 // field the Run report contract does not have.
+//
+// The Console's HTTP tests also share the three things every one of them needs:
+// the token the guard is given, a temporary repository root, and the
+// configuration derived from it. One home for those keeps a route test's fixture
+// from drifting from the others'.
 
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+
+import type { ConsoleConfig } from '../../src/console/console-config.js'
+import type { RunLogSourceOptions } from '../../src/console/run-log-source.js'
 import type { GalleryState } from '../../src/gallery/gallery-state.js'
 import type { RunReport } from '../../src/report/report.js'
 import type { RunDefects } from '../../src/report/run-log.js'
+
+/** The access token every Console test presents; the service generates a real one. */
+export const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 
 export const RUN_ID = '2026-10-18T01-03-31'
 export const STARTED_AT = '2026-10-18T01:03:31.856Z'
@@ -106,4 +120,45 @@ export function plainLine(message = 'working'): string {
 /** A Run log: the `run_meta` record first, then whatever the caller passes. */
 export function runLog(...records: string[]): string {
   return [runMetaLine(), ...records].join('\n')
+}
+
+/**
+ * A fixture repository root: a fresh temporary directory holding an empty Mirror
+ * (`images/`) and an empty Run log directory (`logs/`).
+ *
+ * The caller owns the directory — push it onto its own `roots` array so its
+ * `afterEach` can remove it — and seeds whatever its test needs.
+ */
+export function fixtureProjectRoot(prefix: string): string {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  fs.mkdirSync(path.join(projectRoot, 'images'))
+  fs.mkdirSync(path.join(projectRoot, 'logs'))
+  return projectRoot
+}
+
+/** The Console's configuration over a fixture project root. */
+export function consoleConfigIn(projectRoot: string): ConsoleConfig {
+  const imagesDir = path.join(projectRoot, 'images')
+  return {
+    projectRoot,
+    imagesDir,
+    logDir: path.join(projectRoot, 'logs'),
+    galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
+    distDir: path.join(projectRoot, 'dist'),
+    galleryListEndpoint: 'https://gallery.test/query',
+  }
+}
+
+/**
+ * A Run log source's options over a fixture project root: the Mirror and the log
+ * directory `fixtureProjectRoot` created, and the Gallery state file inside the
+ * Mirror.
+ */
+export function runLogSourceOptionsIn(projectRoot: string): RunLogSourceOptions {
+  const config = consoleConfigIn(projectRoot)
+  return {
+    logDir: config.logDir,
+    imagesDir: config.imagesDir,
+    galleryStateFile: config.galleryStateFile,
+  }
 }
