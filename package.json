@@ -8,9 +8,12 @@
   "scripts": {
     "save-wallpapers": "tsx src/main.ts",
     "check-run": "tsx src/check-run.ts",
+    "console": "tsx src/console.ts",
+    "build:web": "vite build",
+    "dev:web": "vite",
     "lint": "oxlint --type-aware .",
     "lint:fix": "oxlint --type-aware --fix .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && vue-tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "fmt": "oxfmt",
@@ -45,8 +48,8 @@
     "pre-push": "pnpm typecheck && pnpm test"
   },
   "lint-staged": {
-    "*.{ts,tsx,mjs,cjs,js}": "oxlint --fix --deny-warnings --no-error-on-unmatched-pattern",
-    "*.{ts,mjs,cjs,js,json}": "oxfmt --no-error-on-unmatched-pattern"
+    "*.{ts,tsx,mjs,cjs,js,vue}": "oxlint --fix --deny-warnings --no-error-on-unmatched-pattern",
+    "*.{ts,mjs,cjs,js,json,vue}": "oxfmt --no-error-on-unmatched-pattern"
   },
   "engines": {
     "node": ">=22.22.1"

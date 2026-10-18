@@ -3,6 +3,7 @@ images/
 .playwright/
 .playwright-cli/
 dist/
+.console-cache/
 logs/
 *.log
 .env
