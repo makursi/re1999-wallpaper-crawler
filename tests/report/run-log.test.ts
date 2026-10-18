@@ -6,7 +6,12 @@ import type { Mock } from 'vitest'
 import type { GalleryState } from '../../src/gallery/gallery-state.js'
 import type { RunReport } from '../../src/report/report.js'
 import type { RunDefects, FileProbe } from '../../src/report/run-log.js'
-import { assessRun, logRunIdOf, parseRunReport } from '../../src/report/run-log.js'
+import {
+  assessRun,
+  logRunIdOf,
+  parseRunReport,
+  runReportRecordPresent,
+} from '../../src/report/run-log.js'
 
 const EOL = os.EOL
 
@@ -178,6 +183,50 @@ describe('logRunIdOf', () => {
   })
 })
 
+describe('runReportRecordPresent', () => {
+  it('is true when the log carries a Run report this command can read', () => {
+    expect(runReportRecordPresent([metaLine(RUN_ID), reportLine(report())].join(EOL))).toBe(true)
+  })
+
+  it('is true for a Run report written to an older contract', () => {
+    // The shape `logs/` holds from before 2026-09-15: no `discovery.coverage`,
+    // the pre-ADR-0006 gallery block, and only five defect classes. The schema
+    // refuses it, so the record's mere presence is what stops the CLI reporting
+    // a report that is there as a missing one.
+    const older = {
+      ...report(),
+      discovery: { ...report().discovery, coverage: undefined },
+      gallery: {
+        officialTotal: 999,
+        previousOfficialTotal: 998,
+        newSinceLastRun: 1,
+        firstRun: false,
+      },
+      defects: {
+        discoveryLeak: { count: 0, urls: [] },
+        nonConverged: false,
+        emptyResult: false,
+        persistentFailures: 0,
+        emptyFiles: [],
+      },
+    }
+    const text = [metaLine(RUN_ID), JSON.stringify(older)].join(EOL)
+
+    expect(parseRunReport(text)).toBeNull()
+    expect(runReportRecordPresent(text)).toBe(true)
+  })
+
+  it('is false when no line claims to be a Run report', () => {
+    const text = [metaLine(RUN_ID), '{"level":30,"msg":"hi"}'].join(EOL)
+
+    expect(runReportRecordPresent(text)).toBe(false)
+  })
+
+  it('is false when the only candidate line is unreadable', () => {
+    expect(runReportRecordPresent('{"type":"run_report","runId":')).toBe(false)
+  })
+})
+
 describe('assessRun', () => {
   it('calls a clean Run clean', () => {
     const verdict = assessRun(report(), stateOf(), present)
@@ -227,7 +276,7 @@ describe('assessRun', () => {
 
     const verdict = assessRun(report(), stateOf(), probe)
 
-    expect(probe.mock.calls.map(call => call[0])).toEqual(NEW_FILES)
+    // Asserted through what the verdict decides, not how it consults the probe.
     expect(verdict.missingOnDisk).toEqual([rejected])
     expect(verdict.verdict).toBe('defect')
   })

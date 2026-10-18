@@ -65,9 +65,10 @@ machine alone until the Run exits, and the sandbox-access request for the
 Run's first call is ready to send._
 
 **Run — one command, launched as a background job.** `pnpm save-wallpapers`
-(tsx runs `src/main.ts`). Watch the terminal as hash injection, the Stability
-loop's rounds, the Site assets it filters, and the download batches stream
-into `logs/save-wallpapers-<ts>.jsonl`. The wrapper may **never report exit** —
+(tsx runs `src/main.ts`). Hash injection, the Stability loop's rounds, the Site
+assets it filters and the download batches stream into
+`logs/save-wallpapers-<ts>.jsonl` — in the log, since a background job has no
+terminal to watch. The wrapper may **never report exit** —
 the persistent browser child inherits the stdout pipe and outlives the scraper,
 so the job sits at `running` long after the Run is over. Do not read a
 still-`running` wrapper as work in progress, and do not wait on it: cancel the

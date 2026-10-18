@@ -119,6 +119,11 @@ const defectsSchema = z.object({
   mirrorGap: z.object({ missing: z.number().int(), extra: z.number().int() }).nullable(),
 })
 
+// The annotation is load-bearing, not decoration: `z.ZodType<RunReport>` makes
+// the compiler refuse this schema the moment the contract in `report.ts` gains a
+// required field the schema does not carry — measured by adding one to
+// `DiscoveryStats`, which fails right here with TS2322. Do not drop it for a
+// bare `z.object`.
 const reportSchema: z.ZodType<RunReport> = z
   .object({
     type: z.literal('run_report'),
@@ -135,27 +140,36 @@ const reportSchema: z.ZodType<RunReport> = z
   })
   .refine(
     // Both `null`s mean "the Gallery list was unavailable, so this was not
-    // checked"; a record where only one is `null` is not one this repo wrote,
-    // and accepting it would open the door to a half-checked Run reading clean.
+    // checked". The invariant is the writer's: all three come from the single
+    // list fetch in `main.ts`, which `unavailableGalleryStats` in
+    // `gallery-state.ts` encodes. A record where only one is `null` is not one
+    // this repo wrote, and accepting it would open the door to a half-checked
+    // Run reading clean.
     ({ gallery, defects }) =>
       (gallery.mirror === null) === (defects.mirrorGap === null) &&
       (gallery.mirror === null) === (defects.siteAssetFalsePositive === null),
     { error: 'the Mirror gap and the Site asset check disagree about being checked' },
   )
 
+/** The log lines that mention a `run_report`, which the read and the check both start from. */
+function runReportLines(logText: string): string[] {
+  return logText.split(/\r?\n/).filter(line => line.includes('"run_report"'))
+}
+
 /**
  * The `run_report` record in a Run log's text, or `null`.
  *
- * `null` covers both cases the caller must tell apart — "the log carries no
- * `run_report`" and "the log is unreadable/truncated" — because only the caller,
- * with the Gallery state in hand, can distinguish a lost report from a Run that
- * never got that far. The report is one record among many and is not assumed to
- * be the last line: a line that is not parseable JSON is skipped, so a log cut
- * off mid-write still yields the report that precedes it.
+ * `null` covers more than one case, so the caller must not read it as "there is
+ * no report": it also means a record this command's schema refuses — an older
+ * Run contract, since `logs/` holds reports from before `discovery.coverage`,
+ * the Mirror gap and the Site asset check existed — and a log cut off mid-write.
+ * `runReportRecordPresent` carries the fact `null` cannot. The report is one
+ * record among many and is not assumed to be the last line: a line that is not
+ * parseable JSON is skipped, so a log truncated at the end still yields the
+ * report that precedes it.
  */
 export function parseRunReport(logText: string): RunReport | null {
-  for (const line of logText.split(/\r?\n/)) {
-    if (!line.includes('"run_report"')) continue
+  for (const line of runReportLines(logText)) {
     let parsed: unknown
     try {
       parsed = JSON.parse(line)
@@ -166,6 +180,26 @@ export function parseRunReport(logText: string): RunReport | null {
     if (report.success) return report.data
   }
   return null
+}
+
+/**
+ * Whether the log carries a readable `run_report` record, whatever shape it is
+ * in — the fact `parseRunReport`'s `null` cannot carry on its own.
+ *
+ * A record this command does not recognise is still a record. Reporting it as a
+ * missing report would be a false statement about the log, and the runbook reads
+ * a missing report as "the Run's last step never ran", which is a different
+ * finding altogether.
+ */
+export function runReportRecordPresent(logText: string): boolean {
+  return runReportLines(logText).some(line => {
+    try {
+      JSON.parse(line)
+      return true
+    } catch {
+      return false
+    }
+  })
 }
 
 /**
@@ -197,24 +231,27 @@ function unexplainedDefects(defects: RunDefects, siteAssetUrls: readonly string[
   // A `null` Mirror gap is "not checked", which the runbook never accepts as clean.
   if (defects.mirrorGap === null) found.push('mirrorGap: not checked')
   else if (defects.mirrorGap.missing > 0) found.push('mirrorGap: missing')
-  // The one judgement the command makes: a leak is routine only when every one
-  // of its URLs is also in the report's Site asset list (the runbook's subset
-  // rule), and extra files on the Mirror are the retired-art case.
-  const leaked = defects.discoveryLeak.urls
-  // `some` is `false` for an empty list, which is what "no leak" means here.
-  if (leaked.some(url => !siteAssetUrls.includes(url))) found.push('discoveryLeak')
+  // A leak is routine only as a whole, so a partly-accounted leak is a defect.
+  if (defects.discoveryLeak.urls.length > 0 && !leakAccountedFor(defects, siteAssetUrls))
+    found.push('discoveryLeak')
   return found
+}
+
+/**
+ * Whether the report accounts for its whole leak — the runbook's subset rule,
+ * and the one judgement this command makes about a leak. `false` for an empty
+ * leak, which is "no leak", not "an explained one".
+ */
+function leakAccountedFor(defects: RunDefects, siteAssetUrls: readonly string[]): boolean {
+  const leaked = defects.discoveryLeak.urls
+  return leaked.length > 0 && leaked.every(url => siteAssetUrls.includes(url))
 }
 
 /** The routine classes that were detected, named for the output. */
 function explainedDefects(defects: RunDefects, siteAssetUrls: readonly string[]): string[] {
   const named: string[] = []
-  const leaked = defects.discoveryLeak.urls
-  // The leak is routine only as a whole: one URL outside the Site asset list
-  // makes it a defect, and naming the covered URLs beside it would give two
-  // answers to one question.
-  if (leaked.length > 0 && leaked.every(url => siteAssetUrls.includes(url)))
-    named.push(`discoveryLeak: ${leaked.join(', ')}`)
+  if (leakAccountedFor(defects, siteAssetUrls))
+    named.push(`discoveryLeak: ${defects.discoveryLeak.urls.join(', ')}`)
   if (defects.mirrorGap !== null && defects.mirrorGap.extra > 0)
     named.push(`mirrorGap: extra ${defects.mirrorGap.extra}`)
   return named

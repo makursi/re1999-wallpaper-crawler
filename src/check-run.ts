@@ -16,7 +16,7 @@ import { GALLERY_STATE_FILE, LOG_DIR } from './config.js'
 import { readGalleryState } from './gallery/gallery-state.js'
 import type { RunReport } from './report/report.js'
 import type { RunVerdict } from './report/run-log.js'
-import { assessRun, logRunIdOf, parseRunReport } from './report/run-log.js'
+import { assessRun, logRunIdOf, parseRunReport, runReportRecordPresent } from './report/run-log.js'
 
 /** One line of the verdict, on stdout, so the output can be piped and read. */
 function line(text: string): void {
@@ -42,13 +42,30 @@ function newestLogFile(dir: string): string | null {
   return newest === undefined ? null : path.join(dir, newest)
 }
 
-function logTextOf(file: string | null): string | null {
-  if (file === null) return null
+/**
+ * What the newest Run log gave us. Three states, because the runbook reads "no
+ * Run ran" out of this line — conflating a log that could not be read with one
+ * that is absent would assert something this command does not know.
+ */
+type LogReading =
+  | { kind: 'none' }
+  | { kind: 'unreadable'; file: string }
+  | { kind: 'text'; file: string; text: string }
+
+function readNewestLog(dir: string): LogReading {
+  const file = newestLogFile(dir)
+  if (file === null) return { kind: 'none' }
   try {
-    return fs.readFileSync(file, 'utf8')
+    return { kind: 'text', file, text: fs.readFileSync(file, 'utf8') }
   } catch {
-    return null
+    return { kind: 'unreadable', file }
   }
+}
+
+function describeLog(reading: LogReading): string {
+  if (reading.kind === 'none') return 'none (no save-wallpapers-*.jsonl in the log directory)'
+  if (reading.kind === 'unreadable') return `${reading.file} — could not be read`
+  return reading.file
 }
 
 /**
@@ -66,20 +83,36 @@ function fileProbe(imagesDir: string): (filename: string) => boolean {
   }
 }
 
-function printVerdict(
-  verdict: RunVerdict,
-  logFile: string | null,
-  report: RunReport | null,
-  stateRunId: string | null,
-): void {
-  line(`Run log : ${logFile ?? 'none'}`)
+/** Everything the printer reports, assembled once in `main`. */
+interface RunCheck {
+  verdict: RunVerdict
+  reading: LogReading
+  report: RunReport | null
+  /** The log carries a `run_report` line, whether or not this command can read its shape. */
+  recordPresent: boolean
+  stateRunId: string | null
+}
+
+function printVerdict({ verdict, reading, report, recordPresent, stateRunId }: RunCheck): void {
+  line(`Run log : ${describeLog(reading)}`)
   line(`Verdict : ${verdict.verdict}`)
 
   if (report === null) {
-    // The runbook's inversion: a Run log that stops before its report is a
-    // defect in the log, not proof the Run failed. Say so rather than leaving
-    // it to be inferred from empty output.
-    line('Run report : MISSING — this is a defect in the log, not proof the Run failed')
+    if (reading.kind === 'none') {
+      line('Run report : none — no Run log to read, so nothing was checked')
+    } else if (reading.kind === 'unreadable') {
+      line('Run report : unreadable — the log could not be read, so nothing was checked')
+    } else if (recordPresent) {
+      // The record is there; this command just cannot read its shape. Saying
+      // "missing" here would be a false statement about the log.
+      line('Run report : present, but not a shape this command recognises — an older Run contract?')
+      line('  Not a missing report, and not proof the Run failed: read the log by hand.')
+    } else {
+      // The runbook's inversion: a Run log that stops before its report is a
+      // defect in the log, not proof the Run failed. Say so rather than leaving
+      // it to be inferred from empty output.
+      line('Run report : MISSING — this is a defect in the log, not proof the Run failed')
+    }
     if (verdict.stateMatchesReport === null) {
       line('Gallery state : unreadable — was the Run killed before its last step?')
     } else if (verdict.stateMatchesReport) {
@@ -129,18 +162,25 @@ function printVerdict(
 }
 
 async function main(): Promise<void> {
-  const logFile = newestLogFile(LOG_DIR)
-  const report = parseRunReport(logTextOf(logFile) ?? '')
+  const reading = readNewestLog(LOG_DIR)
+  const logText = reading.kind === 'text' ? reading.text : ''
+  const report = parseRunReport(logText)
   // The Mirror is `images/`; the state file sits in it, so it is derived rather
   // than configured separately.
   const imagesDir = path.dirname(GALLERY_STATE_FILE)
   const state = readGalleryState(GALLERY_STATE_FILE)
   // The log's own name says which Run it is, which is what a *missing* report
   // still needs in order to be told from a Run that never finished.
-  const logRunId = logFile === null ? null : logRunIdOf(path.basename(logFile))
+  const logRunId = reading.kind === 'text' ? logRunIdOf(path.basename(reading.file)) : null
   const verdict = assessRun(report, state, fileProbe(imagesDir), logRunId)
 
-  printVerdict(verdict, logFile, report, state?.runId ?? null)
+  printVerdict({
+    verdict,
+    reading,
+    report,
+    recordPresent: runReportRecordPresent(logText),
+    stateRunId: state?.runId ?? null,
+  })
   process.exitCode = verdict.verdict === 'defect' ? 1 : 0
 }
 
