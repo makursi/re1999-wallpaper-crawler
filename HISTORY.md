@@ -387,6 +387,32 @@
 
 ---
 
+### 2026-10-18 — Runbook Preflight：把沙箱升级写成管线事实（首调就要，不靠失败发现）
+
+**触因**：两次抓取会话都在 Run 开始前撞同一堵墙，各自重付一遍。2026-10-08 会话跑 `pnpm save-wallpapers`，在 esbuild 的 service 里死于 `spawn EPERM`（3 次工具调用）；2026-10-18 会话先撞 pnpm 的工作区外 store 锁，再撞同一堵墙，中间还试了 `node node_modules/tsx/dist/cli.mjs src/main.ts` 当作端到端绕行——那正是它当时引用的 harness 规则明文禁止的「retry another way」（5 次调用外加一次审批往返）。子代理给这次绕行找到了自洽的读法，但那是运气，不是流程。
+
+**测量**（就地核对源码与既有实测，本轮**未重跑**爬虫）：
+- `src/main.ts` 的 5 处 `execSync`（约 L52 / 383 / 399 / 453 / 474）**全部** `{ stdio: 'pipe' }`，tsx 的 esbuild service 也以管道 spawn；受限沙箱模式禁止命名管道，于是两者都以 `spawn EPERM` 死。这是**结构性**的：需要管道的是管线自己的子进程，换启动器绕不开。
+- pnpm 可能另需工作区外的 store 操作锁 `%LOCALAPPDATA%\pnpm-store-operation-locks\all-stores.lock`，失败码 `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK`（os error 5，access denied）——锁在仓库之外，所以「工作区写权限」不够。
+- **已证死路**：`node src/main.ts` 走 Node 原生类型擦除（Node 24.18 实测）报 `ERR_MODULE_NOT_FOUND: .../src/wallpaper-url.js`——源码用 `.js` 后缀 import 兄弟模块，Node 不改写为 `.ts`。ADR 0003 的「ESM + tsx」因此维持不变，不要再拿实验重开。
+- 后台 job 包装器对已完成的 Run **不报退出**：浏览器孙进程继承了 stdout 管道，job 长时间停在 `running`，而 Run 早已退出。（Run 步骤归 #27；此处只记「为什么现状长这样」。）
+
+**决策**：
+- `SKILL.md` 的 Preflight 把升级改写成**这条管线的事实**，而非泛泛的沙箱提醒：Run 的首个命令就需要完整沙箱访问；两个原因各自点名（管道捕获 / 工作区外 store 锁）；附一句可直接用作审批理由的成品句子，并按用户来话的语言给出（审批理由是给人看的）；明说「开局就开口要」而不是「失败后发现」；点明已知绕行全部无效、不要再试。
+- Preflight **不再要求 agent 检查机器是否空闲**——那不是 agent 能建立的判据。改为**请用户**在 Run 期间别碰鼠标键盘，于是 `_Done when_` 变成 agent 自己就能确认的三件事：playwright-cli 可用、已请用户让机器静置、升级请求已备好。
+- 范围：只改 Preflight + 本文件。`AGENTS.md` 归 #28，runbook 的 Run 步骤与 Verify/Reference 归 #27/#28，一律不碰。
+- 否决「换启动器 / 换运行时来规避升级」：管道需求在管线自己的子进程里，与启动方式无关；`node node_modules/tsx/dist/cli.mjs` 还是同一个 tsx；原生类型擦除已被实测证伪。
+- **推迟（非否决）**「把子进程输出重定向到工作区文件、彻底消掉审批」（spec 列为 out of scope）：技术上可行，但会动 Discovery/Download 内部，需独立决策记录；本轮只做文档。
+
+**验证**：这是文档改动，spec 的 Testing Decisions 明写**没有测试缝**——没有自动化检查能断言一句话改变了 agent 行为——因此不写测试、不跑 `tdd`；证据就是改后的措辞逐条对上验收标准。可跑的守护检查 `node_modules\.bin\oxlint.cmd --type-aware .`（16 files / 185 rules，0 warning 0 error）与 `node_modules\.bin\tsc.cmd --noEmit`（0 错误）均绿；Markdown 不经 oxfmt，无格式化项。管线代码零改动，行为不变。
+
+**教训**：
+- 环境类阻碍要分清「这次不巧」与「结构使然」：`spawn EPERM` 看着像沙箱配置问题，实际由管线自己的 `stdio: 'pipe'` 决定——一旦定位到结构，升级就从「碰运气」变成「开局申请」。
+- 已测量过的死路必须落进文档，否则每次会话都会用工具调用重新量一遍：原生类型擦除那条写清失败码与原因之后，就没有下一次实验。
+- 判据必须是 agent 能自己建立的东西：把「机器是否空闲」写进 `_Done when_`，等于把不可验证的前提当完成标准；改成「已向用户提出请求」后，这一步才真的能结束。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -414,6 +440,8 @@
 | 只用接口取总数、其余照旧 | 头号数字诚实了，delta 还是错的 | 2026-09-15 |
 | 在 Discovery 的网络捕获里收 `application/json` 清单 | 把权威数字绑在一次未必发生的渲染上，且一个捕获里混两种 content-type | 2026-09-15 |
 | 把 Run log 的文件 target 留在 pino transport（worker 线程），只补 `logger.flush()` + error handler | `2026-09-15T09-36-50` 那轮 worker 停摆后主线程静默续跑、退 0 且丢光 `run_report`；`flush()` 只能缩窗，已死的 worker 无从 flush | ADR 0007 |
+| 用 Node 原生类型擦除（`node src/main.ts`）替代 tsx | 源码以 `.js` 后缀 import 兄弟模块，Node 不改写为 `.ts`，模块解析直接失败（Node 24.18 实测 `ERR_MODULE_NOT_FOUND`） | 2026-10-18 |
+| 换启动器（如 `node node_modules/tsx/dist/cli.mjs`）规避受限沙箱的命名管道限制 | 需要管道的是管线自己的子进程（`playwright-cli` + esbuild service），换启动方式绕不开；且属明令禁止的「retry another way」 | 2026-10-18 |
 
 ## 验证规范（所有迭代通用）
 

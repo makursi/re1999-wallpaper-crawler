@@ -16,21 +16,53 @@ when you name it.
 
 A scrape is three steps; each ends on a state you can check.
 
-**Preflight — machinery and machine.** Confirm playwright-cli itself is
-installed: `npx playwright-cli --version` returns a version. Do **not** probe
-an existing Browser session first — the pipeline owns it (`src/main.ts`
-clears and reopens its own session: close-all + delete-data +
-open --persistent), so `Browser 'bluepoch' is not open` from an `eval` probe
-is the **expected** pre-run state, not a blocker. Login state rides in the
-persistent profile, but it is not what makes the site readable: the Gallery
-list and the CDN both answered anonymously in the 2026-09-15 probe
-(ADR 0006), so a logged-out session is not the first thing to suspect.
-`.env` needs nothing from you: zod validates every key
-at startup and fails fast. The scrape drives a real headed Chrome for
-several minutes, so clear the machine first: a stray click or keystroke
-disturbs Discovery.
+**Preflight — machinery, access, and the user's hands.** Confirm
+playwright-cli itself is installed: `npx playwright-cli --version` returns a
+version. Do **not** probe an existing Browser session first — the pipeline
+owns it (`src/main.ts` clears and reopens its own session: close-all +
+delete-data + open --persistent), so `Browser 'bluepoch' is not open` from an
+`eval` probe is the **expected** pre-run state, not a blocker. Login state
+rides in the persistent profile, but it is not what makes the site readable:
+the Gallery list and the CDN both answered anonymously in the 2026-09-15
+probe (ADR 0006), so a logged-out session is not the first thing to suspect.
+`.env` needs nothing from you: zod validates every key at startup and fails
+fast.
 
-_Done when playwright-cli answers and the machine is clear._
+A Run requires **full sandbox access on its first call**, and that is
+structural, not environmental — ask for it up front instead of discovering it
+by failing. Confined sandbox modes forbid named pipes, and two things in this
+pipeline need one: every `playwright-cli` invocation in `src/main.ts` is
+captured through piped stdio, and so is the esbuild service tsx starts, so
+both die with `spawn EPERM`. pnpm may also need its store operation lock at
+`%LOCALAPPDATA%\pnpm-store-operation-locks\all-stores.lock` — outside the
+workspace — and fail with `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` (os error
+5, access denied). The approval reason is read by the user, so give them the
+cause in the language they wrote their request in:
+
+> The scraper captures every browser and compiler child process through
+> pipes, which the confined sandbox forbids, and pnpm may need its store lock
+> outside this workspace — it needs full sandbox access for the Run.
+
+That buys one predictable approval at a moment you choose. The known
+alternatives are dead ends, already measured — do not re-test them, and never
+answer a denial with a "retry another way", which the harness rules forbid
+outright (the 2026-10-18 session lost five calls to exactly that): another
+launcher cannot avoid the pipes, because it is the pipeline's *own* children
+that need them; `node node_modules/tsx/dist/cli.mjs` is the same tsx; and
+`node src/main.ts` under Node's native type stripping dies at module
+resolution, because the source imports siblings with `.js` specifiers Node
+does not rewrite to `.ts` — which is why ESM with tsx stands (ADR 0003). The
+measurements are in HISTORY.md.
+
+The scrape drives a real headed Chrome for several minutes, so **ask the user
+to leave the mouse and keyboard alone until the Run exits** — a stray click
+or keystroke disturbs Discovery. That is a request you make of them, not a
+precondition you can verify: nothing you can run tells you the machine is
+clear.
+
+_Done when playwright-cli answers, the user has been asked to leave the
+machine alone until the Run exits, and the sandbox-access request for the
+Run's first call is ready to send._
 
 **Run — one command.** `pnpm save-wallpapers` (tsx runs `src/main.ts`).
 Watch the terminal as hash injection, the Stability loop's rounds, the Site
