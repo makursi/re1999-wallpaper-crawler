@@ -11,7 +11,8 @@
 import { spawn as defaultSpawn } from 'node:child_process'
 import process from 'node:process'
 
-import type { RunStartResult, RunStarter } from './server.js'
+import type { ConsoleRunState } from './api-types.js'
+import type { RunCleaner, RunStartResult, RunStarter } from './server.js'
 
 export interface RunLauncher {
   /** Spawns the Run and returns at once. Throws when one is already alive. */
@@ -36,10 +37,19 @@ export interface RunLauncherDeps {
   mainEntry: string
   /** The repository root: the Run's cwd, and where `.env` and `logs/` live. */
   projectRoot: string
+  /** Injected so a test can assert the platform's own tree-kill shape. */
+  platform?: NodeJS.Platform
   /** Injected so a test can watch the argv without spawning anything. */
   spawn?: typeof import('node:child_process').spawn
   /** Injected so a test can assert the tree kill without killing anything. */
   killTree?: (pid: number) => void
+  /**
+   * Called after a successful spawn and before the Run writes its first record:
+   * the Console uses it to note which Run log directory it is looking at (#36).
+   */
+  onStarted?: () => void
+  /** Called when the child exits — success, failure or death all count (#36). */
+  onExited?: () => void
 }
 
 /**
@@ -52,7 +62,8 @@ export interface RunLauncherDeps {
  */
 export function createRunLauncher(deps: RunLauncherDeps): RunLauncher {
   const spawn = deps.spawn ?? defaultSpawn
-  const killTree = deps.killTree ?? killProcessTree
+  const platform = deps.platform ?? process.platform
+  const killTree = deps.killTree ?? ((pid: number) => killProcessTree(pid, { platform }))
   let child: ReturnType<typeof spawn> | null = null
   let alive = false
 
@@ -62,13 +73,20 @@ export function createRunLauncher(deps: RunLauncherDeps): RunLauncher {
       cwd: deps.projectRoot,
       shell: false,
       windowsHide: true,
+      // Off Windows the child has to lead its own process group, because that
+      // is what `process.kill(-pid)` signals; on Windows `taskkill /T` walks the
+      // tree instead, so a detached child would only lose the console's handle
+      // on it.
+      detached: platform !== 'win32',
       stdio: ['ignore', 'inherit', 'inherit'],
       env: process.env,
     })
     child = spawned
     alive = true
+    deps.onStarted?.()
     spawned.on('exit', () => {
       alive = false
+      deps.onExited?.()
     })
     spawned.on('error', () => {
       alive = false
@@ -90,25 +108,48 @@ export function createRunLauncher(deps: RunLauncherDeps): RunLauncher {
   return { start, isAlive, stop }
 }
 
+export interface KillTreeDeps {
+  /** Injected so a test can read the platform's own tree-kill shape. */
+  platform?: NodeJS.Platform
+  /** Injected so a test can assert `taskkill` without spawning it. */
+  spawn?: typeof import('node:child_process').spawn
+  /** `process.kill`, injected so a test can watch the group signal. */
+  kill?: (pid: number, signal: NodeJS.Signals) => void
+}
+
 /**
- * The whole-tree kill's default. `taskkill /T` is Windows' own tree walk; on
- * other platforms the Run is expected to be its own process group, so a
- * negative pid signals the group. Errors are swallowed: a tree that is already
- * gone is the outcome this asks for. #36 owns the confirmation that guards it.
+ * The whole-tree kill (ADR 0009; conventions §6). On Windows, `taskkill /T` is
+ * the OS's own tree walk: a parent's death does not take its children there, so
+ * killing only the launcher's child would leave the run-time loader, the
+ * browser CLI and a real Chrome window behind. Elsewhere the Run leads its own
+ * process group (`detached: true` at spawn) and a negative pid signals the
+ * whole group.
+ *
+ * The pid is always the one the Console recorded when it started the Run, never
+ * an image name: a browser the owner opened by hand is not ours to kill.
  */
-function killProcessTree(pid: number): void {
-  if (process.platform === 'win32') {
-    const killer = defaultSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+export function killProcessTree(pid: number, deps: KillTreeDeps = {}): void {
+  const platform = deps.platform ?? process.platform
+  if (platform === 'win32') {
+    const spawn = deps.spawn ?? defaultSpawn
+    // No pipe of our own: this repository's notes record that a piped child is
+    // refused in a confined sandbox, and nothing here needs its output.
+    const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
     })
     killer.on('error', () => {
-      // Nothing to fall back to; the pid was already gone.
+      // Nothing to fall back to; the tree was already gone.
     })
     return
   }
+
+  // Wrapped rather than passed as a bare reference: `process.kill` unbound
+  // loses its receiver, and the injected form is what a test drives anyway.
+  const kill =
+    deps.kill ?? ((target: number, signal: NodeJS.Signals) => process.kill(target, signal))
   try {
-    process.kill(-pid, 'SIGTERM')
+    kill(-pid, 'SIGTERM')
   } catch {
     // Already gone.
   }
@@ -117,6 +158,15 @@ function killProcessTree(pid: number): void {
 /** The refusal a Run already in flight gets, reason included (ADR 0009). */
 const BUSY_REASON =
   "a Run is already in flight: the pipeline clears and deletes its one persistent Browser session as its first step, so two concurrent Runs would destroy each other's state"
+
+/**
+ * The refusal an Orphaned Run gives a start (#36). Deliberately not the
+ * one-at-a-time reason: no Run is *known* to be in flight — the leftover may be
+ * a dead Run or one still writing — and there is an action for the owner to
+ * take, which the page offers next to the reason.
+ */
+export const ORPHANED_RUN_REASON =
+  'an Orphaned Run is present: its Run log has no Run report and was written recently, so it may still be writing. Clean it up from the page if it is a leftover; a new Run starts after that'
 
 export interface RunStarterDeps {
   launcher: RunLauncher
@@ -128,6 +178,12 @@ export interface RunStarterDeps {
   isRunInFlight: () => boolean
   /** The names of the global prerequisites this machine is missing (#34 §2). */
   missingPrerequisites: () => readonly string[]
+  /**
+   * A more specific reason than the one-at-a-time one, or `null` for it (#36).
+   * It is what lets an Orphaned Run name the cleanup instead of claiming a Run
+   * is in flight, while both refusals stay one `409` in one place.
+   */
+  busyReason?: () => string | null
 }
 
 /**
@@ -143,7 +199,7 @@ export interface RunStarterDeps {
 export function createRunStarter(deps: RunStarterDeps): RunStarter {
   return async (): Promise<RunStartResult> => {
     if (deps.launcher.isAlive() || deps.isRunInFlight()) {
-      return { started: false, status: 409, reason: BUSY_REASON }
+      return { started: false, status: 409, reason: deps.busyReason?.() ?? BUSY_REASON }
     }
 
     const missing = [...deps.missingPrerequisites()]
@@ -158,5 +214,107 @@ export function createRunStarter(deps: RunStarterDeps): RunStarter {
 
     deps.launcher.start()
     return { started: true, status: 202, reason: null }
+  }
+}
+
+export type StopDecision = 'stop-now' | 'confirm'
+
+/**
+ * Whether a stop signal has to ask first (ADR 0009; conventions §6).
+ *
+ * Only a Run in flight is protected. An Orphaned Run is not a life: the Console
+ * has no handle for a Run it did not start, so there is no child to take with
+ * it and asking would only promise a kill it cannot perform.
+ */
+export function stopDecision(state: ConsoleRunState): StopDecision {
+  return state === 'running' ? 'confirm' : 'stop-now'
+}
+
+export interface BrowserSessionCloserDeps {
+  /** The pipeline's named Browser session (`SESSION_NAME`, default `bluepoch`). */
+  sessionName: string
+  /** Injected so a test can assert each platform's own launch shape. */
+  platform?: NodeJS.Platform
+  /** Injected so a test can assert the argv without launching anything. */
+  spawn?: typeof import('node:child_process').spawn
+  /** The global CLI on `PATH`; overridable so a test needs no install. */
+  command?: string
+}
+
+/**
+ * Close the Run's persistent Browser session through the global browser CLI —
+ * the cleanup's one effect on the machine (#36). It is the same command the
+ * pipeline runs as its first step (`npx playwright-cli -s=<session>
+ * close-all`), minus `npx`.
+ *
+ * Why Windows needs `cmd.exe`: npm installs the global CLI as
+ * `playwright-cli.cmd`/`.ps1`, and `CreateProcess` cannot start either —
+ * measured on this machine, `spawn('playwright-cli', …, { shell: false })` is
+ * `ENOENT`, while `cmd /c playwright-cli --version` exits 0. This is the only
+ * shell the Console uses, and it carries the two arguments the brief names (no
+ * page hash, no quotes, nothing cmd.exe can mangle). The pipeline's own `pwc()`
+ * goes through a shell for this exact command too.
+ *
+ * A failure to launch is swallowed, exactly as the pipeline's own
+ * `pwc('close-all')` swallows it: the acknowledgement still has to happen,
+ * because the alternative is a page that offers the same cleanup forever.
+ */
+export function createBrowserSessionCloser(deps: BrowserSessionCloserDeps): () => void {
+  const spawn = deps.spawn ?? defaultSpawn
+  const platform = deps.platform ?? process.platform
+  const command = deps.command ?? 'playwright-cli'
+  const args = [`-s=${deps.sessionName}`, 'close-all']
+
+  return () => {
+    const [file, argv] =
+      platform === 'win32'
+        ? ['cmd.exe', ['/d', '/s', '/c', [command, ...args].join(' ')]]
+        : [command, args]
+    const child = spawn(file, argv, { stdio: 'ignore', windowsHide: true })
+    child.on('error', () => {
+      // Nothing to fall back to; the log is the truth either way.
+    })
+  }
+}
+
+export interface RunCleanerDeps {
+  /** Whether a Run is in flight — from the Run log, never from a handle. */
+  isRunInFlight: () => boolean
+  /** `createBrowserSessionCloser`: the leftover session's one cost. */
+  closeBrowserSession: () => void
+  /** Records, in memory, that the newest log's claim was acknowledged. */
+  acknowledgeOrphan: () => void
+}
+
+/**
+ * Clean an Orphaned Run from the page (spec decision 12; ADR 0009).
+ *
+ * What it does, and what it deliberately does not:
+ *
+ *   - It is refused with `409` while a Run is in flight: closing the session
+ *     under a live Run would destroy the very state the one-at-a-time rule
+ *     protects.
+ *   - It closes the leftover Browser session and then **acknowledges** the
+ *     log's claim. The acknowledgement is in memory, so a Console restart
+ *     re-reports the leftover — the log is still there, and still says what it
+ *     always said.
+ *   - It never deletes or rewrites a Run log. The log is the audit trail
+ *     (ADR 0007) and the Console does not own it: a missing Run report is a
+ *     defect in the log, not something to tidy away. Cleaning up removes the
+ *     *claim* that a Run may still be writing, not the record that it ran.
+ *
+ * It is offered, not forced: a recent unfinished log may be a Run that is
+ * genuinely still writing, and the two are indistinguishable from the log
+ * directory alone (ADR 0009).
+ */
+export function createRunCleaner(deps: RunCleanerDeps): RunCleaner {
+  return async () => {
+    if (deps.isRunInFlight()) {
+      return { cleaned: false, status: 409, reason: BUSY_REASON }
+    }
+
+    deps.closeBrowserSession()
+    deps.acknowledgeOrphan()
+    return { cleaned: true, status: 200, reason: null }
   }
 }

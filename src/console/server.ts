@@ -16,7 +16,7 @@ import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'node:path'
 
-import type { ConsoleRunStartPayload } from './api-types.js'
+import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from './api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { buildGalleryView, toGalleryPayload } from './gallery-view.js'
@@ -37,6 +37,17 @@ export interface RunStartResult extends ConsoleRunStartPayload {
 /** Starts a Run (spec decision 6). #32 fixes the seam; #34 implements it. */
 export type RunStarter = () => Promise<RunStartResult>
 
+/**
+ * What a cleanup request answers (#36). `cleaned: false` is a refusal — only a
+ * Run in flight refuses one — and `status` is the HTTP status it carries (409).
+ */
+export interface RunCleanupResult extends ConsoleRunCleanupPayload {
+  status?: number
+}
+
+/** Cleans an Orphaned Run up (ADR 0009). #36 implements it. */
+export type RunCleaner = () => Promise<RunCleanupResult>
+
 export interface ConsoleServerDeps {
   /** The status's Run half. #32 injects the idle state; #34/#36 read the log. */
   runState: () => ConsoleRunFacts
@@ -44,6 +55,15 @@ export interface ConsoleServerDeps {
   galleryFacts: () => ConsoleGalleryFacts | Promise<ConsoleGalleryFacts>
   /** The Run starter (`createRunStarter`): `POST /api/run`'s whole answer. */
   startRun: RunStarter
+  /**
+   * The Orphaned Run cleanup (`createRunCleaner`): `POST /api/run/cleanup`'s
+   * whole answer (#36).
+   *
+   * Optional on purpose: a service without Run control — #32's shape and its
+   * tests — has no cleanup to offer, and the honest answer to that route is
+   * `404`, not a no-op that claims it cleaned something.
+   */
+  cleanupRun?: RunCleaner
   /** This start's access token, generated per start and never persisted. */
   token: string
   /** The port to prefer; `0` asks the OS for one (tests). */
@@ -222,6 +242,34 @@ async function handleRequest(
     return
   }
   // ── end POST /api/run ─────────────────────────────────────────────
+
+  // ── POST /api/run/cleanup (#36) ───────────────────────────────────
+  //
+  // The one route this ticket adds to the spec's list, and added on purpose: an
+  // Orphaned Run is a first-class state (ADR 0009), so the page that reports it
+  // has to be able to clear it. The cleanup does two things and no more —
+  // closes the leftover Browser session and acknowledges the log's claim in
+  // memory. It never deletes or rewrites a Run log: the log is the audit trail
+  // (ADR 0007) and the Console does not own it, so cleaning up removes the
+  // claim that a Run may still be writing, not the record that it ran.
+  if (url.pathname === '/api/run/cleanup') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'POST' })
+      return
+    }
+    if (deps.cleanupRun === undefined) {
+      sendJson(res, 404, { error: 'not found' })
+      return
+    }
+    const cleaned = await deps.cleanupRun()
+    const payload: ConsoleRunCleanupPayload = {
+      cleaned: cleaned.cleaned,
+      reason: cleaned.reason,
+    }
+    sendJson(res, cleaned.status ?? (cleaned.cleaned ? 200 : 409), payload)
+    return
+  }
+  // ── end POST /api/run/cleanup ─────────────────────────────────────
 
   if (req.method !== 'GET') {
     sendJson(res, 404, { error: 'not found' })

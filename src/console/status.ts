@@ -76,6 +76,12 @@ export interface ConsoleRunFacts {
    * `parseRunReport`'s `null` cannot carry on its own.
    */
   reportPresent: boolean
+  /**
+   * The newest Run log's file name (#36), so the page can name the log whose
+   * claim it is offering to clean up. Optional because the idle facts #32
+   * injects have no log behind them; when absent the page names what it has.
+   */
+  logName?: string | null
 }
 
 /** The Gallery half: what the list contributed, or that it was not read. */
@@ -101,6 +107,7 @@ export const IDLE_RUN_FACTS: ConsoleRunFacts = {
   defects: null,
   report: null,
   reportPresent: false,
+  logName: null,
 }
 
 /** Before #33 reads the list: "not read", never "nothing missing". */
@@ -130,6 +137,17 @@ export interface ConsoleRunLogFacts {
   seenAtStartup: boolean
   /** Whether a Run this Console started still has a live child. */
   liveChild: boolean
+  /**
+   * This Console's own child wrote the newest log and has exited (#36): the
+   * state table's knowledge that a Run it was watching is dead, not a terminal
+   * Run still writing.
+   */
+  ownChildExited?: boolean
+  /**
+   * The newest log's claim was acknowledged by the page's cleanup (#36). It
+   * changes no file; it only stops the Console offering the same cleanup.
+   */
+  acknowledged?: boolean
   /** `images/.gallery-state.json` read, or `null` when unreadable. */
   galleryState: GalleryState | null
   /** `check-run`'s probe: is this Wallpaper on disk with a non-zero size? */
@@ -156,6 +174,8 @@ export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
     now: input.now,
     seenAtStartup: input.seenAtStartup,
     liveChild: input.liveChild,
+    ownChildExited: input.ownChildExited,
+    acknowledged: input.acknowledged,
   })
   const inFlight = state === 'running'
   const meta = parseRunMeta(input.logText)
@@ -168,6 +188,7 @@ export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
     defects: inFlight ? null : verdict.defects,
     report: inFlight ? null : report,
     reportPresent: input.reportPresent,
+    logName: input.logName,
   }
 }
 
@@ -193,7 +214,7 @@ export function buildStatus({
   mirrorCount,
   gallery,
 }: ConsoleStatusFacts): ConsoleStatusPayload {
-  return {
+  const payload: ConsoleStatusPayload = {
     runId: run.runId,
     state: run.state,
     startedAt: run.startedAt,
@@ -205,4 +226,9 @@ export function buildStatus({
     report: toApiReport(run.report),
     reportPresent: run.reportPresent,
   }
+  // #36's additive field, present only when a log was read: the page names the
+  // log whose claim it offers to clean up, and a Run half with no log behind it
+  // has no name to give (so an idle payload keeps its exact #32 shape).
+  if (run.logName != null) payload.runLogName = run.logName
+  return payload
 }

@@ -26,6 +26,17 @@ export { ORPHAN_WINDOW_MS } from './run-state.js'
 export interface RunLogSource {
   /** The newest Run log's facts — the status view's whole Run half. */
   facts(): ConsoleRunFacts
+  /**
+   * Acknowledges the newest Run log's claim, in memory only (#36).
+   *
+   * The claim being acknowledged is "a Run may still be writing here". The log
+   * itself is not touched: it is the audit trail (ADR 0007) and the Console
+   * does not own it. Because the acknowledgement never reaches disk, a Console
+   * restart re-reads the same unfinished log and reports it orphaned again —
+   * the honest limitation, and the reason the page says the cleanup is offered,
+   * not forced.
+   */
+  acknowledgeOrphan(): void
 }
 
 export interface RunLogSourceOptions {
@@ -37,6 +48,13 @@ export interface RunLogSourceOptions {
   imagesDir: string
   /** Whether a Run this Console started still has a live child. */
   liveChild?: () => boolean
+  /**
+   * The Run log this Console's own child wrote, once that child has exited
+   * (#36) — `null` before the first Run, while it lives, and when the child died
+   * before writing a log. It is what lets §6a tell "the child we watched die"
+   * from "a Run someone else is writing": both logs appear after start-up.
+   */
+  ownRunLogName?: () => string | null
   /** Epoch milliseconds; injected so a test needs no clock. */
   now?: () => number
 }
@@ -48,10 +66,24 @@ export interface RunLogSourceOptions {
  */
 export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
   const seenAtStartup = new Set(listNames(options.logDir))
+  /**
+   * The log names the page has cleaned up since this Console started. In
+   * memory, deliberately: the log is the audit trail and stays on disk exactly
+   * as it was written (ADR 0007).
+   */
+  const acknowledged = new Set<string>()
   const now = options.now ?? (() => Date.now())
   const liveChild = options.liveChild ?? (() => false)
+  const ownRunLogName = options.ownRunLogName ?? (() => null)
 
   return {
+    acknowledgeOrphan(): void {
+      // The newest log is the one the page was showing: the same pick as
+      // `check-run`, by name (run-report-source.ts), never by mtime.
+      const name = newestRunLogName(options.logDir)
+      if (name !== null) acknowledged.add(name)
+    },
+
     facts(): ConsoleRunFacts {
       // The newest Run log, by **name** — the ordering `check-run` uses
       // (`toSorted().at(-1)`), never by mtime: the filename carries the
@@ -78,6 +110,7 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
         }
       }
       const logName = file === null ? null : path.basename(file)
+      const own = ownRunLogName()
 
       return deriveRunFacts({
         logText,
@@ -89,6 +122,10 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
         now: now(),
         seenAtStartup: logName !== null && seenAtStartup.has(logName),
         liveChild: liveChild(),
+        // The newest log is the one our own child wrote, and that child has
+        // exited: the Console knows it is dead (§6a's own-child consequence).
+        ownChildExited: own !== null && own === logName,
+        acknowledged: logName !== null && acknowledged.has(logName),
         galleryState: readGalleryState(options.galleryStateFile),
         probe: mirrorProbe(options.imagesDir),
       })
