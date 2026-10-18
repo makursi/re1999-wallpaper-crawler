@@ -15,6 +15,12 @@
   `src/gallery/gallery-state.ts` (`images/.gallery-state.json`); `src/main.ts`
   fetches the list once during discovery (step 3) and writes the state at the
   end of the Run (step 6). Vocabulary in CONTEXT.md → Gallery tracking.
+- **Console** — the human entry point: a local service started by one command
+  that serves a page reading the Run log directory, the Gallery list and the
+  Mirror.
+  Owns: `src/console/` (the service and the type-only API contract the two
+  share) and `web/` (the page — `vite.config.ts` sets `root: web`); started by
+  the `console` script. Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `src/wallpaper-url.ts`, which both Discovery's output and
   Download's input pass through.
@@ -36,6 +42,19 @@
   visible.
 - **Discovery → Gallery list**: `discovery.coverage` measures one Run's capture
   against the list.
+- **Console → CLI entries**: the Console is the human entry point, and it starts
+  a Run as a child process; `save-wallpapers` and `check-run` stay the
+  agent-facing entries, with their names, exit codes and contracts unchanged.
+- **Run log → Console**: the Console knows Runs by reading the Run log
+  directory, never a handle it holds, so a terminal-started Run is visible and a
+  restart loses nothing; the verdict it prints is `check-run`'s own
+  parse-and-assess pair on the same newest log.
+- **Mirror → Console**: the Console reads the Mirror's file names for the
+  Wallpaper count and the gallery view, and writes nothing into it — the
+  Mirror's one writer stays a Run.
+- **Gallery list → Console**: the gallery view is one row per Gallery list
+  entry, and it degrades to the Mirror alone when the list is unreachable,
+  reporting the list as unread rather than as nothing missing.
 
 ## Where things live
 
@@ -51,3 +70,5 @@
 | Discovery script     | `scripts/run-discovery.js`       |
 | Discovery loader     | `src/discovery/discovery-loader.ts` |
 | Download + cookies   | `src/download/download.ts`       |
+| Console service + shared API types | `src/console/`        |
+| Console page (Vue 3, built by Vite) | `web/`              |

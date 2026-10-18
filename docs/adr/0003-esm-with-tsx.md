@@ -4,9 +4,9 @@ The project migrated from CommonJS + ts-node to native ESM + tsx to run the
 TypeScript source. `package.json` `type` is `module`, tsconfig uses
 `module: nodenext` with explicit `.js` extensions on relative imports and
 `verbatimModuleSyntax` on, and the typecheck config is `noEmit`-only (no dist
-build). ts-node was removed in favour of `tsx` because ts-node's ESM support
-is awkward (loader flags, CommonJS default) while tsx is a drop-in that runs
-ESM TypeScript natively.
+build of the crawler's source). ts-node was removed in favour of `tsx` because
+ts-node's ESM support is awkward (loader flags, CommonJS default) while tsx is
+a drop-in that runs ESM TypeScript natively.
 
 ## Considered options
 
@@ -26,6 +26,8 @@ ESM TypeScript natively.
   as TypeScript). This is a one-time mechanical change across `src/`.
 - `__dirname` is gone; `import.meta.dirname` (Node ≥ 20.11) is used instead,
   with a single `PROJECT_ROOT` constant in `src/config.ts`.
-- `tsc --noEmit` is now the typecheck-only entry point; `dist/` output config
-  was removed since nothing compiles or publishes a build.
+- `tsc --noEmit` is now the typecheck-only entry point for the crawler;
+  `dist/` output config was removed since the crawler compiles or publishes
+  nothing of its own. The Console's page is the repository's only build
+  artifact, and it is scoped to the Console (ADR 0011).
 - Tests run under vitest, which natively supports ESM.

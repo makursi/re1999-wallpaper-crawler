@@ -34,7 +34,7 @@ jobs:
           require-lockfile: true
 
       # No `.env` is needed: the unit tests cover pure logic (report, gallery,
-      # wallpaper URL set) and never import `src/config.ts`.
+      # wallpaper URL set, Console service) and never import `src/config.ts`.
 
       - name: Lint
         run: pnpm lint
@@ -44,6 +44,11 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      # The Console's page is this repository's build artifact: the start
+      # command builds it, and CI proves it still builds (docs/adr/0011).
+      - name: Build web bundle
+        run: pnpm build:web
 
       - name: Test
         run: pnpm test
