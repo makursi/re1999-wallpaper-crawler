@@ -64,14 +64,28 @@ _Done when playwright-cli answers, the user has been asked to leave the
 machine alone until the Run exits, and the sandbox-access request for the
 Run's first call is ready to send._
 
-**Run — one command.** `pnpm save-wallpapers` (tsx runs `src/main.ts`).
-Watch the terminal as hash injection, the Stability loop's rounds, the Site
-assets it filters, and the download batches stream into
-`logs/save-wallpapers-<ts>.jsonl`. Touch nothing until it exits.
+**Run — one command, launched as a background job.** `pnpm save-wallpapers`
+(tsx runs `src/main.ts`). Watch the terminal as hash injection, the Stability
+loop's rounds, the Site assets it filters, and the download batches stream
+into `logs/save-wallpapers-<ts>.jsonl`. The wrapper may **never report exit** —
+the persistent browser child inherits the stdout pipe and outlives the scraper,
+so the job sits at `running` long after the Run is over. Do not read a
+still-`running` wrapper as work in progress, and do not wait on it: cancel the
+wrapper once the Run is proven done, because the wrapper carries the
+cancellation, not the state the Run is judged by.
 
-_Done when the process exits 0, prints the ok / skipped / failed counts and
-the Gallery total, **and has written a `run_report`** — an exit code of 0
-alone is not proof of a clean Run (see the missing-report trap below)._
+The proof is that state, never the process exit code. Three things say the Run
+finished and are checked by one command, **`pnpm check-run`** (exit 0 for
+`clean`/`explained`, 1 for `defect`): the Run log carries a `run_report`, the
+Gallery state carries that report's `runId`, and the report's claimed new files
+are on disk. A Run log that stops before its `run_report` is a defect in the
+log, not evidence the Run failed — read `images/.gallery-state.json` first, as
+the missing-report trap below says, which separates "finished, log lost" from
+"never got there".
+
+_Done when a `run_report` is in the Run log, the Gallery state carries the same
+`runId`, and the claimed new files are on disk — `pnpm check-run` answers all
+three, and the process exit code is not the proof either way._
 
 **Verify — the Run report.** One command reads the newest Run log and prints the
 Run's verdict: `pnpm check-run`. It compares the Gallery state's `runId` with the
