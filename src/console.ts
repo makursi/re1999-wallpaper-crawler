@@ -25,9 +25,12 @@ import {
 } from './config.js'
 import type { ConsoleConfig } from './console/console-config.js'
 import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console/console-config.js'
+import { createGalleryListSource } from './console/gallery-list-source.js'
+import { readNewestRunReport } from './console/run-report-source.js'
 import type { RunStarter } from './console/server.js'
 import { startConsoleServer } from './console/server.js'
-import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from './console/status.js'
+import { galleryFactsOf, IDLE_RUN_FACTS } from './console/status.js'
+import { fetchGalleryList } from './gallery/gallery-source.js'
 
 interface ConsoleOptions {
   port: number
@@ -113,11 +116,24 @@ async function main(options: ConsoleOptions): Promise<void> {
   const config = consoleConfig()
   await ensureBundle(config)
 
+  // One cached read of the Gallery list serves both `/api/status` (its
+  // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
+  // polls, so the endpoint is read once per TTL, and a refused read is
+  // remembered rather than retried once per request (spec decision 19; #33).
+  const galleryList = createGalleryListSource({
+    fetchList: () => fetchGalleryList({ endpoint: config.galleryListEndpoint }),
+  })
+
   const service = await startConsoleServer(config, {
-    // #32 shows one true number and nothing else: the Run half is the fixed
-    // idle state and the list half is "not read". #33/#34 replace both readers.
+    // #34/#36 replace the Run half; #32's fixed idle state stays until then.
     runState: () => IDLE_RUN_FACTS,
-    galleryFacts: () => UNREAD_GALLERY_FACTS,
+    galleryFacts: async () => galleryFactsOf(await galleryList.get()),
+    galleryList,
+    // The one Run number the gallery view needs (#33), read from the newest Run
+    // log exactly as `check-run` reads it — never recomputed from the Gallery
+    // state, which would give 0.
+    newSinceLastRun: () => readNewestRunReport(config.logDir)?.gallery.newSinceLastRun ?? null,
+    // #34 implements the Run starter; #32 only fixes the seam's shape.
     startRun: notImplementedYet,
     token: randomBytes(16).toString('hex'),
     port: options.port,

@@ -4,6 +4,7 @@
 // fixed idle state and an unread Gallery list; #33/#34/#36 replace those two
 // readers without touching the server (spec decision 16).
 
+import type { GalleryList } from '../gallery/gallery-source.js'
 import type { RunDefects } from '../report/run-log.js'
 import type {
   ConsoleDefects,
@@ -67,6 +68,18 @@ export const IDLE_RUN_FACTS: ConsoleRunFacts = {
 export const UNREAD_GALLERY_FACTS: ConsoleGalleryFacts = {
   officialTotal: null,
   listAvailable: false,
+}
+
+/**
+ * The Gallery half from what `GalleryListSource.get()` returned — the same
+ * source the gallery route reads, so `/api/status` and `/api/gallery` cannot
+ * disagree about whether the list was read (#33).
+ *
+ * `officialTotal` is the list's own `total`, verbatim — never
+ * `entries.length`, and never a count of files (§4.5).
+ */
+export function galleryFactsOf(list: GalleryList | null): ConsoleGalleryFacts {
+  return list === null ? UNREAD_GALLERY_FACTS : { officialTotal: list.total, listAvailable: true }
 }
 
 /**

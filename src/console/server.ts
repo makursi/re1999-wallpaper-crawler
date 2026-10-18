@@ -17,7 +17,9 @@ import * as http from 'node:http'
 import * as path from 'node:path'
 
 import type { ConsoleConfig } from './console-config.js'
-import { countMirrorWallpapers } from './mirror.js'
+import type { GalleryListSource } from './gallery-list-source.js'
+import { buildGalleryView, toGalleryPayload } from './gallery-view.js'
+import { countMirrorNames, countMirrorWallpapers, readMirrorNames } from './mirror.js'
 import type { ConsoleGalleryFacts, ConsoleRunFacts } from './status.js'
 import { buildStatus } from './status.js'
 
@@ -42,6 +44,23 @@ export interface ConsoleServerDeps {
   token: string
   /** The port to prefer; `0` asks the OS for one (tests). */
   port: number
+  /**
+   * The cached Gallery list `GET /api/gallery` reads (#33). The entry injects
+   * the same source behind `galleryFacts`, so the two routes cannot disagree
+   * about whether the list was read.
+   *
+   * Optional on purpose: a service that only answers `/api/status` — #32's
+   * shape and its tests — legitimately has no list, and the gallery route's
+   * honest answer to that is the degraded view ("the list was not read"), not
+   * a 500 and not a fabricated empty list.
+   */
+  galleryList?: GalleryListSource
+  /**
+   * The newest Run report's `gallery.newSinceLastRun` (#33): read from the log
+   * the same way `check-run` picks it, never recomputed from the Gallery state
+   * (recomputing gives 0). Absent or `null` = nothing to report.
+   */
+  newSinceLastRun?: () => number | null
 }
 
 export interface ConsoleService {
@@ -147,6 +166,37 @@ async function handleRequest(
     )
     return
   }
+
+  // ── GET /api/gallery (#33) ────────────────────────────────────────
+  //
+  // The Gallery list read against the Mirror: one row per entry, the Mirror's
+  // extras after them, the gap as set arithmetic, and the newest Run's
+  // `newSinceLastRun`. All the deciding is in the pure `buildGalleryView`; this
+  // block only gathers its three inputs.
+  if (url.pathname === '/api/gallery') {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
+      return
+    }
+    const list = deps.galleryList === undefined ? null : await deps.galleryList.get()
+    // One read of the Mirror, so the rows and the count cannot describe two
+    // different directories.
+    const diskFiles = readMirrorNames(config.imagesDir)
+    sendJson(
+      res,
+      200,
+      toGalleryPayload(
+        buildGalleryView({
+          list,
+          diskFiles,
+          newSinceLastRun: deps.newSinceLastRun?.() ?? null,
+        }),
+        countMirrorNames(diskFiles),
+      ),
+    )
+    return
+  }
+  // ── end GET /api/gallery ──────────────────────────────────────────
 
   if (req.method !== 'GET') {
     sendJson(res, 404, { error: 'not found' })
