@@ -1,0 +1,27 @@
+// ── The Console's configuration value ───────────────────────────────
+//
+// The service never reads the environment. `src/console.ts` reads
+// `src/config.ts` — which parses `.env` at import time — and injects one of
+// these, which is what keeps `tests/**` running with no `.env` (spec decision
+// 29; .console-notes/00-conventions.md §8).
+
+export interface ConsoleConfig {
+  /** The repository root: what the entry builds from and a Run's cwd. */
+  projectRoot: string
+  /** The Mirror (`images/`). The Console reads its names and writes nothing. */
+  imagesDir: string
+  /** The Run log directory — the Console's only source of truth about Runs. */
+  logDir: string
+  /** `images/.gallery-state.json`; read by later tickets, never written. */
+  galleryStateFile: string
+  /** The built page's root: Vite's `build.outDir`, under the project root. */
+  distDir: string
+  /** The site's Gallery list endpoint (src/config.ts › GALLERY_LIST_URL). */
+  galleryListEndpoint: string
+}
+
+/** The Console's preferred port; `--port` overrides it (ADR 0008). */
+export const DEFAULT_CONSOLE_PORT = 8791
+
+/** The build output's directory name, relative to the project root (ADR 0011). */
+export const DIST_DIR_NAME = 'dist'

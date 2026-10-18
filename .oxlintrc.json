@@ -7,7 +7,7 @@
     "correctness": "error",
     "suspicious": "warn"
   },
-  "plugins": ["oxc", "typescript", "unicorn", "import", "node", "promise", "vitest"],
+  "plugins": ["oxc", "typescript", "unicorn", "import", "node", "promise", "vitest", "vue"],
   "rules": {
     // `!= null` is deliberate: it catches both null and undefined (see
     // report.ts › classifyOutcomes).
@@ -21,7 +21,6 @@
   },
   "ignorePatterns": [
     "node_modules",
-    "dist",
     "images",
     "logs",
     ".playwright",

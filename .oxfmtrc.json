@@ -9,7 +9,6 @@
   "sortImports": true,
   "ignorePatterns": [
     "node_modules",
-    "dist",
     "images",
     "logs",
     ".playwright",

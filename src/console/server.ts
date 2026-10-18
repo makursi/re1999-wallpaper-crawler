@@ -1,0 +1,344 @@
+// ── The Console's HTTP surface ──────────────────────────────────────
+//
+// One port serves the built page and the API (spec decision 14), bound to
+// loopback only. Every request — the page, its assets and the API alike — is
+// checked against this start's token and the authority the service bound
+// (spec decision 13), because a page the owner happens to be visiting must not
+// be able to start a Run on their machine.
+//
+// Everything the server needs arrives by injection (spec decision 29): the
+// configuration value and the three readers. `src/console.ts` is the only
+// place that reads `src/config.ts`, which is what keeps `tests/**` free of a
+// `.env`.
+
+import { timingSafeEqual } from 'node:crypto'
+import * as fs from 'node:fs'
+import * as http from 'node:http'
+import * as path from 'node:path'
+
+import type { ConsoleConfig } from './console-config.js'
+import { countMirrorWallpapers } from './mirror.js'
+import type { ConsoleGalleryFacts, ConsoleRunFacts } from './status.js'
+import { buildStatus } from './status.js'
+
+/** What a start request answers. Declared here so #34 implements one shape. */
+export interface RunStartResult {
+  started: boolean
+  /** Why a start was refused; `null` when one was started. */
+  reason: string | null
+}
+
+/** Starts a Run (spec decision 6). #32 fixes the seam; #34 implements it. */
+export type RunStarter = () => Promise<RunStartResult>
+
+export interface ConsoleServerDeps {
+  /** The status's Run half. #32 injects the idle state; #34/#36 read the log. */
+  runState: () => ConsoleRunFacts
+  /** The status's Gallery half. #32 injects "not read"; #33 fetches the list. */
+  galleryFacts: () => ConsoleGalleryFacts | Promise<ConsoleGalleryFacts>
+  /** The Run starter. #32 stores it; `POST /api/run` arrives with #34. */
+  startRun: RunStarter
+  /** This start's access token, generated per start and never persisted. */
+  token: string
+  /** The port to prefer; `0` asks the OS for one (tests). */
+  port: number
+}
+
+export interface ConsoleService {
+  /** `http://127.0.0.1:<port>` — the authority every request has to present. */
+  origin: string
+  /** The port actually bound, never the requested one (spec decision 3). */
+  port: number
+  /** `true` when the preferred port was taken and the OS assigned another. */
+  fellBack: boolean
+  /** The page's URL with the token on it — what the entry prints and opens. */
+  url: string
+  close: () => Promise<void>
+}
+
+const ASSET_PREFIX = '/assets/'
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+}
+
+/**
+ * Bind the service. The preferred port is tried first and an OS-assigned one
+ * is used when it is taken — a page that refuses to start because a port is
+ * busy is the worst available failure mode (spec decision 3). The returned port
+ * is always the one actually bound, never the requested one.
+ */
+export async function startConsoleServer(
+  config: ConsoleConfig,
+  deps: ConsoleServerDeps,
+): Promise<ConsoleService> {
+  // The guard needs the bound port, and a request cannot arrive before
+  // `listen` has resolved and this assignment has run.
+  let boundPort = 0
+  const server = http.createServer((req, res) => {
+    handleRequest(req, res, config, deps, boundPort).catch(() => {
+      // The handler threw before answering: a socket left open would be worse
+      // than a named 500.
+      if (res.headersSent) res.destroy()
+      else sendJson(res, 500, { error: 'the Console failed to answer' })
+    })
+  })
+
+  const { port, fellBack } = await listenWithFallback(server, deps.port)
+  boundPort = port
+  const origin = `http://127.0.0.1:${port}`
+
+  return {
+    origin,
+    port,
+    fellBack,
+    url: `${origin}/?token=${encodeURIComponent(deps.token)}`,
+    close: () => closeServer(server),
+  }
+}
+
+async function handleRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  config: ConsoleConfig,
+  deps: ConsoleServerDeps,
+  port: number,
+): Promise<void> {
+  if (port === 0) {
+    sendJson(res, 500, { error: 'the Console is not listening' })
+    return
+  }
+
+  // Parse the target as WHATWG URL so plain `..` segments are collapsed before
+  // routing; encoded ones survive and are handled by `sendAsset`.
+  const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
+
+  if (!isAuthorized(req, url, port, deps.token)) {
+    sendJson(res, 403, { error: 'forbidden' })
+    return
+  }
+
+  if (url.pathname === '/api/status') {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
+      return
+    }
+    sendJson(
+      res,
+      200,
+      buildStatus({
+        run: deps.runState(),
+        mirrorCount: countMirrorWallpapers(config.imagesDir),
+        gallery: await deps.galleryFacts(),
+      }),
+    )
+    return
+  }
+
+  if (req.method !== 'GET') {
+    sendJson(res, 404, { error: 'not found' })
+    return
+  }
+
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    sendPage(res, config.distDir, deps.token)
+    return
+  }
+
+  if (url.pathname.startsWith(ASSET_PREFIX)) {
+    sendAsset(res, config.distDir, url.pathname)
+    return
+  }
+
+  sendJson(res, 404, { error: 'not found' })
+}
+
+/**
+ * The request guard (spec decision 13; .console-notes/00-conventions.md §5).
+ *
+ * 1. **Host** has to be the authority the service bound — the DNS-rebinding
+ *    defence, because an attacker's page can point its own hostname at
+ *    127.0.0.1 and would then send *its* authority, not ours.
+ * 2. **Origin**, when present, has to be this service's own origin. An absent
+ *    one is the page's normal case, not a refusal: a top-level navigation and
+ *    every `<script>`, `<img>` and same-origin `fetch` GET send no `Origin` at
+ *    all, so requiring one would refuse the Console itself.
+ * 3. **Token** has to be the one this start generated. It is the only defence
+ *    a `no-cors` GET or a markup subresource leaves, so it is required on
+ *    every request, assets included — which is why `sendPage` rewrites the
+ *    built page's asset URLs to carry it.
+ */
+function isAuthorized(req: http.IncomingMessage, url: URL, port: number, token: string): boolean {
+  const host = (req.headers.host ?? '').toLowerCase()
+  if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return false
+
+  const origin = req.headers.origin
+  if (
+    origin !== undefined &&
+    origin !== `http://127.0.0.1:${port}` &&
+    origin !== `http://localhost:${port}`
+  ) {
+    return false
+  }
+
+  return secretMatches(url.searchParams.get('token') ?? '', token)
+}
+
+/**
+ * Constant-time comparison with this start's token. `timingSafeEqual` throws on
+ * a length mismatch, so the lengths are compared first — a token's length is
+ * not the secret worth keeping.
+ */
+function secretMatches(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/**
+ * Serve `dist/index.html` with the token appended to every asset URL Vite
+ * emitted.
+ *
+ * Why the rewrite: the guard requires the token on every request, and a
+ * `<script>` or `<link>` cannot attach a query string of its own. So the
+ * Console opens `http://127.0.0.1:<port>/?token=<t>`, the service puts the
+ * same token on `./assets/index-<hash>.js` and `./assets/index-<hash>.css` on
+ * the way out, and the page reads the token from its own URL and appends it to
+ * every `fetch` it makes. That is the whole mechanism: no cookie, nothing
+ * persisted, and no route prefix — the API routes stay exactly as the spec
+ * lists them.
+ */
+function sendPage(res: http.ServerResponse, distDir: string, token: string): void {
+  let html: string
+  try {
+    html = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8')
+  } catch {
+    sendJson(res, 404, { error: 'the page has not been built' })
+    return
+  }
+
+  const body = html.replace(
+    /(src|href)="\.\/(assets\/[^"]+)"/g,
+    (_match, attribute: string, assetPath: string) =>
+      `${attribute}="./${assetPath}?token=${encodeURIComponent(token)}"`,
+  )
+
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' })
+  res.end(body)
+}
+
+/** Serve one built asset from `dist/assets`, refusing anything outside it. */
+function sendAsset(res: http.ServerResponse, distDir: string, pathname: string): void {
+  const assetsDir = path.join(distDir, 'assets')
+  let name: string
+  try {
+    name = decodeURIComponent(pathname.slice(ASSET_PREFIX.length))
+  } catch {
+    sendJson(res, 404, { error: 'not found' })
+    return
+  }
+
+  // Containment, not a name pattern: `new URL` collapses plain `..`, and an
+  // encoded `%2e%2e%2f` survives it, so the decoded name is resolved and then
+  // checked to still be under `dist/assets`.
+  const file = path.resolve(assetsDir, name)
+  if (!file.startsWith(assetsDir + path.sep)) {
+    sendJson(res, 404, { error: 'not found' })
+    return
+  }
+
+  let body: Buffer
+  try {
+    body = fs.readFileSync(file)
+  } catch {
+    sendJson(res, 404, { error: 'not found' })
+    return
+  }
+
+  res.writeHead(200, {
+    'content-type': CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream',
+    // Vite's asset names carry a content hash, so a year-long cache is honest.
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+  })
+  res.end(body)
+}
+
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): void {
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    ...headers,
+  })
+  res.end(JSON.stringify(payload))
+}
+
+async function listenWithFallback(
+  server: http.Server,
+  preferredPort: number,
+): Promise<{ port: number; fellBack: boolean }> {
+  try {
+    await listenOnce(server, preferredPort)
+    return { port: boundPortOf(server), fellBack: false }
+  } catch (error) {
+    if (!isUnbindable(error)) throw error
+    await listenOnce(server, 0)
+    return { port: boundPortOf(server), fellBack: true }
+  }
+}
+
+function listenOnce(server: http.Server, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off('listening', onListening)
+      reject(error)
+    }
+    const onListening = (): void => {
+      server.off('error', onError)
+      resolve()
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    // Loopback only: there is no `0.0.0.0` form anywhere (spec decision 13).
+    server.listen(port, '127.0.0.1')
+  })
+}
+
+/** `EADDRINUSE` is a busy port; `EACCES` is one we may not bind — both fall back. */
+function isUnbindable(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false
+  const { code } = error
+  return code === 'EADDRINUSE' || code === 'EACCES'
+}
+
+function boundPortOf(server: http.Server): number {
+  const address = server.address()
+  if (address === null || typeof address === 'string') return 0
+  return address.port
+}
+
+function closeServer(server: http.Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Keep-alive connections would otherwise hold `close()` open.
+    server.closeAllConnections()
+    server.close(error => (error === undefined ? resolve() : reject(error)))
+  })
+}
