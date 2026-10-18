@@ -2,9 +2,9 @@
 //
 // A Run's truth is its Run log, never the handle that started it (ADR 0009), so
 // the state is read from the log directory: which log is newest, whether it has
-// finished, and how long ago it was written. This one pure function is
-// .console-notes/00-conventions.md **§6a**, which is binding for #34 and #36 and
-// exists because two tickets otherwise contradict each other: #34 says "a Run
+// finished, and how long ago it was written. This one pure function is the single
+// place the state is decided, and its rule exists because two tickets otherwise
+// contradict each other: #34 says "a Run
 // started from a terminal is shown as running", #36 says "an unfinished log with
 // a recent modification time is an Orphaned Run". Both facts come from the same
 // log signature, so the rule below is the one place the distinction is made —

@@ -3,7 +3,7 @@
 // The service never reads the environment. `src/console.ts` reads
 // `src/config.ts` — which parses `.env` at import time — and injects one of
 // these, which is what keeps `tests/**` running with no `.env` (spec decision
-// 29; .console-notes/00-conventions.md §8).
+// 29).
 
 export interface ConsoleConfig {
   /** The repository root: what the entry builds from and a Run's cwd. */

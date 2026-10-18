@@ -8,14 +8,13 @@
 // repository root, which is what keeps the Mirror gap — the one number the page
 // is for — independent of where the Console puts its files. The name is the key
 // because a Wallpaper's name embeds a content hash, so a cache hit needs no
-// invalidation (notes 02 §6).
+// invalidation.
 //
 // This is the image library's ONLY import site, and the import is dynamic on
 // purpose: the native addon loads during module evaluation in 0.35.5, so a
 // broken or absent binary arrives as a rejected `await import('sharp')` — a
 // named 500 at the request site, never a crashed process and never a failed
-// Run. Nothing under `src/` outside this file may import it (spec decision 26;
-// .console-notes/00-conventions.md §1).
+// Run. Nothing under `src/` outside this file may import it (spec decision 26).
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -98,7 +97,7 @@ function pendingPathFor(file: string): string {
 }
 
 /**
- * The pinned call, verified by measurement (notes 02 §5): `fit: 'inside'` fits
+ * The pinned call, verified by measurement: `fit: 'inside'` fits
  * within a 400×400 box and preserves aspect, so the longest edge is exactly 400
  * with no orientation branch; `withoutEnlargement` guards a source smaller than
  * the pin. The output format follows the target file's extension, so the

@@ -7,8 +7,7 @@
 // disk with a non-zero size. The verdict is `assessRun`'s, and the probe is one
 // of its *inputs*, so a drift between the two readers would make the page and
 // the command disagree about the same log — which the Console's spec says must
-// be structurally impossible (spec decision 16;
-// .console-notes/00-conventions.md §6a).
+// be structurally impossible (spec decision 16).
 //
 // It lives at the `src/` root on purpose: `src/report/**` is pure and keeps the
 // filesystem out of the verdict, and the pipeline must never import

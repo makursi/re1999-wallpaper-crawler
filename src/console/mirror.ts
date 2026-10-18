@@ -14,7 +14,7 @@ import * as fs from 'node:fs'
  * cache directory that somebody put back inside `images/` — would make the page
  * and the Run report disagree about the same directory. Both predicates return
  * 1013 today, which is exactly why the wrong choice would stay invisible
- * (spec decision 18; .console-notes/00-conventions.md §4a).
+ * (spec decision 18).
  */
 export function countMirrorNames(names: readonly string[]): number {
   return names.filter(name => !name.startsWith('.')).length

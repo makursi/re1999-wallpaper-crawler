@@ -2,8 +2,8 @@
 //
 // The pick and the probe are the two facts `check-run` and the Console's reader
 // share; they are extracted into `src/run-log-file.ts` so the page and the
-// command cannot drift. `check-run`'s own printed output is pinned by hand
-// against `.console-notes/check-run-before.txt`, so what these pin is the two
+// command cannot drift. `check-run`'s own printed output was diffed byte for
+// byte by hand when the extraction landed, so what these pin is the two
 // shared decisions themselves: name order (never mtime), and a probe that
 // counts a file only with a non-zero size.
 

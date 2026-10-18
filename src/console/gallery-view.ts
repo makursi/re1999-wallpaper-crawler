@@ -9,8 +9,7 @@
 //
 // The gap arithmetic deliberately copies `mergeGalleryStats`
 // (src/gallery/gallery-state.ts:61-66), because the page and the Run report
-// have to agree about the same directory (spec decision 18;
-// .console-notes/00-conventions.md §4a).
+// have to agree about the same directory (spec decision 18).
 
 import type { GalleryList } from '../gallery/gallery-source.js'
 import { officialNamesOf } from '../gallery/gallery-source.js'

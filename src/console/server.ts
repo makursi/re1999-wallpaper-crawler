@@ -127,7 +127,7 @@ const THUMBNAIL_ROUTE = '/api/thumbnail'
 const IMAGE_PREFIX = '/api/image/'
 const IMAGE_ROUTE = '/api/image'
 
-/** What a served file's extension means over HTTP (notes 02 §7). */
+/** What a served file's extension means over HTTP. */
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -167,7 +167,7 @@ function isImageRoute(pathname: string): boolean {
  * One image response: the bytes, their type, and `nosniff` so a browser cannot
  * decide the type for itself. A year-long cache is honest on both routes — a
  * Wallpaper's name embeds a content hash, and so does the thumbnail derived
- * from it (notes 02 §7).
+ * from it.
  */
 function sendImageBytes(res: http.ServerResponse, bytes: Buffer, contentType: string): void {
   res.writeHead(200, {
@@ -424,7 +424,7 @@ async function handleRequest(
 }
 
 /**
- * The request guard (spec decision 13; .console-notes/00-conventions.md §5).
+ * The request guard (spec decision 13).
  *
  * 1. **Host** has to be the authority the service bound — the DNS-rebinding
  *    defence, because an attacker's page can point its own hostname at
