@@ -11,22 +11,26 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  CONSOLE_VERDICTS,
   EXPLAINED_REASON_KINDS,
+  GALLERY_ROW_STATES,
   PREREQUISITE_CODES,
   REFUSAL_CODES,
-} from '../../../web/api-types.js'
-import type { Locale, MessageKey } from '../../../web/src/i18n/messages.js'
+} from '../../../../web/api-types.js'
+import type { Locale, MessageKey } from '../../../../web/src/i18n/messages.js'
 import {
   DEFAULT_LOCALE,
   EXPLAINED_REASON_MESSAGE_KEYS,
+  GALLERY_ROW_STATE_MESSAGE_KEYS,
   LOCALES,
   PREREQUISITE_MESSAGE_KEYS,
   REFUSAL_MESSAGE_KEYS,
+  VERDICT_MESSAGE_KEYS,
   isLocale,
   messagesFor,
   translate,
   translateParts,
-} from '../../../web/src/i18n/messages.js'
+} from '../../../../web/src/i18n/messages.js'
 
 /** Every message key a locale carries, sorted, so two locales can be compared. */
 function keysOf(locale: Locale): string[] {
@@ -119,11 +123,12 @@ describe('the locale dictionary', () => {
 /**
  * The service's codes, and the page's words for them (#47).
  *
- * The contract exports the vocabularies as runtime tuples precisely so this loop
- * can be exhaustive: a code added to `web/api-types.ts` without a message is a
- * failure here, in both locales, not an English sentence discovered in a
- * browser. The `Record<Code, MessageKey>` maps are what tie a code to a key at
- * compile time; this is the data half of the same promise.
+ * The contract exports all five vocabularies as runtime tuples — refusals,
+ * prerequisites, explained reasons, verdicts and gallery row states — precisely
+ * so this loop can be exhaustive: a code added to `web/api-types.ts` without a
+ * message is a failure here, in both locales, not an English sentence discovered
+ * in a browser. The `Record<Code, MessageKey>` maps are what tie a code to a key
+ * at compile time; this is the data half of the same promise.
  */
 describe('every service code has copy in both locales', () => {
   const codeKeys: [string, MessageKey][] = [
@@ -139,16 +144,30 @@ describe('every service code has copy in both locales', () => {
       `explained:${kind}`,
       EXPLAINED_REASON_MESSAGE_KEYS[kind],
     ]),
+    ...CONSOLE_VERDICTS.map((code): [string, MessageKey] => [
+      `verdict:${code}`,
+      VERDICT_MESSAGE_KEYS[code],
+    ]),
+    ...GALLERY_ROW_STATES.map((state): [string, MessageKey] => [
+      `row-state:${state}`,
+      GALLERY_ROW_STATE_MESSAGE_KEYS[state],
+    ]),
   ]
 
   it('covers the whole vocabulary the contract exports', () => {
     // A mapping that dropped a code would be a `tsc` error; this states the
     // intent from the other side, so a tuple that quietly lost a member fails.
     expect(codeKeys).toHaveLength(
-      REFUSAL_CODES.length + PREREQUISITE_CODES.length + EXPLAINED_REASON_KINDS.length,
+      REFUSAL_CODES.length +
+        PREREQUISITE_CODES.length +
+        EXPLAINED_REASON_KINDS.length +
+        CONSOLE_VERDICTS.length +
+        GALLERY_ROW_STATES.length,
     )
     expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
     expect([...PREREQUISITE_CODES]).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
+    expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
+    expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
   })
 
   it('resolves each code to written-out copy in zh-CN and en', () => {

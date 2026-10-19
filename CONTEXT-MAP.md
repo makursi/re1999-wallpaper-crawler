@@ -19,10 +19,12 @@
   that serves a page reading the Run log directory, the Gallery list and the
   Mirror.
   Owns: `web/` — `web/server/` (the service and its entry point),
-  `web/api-types.ts` (the type-only API contract the service and the page
-  share), `web/src/` (the page), and the page's tooling (`web/vite.config.ts`,
-  `web/tsconfig.web.json`, and the artifacts they produce: `web/dist/`, the
-  thumbnail cache under `web/.console-cache/`); started by the `webui` script.
+  `web/api-types.ts` (the API contract the service and the page share: the
+  payload types plus the code vocabularies the dictionary test enumerates,
+  ADR 0014), `web/src/` (the page), and the page's tooling
+  (`web/vite.config.ts`, `web/uno.config.ts`, `web/tsconfig.web.json`, and the
+  artifacts they produce: `web/dist/`, the thumbnail cache under
+  `web/.console-cache/`); started by the `webui` script.
   Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `core/wallpaper-url.ts`, which both Discovery's output and
@@ -74,6 +76,6 @@
 | Discovery loader     | `core/discovery/discovery-loader.ts` |
 | Download + cookies   | `core/download/download.ts`       |
 | Console service + entry point | `web/server/`            |
-| Console API contract | `web/api-types.ts`               |
+| Console API contract | `web/api-types.ts` (types + code vocabularies) |
 | Console page (Vue 3, built by Vite) | `web/src/`, `web/index.html` |
-| Console tooling (bundler, type program) | `web/vite.config.ts`, `web/tsconfig.web.json` |
+| Console tooling (bundler, design system, type program) | `web/vite.config.ts`, `web/uno.config.ts`, `web/tsconfig.web.json` |

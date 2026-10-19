@@ -125,7 +125,7 @@ function consoleOptions(argv: string[]): ConsoleOptions {
 
   const port = values.port === undefined ? DEFAULT_CONSOLE_PORT : Number(values.port)
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`--port must be a whole number in 0..65535, got ${values.port}`)
+    throw new Error(`--port 必须是 0..65535 之间的整数,收到的是 ${values.port}`)
   }
 
   return { port, open: !values['no-open'] }
@@ -144,7 +144,7 @@ function consoleOptions(argv: string[]): ConsoleOptions {
 async function ensureBundle(config: ConsoleConfig): Promise<void> {
   if (fs.existsSync(path.join(config.distDir, 'index.html'))) return
 
-  process.stdout.write('Building the page…\n')
+  process.stdout.write('正在构建页面…\n')
   const { build } = await import('vite')
   await build({ configFile: path.join(WEB_ROOT, 'vite.config.ts') })
 }
@@ -219,17 +219,15 @@ function installStopHandlers(deps: StopDeps): void {
       // to kill: saying it plainly beats pretending a stop happened.
       const ownsRun = deps.launcher.isAlive()
       const question = ownsRun
-        ? 'A Run is in flight. Stop it and the service? [y/N] '
-        : 'A Run is in flight, but this Console did not start it and has no child process to kill. Stop the service anyway? [y/N] '
+        ? '有一个 Run 正在运行。要停掉它和服务吗?[y/N] '
+        : '有一个 Run 正在运行,但本 WebUI 没有启动它、也没有可杀的子进程。还要停掉服务吗?[y/N] '
       if (!(await askYesNo(question))) {
-        process.stdout.write('Leaving the service and the Run running.\n')
+        process.stdout.write('保持服务与 Run 继续运行。\n')
         asking = false
         return
       }
       if (!ownsRun) {
-        process.stdout.write(
-          'This Console did not start that Run: only the service stops, and the Run may keep writing.\n',
-        )
+        process.stdout.write('本 WebUI 没有启动那个 Run:只有服务会停止,Run 可能继续写入。\n')
       }
     }
 
@@ -334,7 +332,7 @@ async function main(options: ConsoleOptions): Promise<void> {
   // Always the port actually bound: the preferred one is only a preference
   // (spec decision 3).
   if (service.fellBack) {
-    process.stdout.write(`Port ${options.port} was taken; bound ${service.port} instead.\n`)
+    process.stdout.write(`端口 ${options.port} 被占用,改用 ${service.port}。\n`)
   }
   process.stdout.write(`WebUI: ${service.url}\n`)
 
@@ -354,6 +352,6 @@ try {
 }
 
 main(options).catch(error => {
-  console.error('Fatal:', error)
+  console.error('致命错误:', error)
   process.exit(1)
 })

@@ -23,12 +23,12 @@
 import { DialogRoot, DialogTrigger } from 'reka-ui'
 import { computed, onMounted, ref } from 'vue'
 
-import type { ConsoleGalleryPayload, ConsoleGalleryRow } from '../api-types.js'
+import type { ConsoleGalleryPayload, ConsoleGalleryRow, ConsoleImageSize } from '../api-types.js'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
-import type { MessageKey } from './i18n/messages'
+import { GALLERY_ROW_STATE_MESSAGE_KEYS } from './i18n/messages'
 import { columnsOf } from './masonry'
 
 /**
@@ -42,7 +42,8 @@ const COLUMN_COUNT = 5
 
 /** The box an unmeasured tile reserves: a 3:4 portrait, the shape most are. */
 const PLACEHOLDER_BOX = '3 / 4'
-const PLACEHOLDER_HEIGHT = 4 / 3
+/** The same guess as a height-to-width ratio, which is what the columns add up. */
+const PLACEHOLDER_HEIGHT_RATIO = 4 / 3
 
 const gallery = ref<ConsoleGalleryPayload | null>(null)
 const failure = ref<string | null>(null)
@@ -75,13 +76,6 @@ onMounted(() => {
  * an image at all — otherwise the request is a guaranteed 400 per tile.
  */
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-
-/** The states as the page says them, key for key — a row state with no message is a compile error. */
-const STATE_LABEL_KEYS: Record<ConsoleGalleryRow['state'], MessageKey> = {
-  'on-disk': 'gallery.state.onDisk',
-  missing: 'gallery.state.missing',
-  'not-in-gallery': 'gallery.state.notInGallery',
-}
 
 /**
  * The tone a state that has no image reads in. `missing` is the fault — the
@@ -117,15 +111,15 @@ function isViewable(row: ConsoleGalleryRow): boolean {
 }
 
 /** The Mirror's measured size for a row, or `null` when there is not one. */
-function measuredSize(row: ConsoleGalleryRow): { width: number; height: number } | null {
+function measuredSize(row: ConsoleGalleryRow): ConsoleImageSize | null {
   const size = gallery.value?.sizes[row.name]
   return size !== undefined && size.width > 0 && size.height > 0 ? size : null
 }
 
-/** A tile's height for its width — what the columns are balanced against. */
-function heightOf(row: ConsoleGalleryRow): number {
+/** A tile's height-to-width ratio — what the columns are balanced against. */
+function heightRatioOf(row: ConsoleGalleryRow): number {
   const size = measuredSize(row)
-  return size === null ? PLACEHOLDER_HEIGHT : size.height / size.width
+  return size === null ? PLACEHOLDER_HEIGHT_RATIO : size.height / size.width
 }
 
 /**
@@ -139,7 +133,7 @@ function boxOf(row: ConsoleGalleryRow): string {
 }
 
 /** The wall: the rows in gallery order, dealt into the five columns. */
-const columns = computed(() => columnsOf(gallery.value?.rows ?? [], COLUMN_COUNT, heightOf))
+const columns = computed(() => columnsOf(gallery.value?.rows ?? [], COLUMN_COUNT, heightRatioOf))
 
 /**
  * A tile's thumbnail URL — the cache-backed route, with the token on it the way
@@ -172,12 +166,25 @@ function onViewerOpenChange(open: boolean): void {
 
 <template>
   <section class="pb-24">
-    <!-- The caption: the reading of the wall, not a panel. Every count and id
-         in it is a data cell and renders through `Message.vue`, which is what
-         puts it in the numeral role. -->
-    <div class="mb-8 flex flex-col gap-2">
+    <!-- The wall's head: the caption is the reading of the wall, not a panel,
+         and above it sits the position the site fills with a WALLPAPER type
+         image — filled here with real text and no image at all (ADR 0015,
+         story 20). The eyebrow tag carries the Chinese name of the view, so the
+         display mark leads and the reader still knows what this is. -->
+    <div class="mb-10 flex flex-col gap-4">
+      <h2
+        class="flex items-center gap-3 font-serif text-xs font-bold text-muted uppercase tracking-[0.35em]"
+      >
+        <span class="h-px w-10 bg-border" aria-hidden="true" />
+        {{ t('gallery.heading') }}
+      </h2>
+      <!-- The display mark: Playfair Display at display scale, in the site's
+           own logotype ink. A logotype is the same word in both locales, so it
+           is a dictionary key with one value rather than a translation. -->
+      <p class="font-serif text-7xl leading-none tracking-[0.12em] text-logotype">
+        {{ t('wall.mark') }}
+      </p>
       <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-        <h2 class="font-serif text-2xl font-bold">{{ t('gallery.heading') }}</h2>
         <p v-if="gallery !== null" class="text-secondary text-sm">
           <Message
             message="gallery.counts"
@@ -243,7 +250,9 @@ function onViewerOpenChange(open: boolean): void {
               :aria-label="t('gallery.tileNotOnDisk', { name: row.name })"
             >
               <span class="i-ph-image-light mx-auto text-xl text-muted" aria-hidden="true" />
-              <span :class="STATE_TONES[row.state]">{{ t(STATE_LABEL_KEYS[row.state]) }}</span>
+              <span :class="STATE_TONES[row.state]">{{
+                t(GALLERY_ROW_STATE_MESSAGE_KEYS[row.state])
+              }}</span>
               <code class="break-all text-[0.7rem] text-muted">{{ row.name }}</code>
             </div>
           </template>

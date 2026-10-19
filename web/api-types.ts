@@ -3,10 +3,11 @@
 // The page and the service share these payloads and nothing else. The module is
 // type-only in everything that describes a payload — no class, no `enum`, no
 // service logic — so the page's `import type` is erased and no service code
-// reaches the browser bundle (spec decision 27). The one exception is the code
-// vocabulary below: the codes the service can emit are runtime tuples, because
-// the dictionary test has to enumerate them to prove that each one has copy in
-// both locales (#47). They are data, not behaviour.
+// reaches the browser bundle (spec decision 27). The exception is the code
+// vocabularies: every code the service can emit — refusals, prerequisites,
+// explained reasons, verdicts and gallery row states — is a runtime tuple,
+// because the dictionary test has to enumerate them to prove that each one has
+// copy in both locales (#47). They are data, not behaviour.
 
 /** Which Run the Console is looking at (spec decision 16). */
 export type ConsoleRunState = 'idle' | 'running' | 'orphaned'
@@ -41,6 +42,10 @@ export type ExplainedReasonKind = (typeof EXPLAINED_REASON_KINDS)[number]
  * One routine class the verdict explained — structured data, not a sentence
  * (`core/report/run-log.ts` built `discoveryLeak: …` / `mirrorGap: extra N`
  * before #47). The page lays it out in the reader's language.
+ *
+ * The layering is why this restates core's `RunExplainedReason`: the page must
+ * not import `core/**`, so the shape is declared here and checked in
+ * `web/server/status.ts`.
  */
 export type ConsoleExplainedReason =
   | { kind: 'discovery-leak'; urls: string[] }
@@ -54,7 +59,10 @@ export interface ConsoleRefusal {
 }
 
 /** The three-state verdict `check-run` prints (core/report/run-log.ts). */
-export type ConsoleVerdict = 'clean' | 'explained' | 'defect'
+export const CONSOLE_VERDICTS = ['clean', 'explained', 'defect'] as const
+
+/** A verdict's stable code. */
+export type ConsoleVerdict = (typeof CONSOLE_VERDICTS)[number]
 
 /**
  * The Run report's defect block, verbatim (`RunReport['defects']`).
@@ -250,7 +258,10 @@ export interface ConsoleStatusPayload {
 }
 
 /** How a gallery row stands against the Mirror (spec decision 17). */
-export type ConsoleGalleryRowState = 'on-disk' | 'missing' | 'not-in-gallery'
+export const GALLERY_ROW_STATES = ['on-disk', 'missing', 'not-in-gallery'] as const
+
+/** A gallery row's stable state code. */
+export type ConsoleGalleryRowState = (typeof GALLERY_ROW_STATES)[number]
 
 /**
  * One Wallpaper's own pixel size (#48).

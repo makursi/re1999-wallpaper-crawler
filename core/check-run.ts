@@ -31,6 +31,7 @@ function line(text: string): void {
  * sentence.
  */
 function describeExplained(reason: RunExplainedReason): string {
+  // Layering: the terminal is English, the page's rows are the dictionary's copy.
   return reason.kind === 'discovery-leak'
     ? `discoveryLeak: ${reason.urls.join(', ')}`
     : `mirrorGap: extra ${reason.count}`

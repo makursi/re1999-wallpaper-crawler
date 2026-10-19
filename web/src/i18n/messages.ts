@@ -22,7 +22,13 @@
 // message-format syntax beyond `{name}`; a framework would add a runtime, a
 // plugin and a second way to name a string, and the page needs none of it.
 
-import type { ExplainedReasonKind, PrerequisiteCode, RefusalCode } from '../../api-types.js'
+import type {
+  ConsoleGalleryRowState,
+  ConsoleVerdict,
+  ExplainedReasonKind,
+  PrerequisiteCode,
+  RefusalCode,
+} from '../../api-types.js'
 
 /** The locales the page speaks, in the order the switch offers them. */
 export const LOCALES = ['zh-CN', 'en'] as const
@@ -108,6 +114,9 @@ const zhCN = {
   // The gallery: the official list read against the Mirror, and the three
   // states a row can be in.
   'gallery.heading': '官方清单',
+  // The wall's display mark: a logotype, not a phrase, so it is the same word
+  // in both locales and is translated nowhere (docs/adr/0015, story 20).
+  'wall.mark': 'WALLPAPER',
   'gallery.reading': '正在读取官方清单……',
   'gallery.counts': '官方清单有 {officialTotal} 条;镜像有 {mirrorCount} 个文件。',
   'gallery.notRead': '未读取到',
@@ -246,6 +255,7 @@ const en = {
   'orphan.refusedCleanup': 'the Console refused the cleanup (HTTP {status})',
 
   'gallery.heading': 'Gallery list',
+  'wall.mark': 'WALLPAPER',
   'gallery.reading': 'Reading the Gallery list…',
   'gallery.counts':
     'The Gallery list holds {officialTotal} entries; the Mirror holds {mirrorCount} files.',
@@ -323,6 +333,24 @@ export const PREREQUISITE_MESSAGE_KEYS: Record<PrerequisiteCode, MessageKey> = {
 export const EXPLAINED_REASON_MESSAGE_KEYS: Record<ExplainedReasonKind, MessageKey> = {
   'discovery-leak': 'run.explained.discoveryLeak',
   'mirror-gap-extra': 'run.explained.mirrorGapExtra',
+}
+
+/**
+ * The verdict → message key map. `clean | explained | defect` is already a code
+ * the service ships untouched; the reader's word for it is the page's
+ * (docs/adr/0014).
+ */
+export const VERDICT_MESSAGE_KEYS: Record<ConsoleVerdict, MessageKey> = {
+  clean: 'verdict.clean',
+  explained: 'verdict.explained',
+  defect: 'verdict.defect',
+}
+
+/** The gallery row state → message key map, same guarantee as the others. */
+export const GALLERY_ROW_STATE_MESSAGE_KEYS: Record<ConsoleGalleryRowState, MessageKey> = {
+  'on-disk': 'gallery.state.onDisk',
+  missing: 'gallery.state.missing',
+  'not-in-gallery': 'gallery.state.notInGallery',
 }
 
 const dictionaries: Record<Locale, Record<MessageKey, string>> = { 'zh-CN': zhCN, en }

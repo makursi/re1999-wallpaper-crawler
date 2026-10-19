@@ -167,7 +167,7 @@ _Avoid_: auth, login
 
 ### Console
 
-**Console (本地控制台(人类入口))**:
+**Console (本地控制台)**:
 The human entry point to this repository: one command starts a local service
 that serves a page in the browser. It starts a Run as a child process and never
 imports the pipeline; it knows Runs by reading the Run log directory rather than

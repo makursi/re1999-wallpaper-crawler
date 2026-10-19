@@ -124,14 +124,18 @@ core/                        — the crawler
     └── run-log.ts           — the reverse: parseRunReport + assessRun, the three-state verdict (unit-tested)
 web/                         — the Console, whole
 ├── index.html               — the page's entry document
-├── api-types.ts             — the type-only API contract the page and the service share
+├── api-types.ts             — the API contract the page and the service share: the payload types plus the code vocabularies (runtime tuples the dictionary test enumerates, ADR 0014)
+├── uno.config.ts            — the design system: UnoCSS presets, semantic tokens, preflight (ADR 0013)
 ├── vite.config.ts           — the page's bundler config (root = this directory, output web/dist/)
-├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts)
+├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts + uno.config.ts)
 ├── src/                     — the page (Vue 3): App.vue, the panels, the built-in token
+│   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
+│   └── masonry.ts           — the wall's five-column distribution, a pure function (unit-tested)
 └── server/                  — the service, and the one command that starts it
     ├── console.ts           — the entry point: build the page if absent, bind loopback, open it
     ├── server.ts            — loopback HTTP, token/Host/Origin guard, page + asset send
     ├── run-control.ts       — the Run launcher, the one-at-a-time rule, the stop decision
+    ├── image-sizes.ts       — the Wallpapers' own pixel sizes, read for the masonry (unit-tested)
     └── …                    — the readers (Run log, Gallery list, Mirror, thumbnails)
 tests/                       — mirrors the sources it tests
 ├── core/                    — the crawler's tests
@@ -144,7 +148,12 @@ tests/                       — mirrors the sources it tests
 │   └── report/
 │       ├── report.test.ts
 │       └── run-log.test.ts
-└── web/server/              — the Console service's tests (and their two helpers)
+└── web/                     — the Console's tests
+    ├── server/              — the service's tests (and their two helpers)
+    └── src/                 — the page's tests
+        ├── masonry.test.ts
+        └── i18n/
+            └── messages.test.ts
 scripts/
 ├── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
@@ -152,7 +161,7 @@ scripts/
 
 A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010).
 
-Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
+Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/masonry.ts` → `tests/web/src/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
 
 **Network-first design**: image URLs are captured via `page.on("response")` listening for `content-type: image/*`, _not_ from DOM scanning. DOM is only used to drive scrolling/clicking to trigger lazy loads.
 
@@ -281,8 +290,10 @@ commit on `main`: it must be refused.
   plus a handful of named rules. It replaced `@antfu/eslint-config` on
   2026-09-15 — see `HISTORY.md` for why, and for the rules deliberately kept
   (`eqeqeq` ignoring `!= null`, `import/no-unassigned-import` allowing
-  `dotenv/config`). `scripts/run-discovery.js` is the one deliberate exclusion,
-  for the reason above.
+  `dotenv/config`, `virtual:uno.css` and the `@fontsource-variable/*` families —
+  the virtual module *is* the stylesheet and a font import *is* its `@font-face`
+  rules, so neither has a binding to assign). `scripts/run-discovery.js` is the
+  one deliberate exclusion, for the reason above.
 - Format: **oxfmt** (`pnpm fmt` → `oxfmt`, `pnpm fmt:check` gates CI), configured
   in `.oxfmtrc.json`: no semicolons, single quotes, no parens on a sole arrow
   parameter, 100 columns, LF, sorted imports. Markdown is not formatted yet, and

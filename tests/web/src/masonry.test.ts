@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { columnsOf } from '../../web/src/masonry.js'
+import { columnsOf } from '../../../web/src/masonry.js'
 
 /** The tiles are their own heights here: the function under test takes a list. */
 const byHeight = (height: number): number => height
