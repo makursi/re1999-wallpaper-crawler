@@ -28,7 +28,7 @@ onMounted(() => {
 
 <template>
   <main>
-    <h1>Console</h1>
+    <h1>壁纸图鉴</h1>
     <p v-if="failure !== null">{{ failure }}</p>
     <p v-else-if="status === null">Reading the Mirror…</p>
     <p v-else>{{ status.mirrorCount }} Wallpapers in the Mirror</p>

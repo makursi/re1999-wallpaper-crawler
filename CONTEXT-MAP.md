@@ -22,7 +22,7 @@
   `web/api-types.ts` (the type-only API contract the service and the page
   share), `web/src/` (the page), and the page's tooling (`web/vite.config.ts`,
   `web/tsconfig.web.json`, and the artifacts they produce: `web/dist/`, the
-  thumbnail cache under `web/.console-cache/`); started by the `console` script.
+  thumbnail cache under `web/.console-cache/`); started by the `webui` script.
   Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `core/wallpaper-url.ts`, which both Discovery's output and

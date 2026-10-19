@@ -78,6 +78,23 @@ The numbers to look at:
 
 `AGENTS.md → Analyzing a run's logs` lists every field and the defect checks.
 
+## Viewing the Mirror in the browser
+
+```bash
+pnpm webui
+```
+
+The command builds the page if it is missing, binds it to loopback and opens it:
+a local view of the Mirror — the wallpapers you already have, what the Gallery
+list says the gallery holds, the newest Run's verdict, and a button to start
+one. Two flags: `--port` (the port to prefer; it falls back when that one is
+taken) and `--no-open` (print the URL instead of opening a browser).
+
+The URL carries a token minted for that start, and the service answers nothing
+without it. It never leaves loopback, and it writes neither the Mirror nor a Run
+log: it reads the Run log directory, the Gallery list and `images/`, and starts
+a Run as a child process.
+
 ## Configuration
 
 Only `BASE_ORIGIN` and `PAGE_PATH` are required. Everything else has a default,

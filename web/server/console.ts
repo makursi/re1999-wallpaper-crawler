@@ -329,7 +329,7 @@ async function main(options: ConsoleOptions): Promise<void> {
   if (service.fellBack) {
     process.stdout.write(`Port ${options.port} was taken; bound ${service.port} instead.\n`)
   }
-  process.stdout.write(`Console: ${service.url}\n`)
+  process.stdout.write(`WebUI: ${service.url}\n`)
 
   // The only stop control (ADR 0009): a signal asks while a Run is in flight,
   // and kills the whole tree when it goes ahead.
