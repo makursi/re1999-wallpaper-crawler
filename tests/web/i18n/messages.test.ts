@@ -10,10 +10,18 @@
 
 import { describe, expect, it } from 'vitest'
 
+import {
+  EXPLAINED_REASON_KINDS,
+  PREREQUISITE_CODES,
+  REFUSAL_CODES,
+} from '../../../web/api-types.js'
 import type { Locale, MessageKey } from '../../../web/src/i18n/messages.js'
 import {
   DEFAULT_LOCALE,
+  EXPLAINED_REASON_MESSAGE_KEYS,
   LOCALES,
+  PREREQUISITE_MESSAGE_KEYS,
+  REFUSAL_MESSAGE_KEYS,
   isLocale,
   messagesFor,
   translate,
@@ -105,5 +113,54 @@ describe('the locale dictionary', () => {
       { text: ' — verdict: ', name: null },
       { text: 'clean', name: 'verdict' },
     ])
+  })
+})
+
+/**
+ * The service's codes, and the page's words for them (#47).
+ *
+ * The contract exports the vocabularies as runtime tuples precisely so this loop
+ * can be exhaustive: a code added to `web/api-types.ts` without a message is a
+ * failure here, in both locales, not an English sentence discovered in a
+ * browser. The `Record<Code, MessageKey>` maps are what tie a code to a key at
+ * compile time; this is the data half of the same promise.
+ */
+describe('every service code has copy in both locales', () => {
+  const codeKeys: [string, MessageKey][] = [
+    ...REFUSAL_CODES.map((code): [string, MessageKey] => [
+      `refusal:${code}`,
+      REFUSAL_MESSAGE_KEYS[code],
+    ]),
+    ...PREREQUISITE_CODES.map((code): [string, MessageKey] => [
+      `prerequisite:${code}`,
+      PREREQUISITE_MESSAGE_KEYS[code],
+    ]),
+    ...EXPLAINED_REASON_KINDS.map((kind): [string, MessageKey] => [
+      `explained:${kind}`,
+      EXPLAINED_REASON_MESSAGE_KEYS[kind],
+    ]),
+  ]
+
+  it('covers the whole vocabulary the contract exports', () => {
+    // A mapping that dropped a code would be a `tsc` error; this states the
+    // intent from the other side, so a tuple that quietly lost a member fails.
+    expect(codeKeys).toHaveLength(
+      REFUSAL_CODES.length + PREREQUISITE_CODES.length + EXPLAINED_REASON_KINDS.length,
+    )
+    expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
+    expect([...PREREQUISITE_CODES]).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
+  })
+
+  it('resolves each code to written-out copy in zh-CN and en', () => {
+    for (const [code, key] of codeKeys) {
+      for (const locale of LOCALES) {
+        expect(translate(locale, key).trim(), `${code} in ${locale}`).not.toBe('')
+      }
+    }
+  })
+
+  it('gives every code its own message rather than sharing one', () => {
+    const keys = codeKeys.map(([, key]) => key)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })

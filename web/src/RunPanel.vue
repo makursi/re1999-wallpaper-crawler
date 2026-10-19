@@ -1,17 +1,51 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
-import type { ConsoleRunStartPayload, ConsoleStatusPayload, ConsoleVerdict } from '../api-types.js'
+import type {
+  ConsoleDefects,
+  ConsoleExplainedReason,
+  ConsoleRefusal,
+  ConsoleRunStartPayload,
+  ConsoleStatusPayload,
+  ConsoleVerdict,
+} from '../api-types.js'
 import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
-import type { MessageKey } from './i18n/messages'
+import { EXPLAINED_REASON_MESSAGE_KEYS } from './i18n/messages'
+import type { MessageKey, MessageParams } from './i18n/messages'
+import { describeRefusal } from './i18n/refusal'
 import OrphanPanel from './OrphanPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
-/** A refusal's own words, shown verbatim rather than swallowed. */
-const refusal = ref<string | null>(null)
+/**
+ * The last refusal, in the three shapes the page can meet one: the service's own
+ * code plus parameters (#47), an HTTP refusal whose body carried no code (the
+ * request guard's 403), and a transport error, which is a runtime message rather
+ * than copy (docs/adr/0014).
+ */
+type RefusalView =
+  | { kind: 'code'; refusal: ConsoleRefusal }
+  | { kind: 'status'; status: number }
+  | { kind: 'error'; message: string }
+
+const refusal = ref<RefusalView | null>(null)
 const starting = ref(false)
+
+/** One dictionary row: a message key and the values it interpolates. */
+interface MessageRow {
+  key: MessageKey
+  params?: MessageParams
+}
+
+/** The refusal as one sentence; `null` when there is none to show. */
+const refusalText = computed(() => {
+  const view = refusal.value
+  if (view === null) return null
+  if (view.kind === 'code') return describeRefusal(view.refusal)
+  if (view.kind === 'status') return t('run.refusedStart', { status: view.status })
+  return view.message
+})
 
 /**
  * The verdict's three codes, as the page says them. `check-run` prints the code
@@ -70,14 +104,52 @@ const downloadLine = computed(() => {
 })
 
 /**
- * The detected defects, verbatim from the Run report, as `check-run` prints them.
- * Ticket #47 gives these structured rows and the page their wording; until then
- * the record is shown as the report wrote it.
+ * The detected defects, as rows the page words itself (#47). The report's
+ * `defects` record is structured data already; what used to be printed as one
+ * JSON blob is named here class by class, in the reader's language.
  */
-const defects = computed(() => {
+const defectRows = computed<MessageRow[]>(() => {
   const report = status.value?.report
-  return report === null || report === undefined ? '' : JSON.stringify(report.defects)
+  return report === null || report === undefined ? [] : rowsOfDefects(report.defects)
 })
+
+/**
+ * One row per defect class the record actually reports. A `null` Mirror gap or
+ * Site asset check is "not checked" — never folded into "clean" — and gets its
+ * own row.
+ */
+function rowsOfDefects(defects: ConsoleDefects): MessageRow[] {
+  const rows: MessageRow[] = []
+  if (defects.discoveryLeak.count > 0) {
+    rows.push({ key: 'defect.discoveryLeak', params: { count: defects.discoveryLeak.count } })
+  }
+  if (defects.nonConverged) rows.push({ key: 'defect.nonConverged' })
+  if (defects.emptyResult) rows.push({ key: 'defect.emptyResult' })
+  if (defects.persistentFailures > 0) {
+    rows.push({ key: 'defect.persistentFailures', params: { count: defects.persistentFailures } })
+  }
+  if (defects.emptyFiles.length > 0) {
+    rows.push({ key: 'defect.emptyFiles', params: { files: defects.emptyFiles.join(', ') } })
+  }
+  if (defects.siteAssetFalsePositive === null) {
+    rows.push({ key: 'defect.siteAssetNotChecked' })
+  } else if (defects.siteAssetFalsePositive.count > 0) {
+    rows.push({
+      key: 'defect.siteAssetFalsePositive',
+      params: { count: defects.siteAssetFalsePositive.count },
+    })
+  }
+  if (defects.gallerySourceUnavailable) rows.push({ key: 'defect.gallerySourceUnavailable' })
+  if (defects.mirrorGap === null) {
+    rows.push({ key: 'defect.mirrorGapNotChecked' })
+  } else if (defects.mirrorGap.missing > 0) {
+    rows.push({ key: 'defect.mirrorGapMissing', params: { count: defects.mirrorGap.missing } })
+  }
+  if (defects.mirrorGap !== null && defects.mirrorGap.extra > 0) {
+    rows.push({ key: 'defect.mirrorGapExtra', params: { count: defects.mirrorGap.extra } })
+  }
+  return rows
+}
 
 /**
  * Why there is no verdict to show. A missing Run report is a defect in the log
@@ -119,14 +191,23 @@ const why = computed(() =>
 )
 
 /**
- * The routine classes an `explained` verdict was made of, named the way
- * `check-run` names them. Still the service's own English strings — ticket #47
- * turns them into codes the page can say (docs/adr/0014).
+ * The routine classes an `explained` verdict was made of, as dictionary rows.
+ * The verdict carries them as structured reasons (#47) with English field names;
+ * the page says each kind in the reader's language.
  */
-const explainedCauses = computed(() => {
+const explainedCauses = computed<MessageRow[]>(() => {
   const payload = status.value
-  return payload?.verdict === 'explained' ? (payload.verdictReasons?.explained ?? []) : []
+  if (payload?.verdict !== 'explained') return []
+  return (payload.verdictReasons?.explained ?? []).map(explainedRow)
 })
+
+/** One explained reason, as the message that words it. */
+function explainedRow(reason: ConsoleExplainedReason): MessageRow {
+  const key = EXPLAINED_REASON_MESSAGE_KEYS[reason.kind]
+  return reason.kind === 'discovery-leak'
+    ? { key, params: { urls: reason.urls.join(', ') } }
+    : { key, params: { count: reason.count } }
+}
 
 /** The status poll's handle; `null` when the page is not polling. */
 let timer: ReturnType<typeof setInterval> | null = null
@@ -171,15 +252,23 @@ async function startRun(): Promise<void> {
     })
     const body = (await response.json()) as ConsoleRunStartPayload
     if (!response.ok || !body.started) {
-      // A refusal's reason is the service's prose, verbatim, until ticket #47
-      // replaces it with a code this page can say in either language.
-      refusal.value = body.reason ?? t('run.refusedStart', { status: response.status })
+      // The service sends a code and its parameters; the sentence is the
+      // dictionary's, in the reader's language (#47). A body without one is an
+      // HTTP refusal (the guard's 403), named by its status instead.
+      refusal.value =
+        body.refusal != null
+          ? { kind: 'code', refusal: body.refusal }
+          : { kind: 'status', status: response.status }
       return
     }
     // The Run's identity is its log, so it is read back rather than assumed.
     await readStatus()
   } catch (error) {
-    refusal.value = error instanceof Error ? error.message : String(error)
+    // A transport failure is a runtime message, not copy (docs/adr/0014).
+    refusal.value = {
+      kind: 'error',
+      message: error instanceof Error ? error.message : String(error),
+    }
   } finally {
     starting.value = false
   }
@@ -225,19 +314,28 @@ onUnmounted(stopPolling)
              whose record reads clean still has one of these to show
              (#34 story 11). -->
         <p v-if="why !== ''" class="text-muted text-sm">{{ why }}</p>
+        <!-- The routine classes the verdict explained, each a dictionary
+             message: the service sends structured reasons, never a sentence. -->
         <template v-if="explainedCauses.length > 0">
           <p class="text-muted text-sm">{{ t('run.explained') }}</p>
           <ul class="list-disc pl-4 text-muted text-sm">
-            <li v-for="cause in explainedCauses" :key="cause">{{ cause }}</li>
+            <li v-for="cause in explainedCauses" :key="cause.key">
+              <Message :message="cause.key" :params="cause.params" />
+            </li>
           </ul>
         </template>
         <p v-if="status.report === null" class="text-danger">{{ missingReport }}</p>
         <template v-else>
           <p><Message message="run.gallery" :params="{ line: galleryLine }" /></p>
           <p><Message message="run.download" :params="{ line: downloadLine }" /></p>
-          <p>
-            {{ t('run.defects') }} <code class="break-all">{{ defects }}</code>
-          </p>
+          <!-- The defect block as rows the page words, not the raw record. -->
+          <p>{{ t('run.defects') }}</p>
+          <ul v-if="defectRows.length > 0" class="list-disc pl-4 text-muted text-sm">
+            <li v-for="row in defectRows" :key="row.key">
+              <Message :message="row.key" :params="row.params" />
+            </li>
+          </ul>
+          <p v-else class="text-muted text-sm">{{ t('defect.none') }}</p>
         </template>
       </template>
     </template>
@@ -254,6 +352,6 @@ onUnmounted(stopPolling)
         <span class="i-ph-play mr-1" aria-hidden="true" />{{ t('run.start') }}
       </button>
     </p>
-    <p v-if="refusal !== null" class="text-danger">{{ refusal }}</p>
+    <p v-if="refusalText !== null" class="text-danger">{{ refusalText }}</p>
   </section>
 </template>

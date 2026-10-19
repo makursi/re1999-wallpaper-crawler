@@ -22,6 +22,8 @@
 // message-format syntax beyond `{name}`; a framework would add a runtime, a
 // plugin and a second way to name a string, and the page needs none of it.
 
+import type { ExplainedReasonKind, PrerequisiteCode, RefusalCode } from '../../api-types.js'
+
 /** The locales the page speaks, in the order the switch offers them. */
 export const LOCALES = ['zh-CN', 'en'] as const
 
@@ -51,10 +53,9 @@ const zhCN = {
   'language.chinese': '中文',
   'language.english': 'English',
 
-  // The Run panel. The values that come from the service — the verdict's own
-  // reasons and the defect names — are still its English prose until ticket #47
-  // turns them into codes (docs/adr/0014); what is here is the panel's own
-  // words around them.
+  // The Run panel. Every value the service used to send as prose is now a code
+  // (#47); what is here is the panel's own words, and the code → message maps
+  // at the bottom of this file hold each service code to its copy.
   'run.heading': '运行',
   'run.readingLog': '正在读取运行日志……',
   'run.inFlight': '有一个运行正在进行:{progress}。',
@@ -116,6 +117,44 @@ const zhCN = {
   'viewer.galleryId': '官方 id {id}',
   'viewer.close': '关闭(Esc)',
   'viewer.missingFile': '该文件已不在镜像中。',
+
+  // ── The service's codes (#47) ─────────────────────────────────────
+  //
+  // The service stops writing prose and starts emitting a stable code plus its
+  // parameters; these are the page's words for them, in both languages. The
+  // `Record<Code, MessageKey>` maps below are what tie a code to a key at
+  // compile time, and the dictionary test walks the contract's vocabularies to
+  // prove every code resolves here. The refusal sentences explain the rule;
+  // the prerequisite names are what the reader has to install.
+
+  'refusal.runBusy':
+    '已有一个运行正在进行:管线第一步就会清理并删除唯一的浏览器会话,两个运行同时进行会互相摧毁状态。',
+  'refusal.orphanedRun':
+    '存在一个孤儿运行:它的运行日志没有运行报告,且是最近写入的,所以它可能仍在写入。如果它只是残留,请先在页面上清理;之后才能开始新的运行。',
+  'refusal.missingPrerequisite': '缺少前置条件:{missing}',
+
+  'prerequisite.playwrightCli': '@playwright/cli(全局命令行工具)',
+  'prerequisite.chrome': 'Chrome 浏览器',
+  'prerequisite.envFile': '.env 配置文件',
+  'prerequisite.tsxEntry': 'tsx 入口(node_modules/tsx/dist/cli.mjs)',
+
+  'run.explained.discoveryLeak': '发现泄漏,但全部由站点资源解释:{urls}',
+  'run.explained.mirrorGapExtra': '镜像里有 {count} 个文件已不在官方清单中',
+
+  // The Run report's defect block, as rows: the page names each class and lays
+  // the values out, instead of printing the raw record.
+  'defect.none': '未发现缺陷。',
+  'defect.discoveryLeak': '发现泄漏:{count} 个 URL',
+  'defect.nonConverged': '发现未收敛',
+  'defect.emptyResult': '发现结果为空',
+  'defect.persistentFailures': '持续失败:{count} 个',
+  'defect.emptyFiles': '空文件:{files}',
+  'defect.siteAssetNotChecked': '站点资源误报检查:未检查',
+  'defect.siteAssetFalsePositive': '站点资源被误判为壁纸:{count} 个',
+  'defect.gallerySourceUnavailable': '官方清单读取失败',
+  'defect.mirrorGapNotChecked': '镜像缺口:未检查',
+  'defect.mirrorGapMissing': '镜像缺口:官方清单中有 {count} 张壁纸不在镜像里',
+  'defect.mirrorGapExtra': '镜像缺口:镜像里有 {count} 个文件已不在官方清单中',
 } as const
 
 /**
@@ -204,7 +243,61 @@ const en = {
   'viewer.galleryId': 'Gallery id {id}',
   'viewer.close': 'Close (Esc)',
   'viewer.missingFile': 'That file is no longer in the Mirror.',
+
+  'refusal.runBusy':
+    "A Run is already in flight: the pipeline clears and deletes its one persistent Browser session as its first step, so two concurrent Runs would destroy each other's state.",
+  'refusal.orphanedRun':
+    'An Orphaned Run is present: its Run log has no Run report and was written recently, so it may still be writing. Clean it up from the page if it is a leftover; a new Run starts after that.',
+  'refusal.missingPrerequisite': 'missing prerequisites: {missing}',
+
+  'prerequisite.playwrightCli': '@playwright/cli (the global command-line tool)',
+  'prerequisite.chrome': 'Chrome',
+  'prerequisite.envFile': 'the .env file',
+  'prerequisite.tsxEntry': 'the tsx entry (node_modules/tsx/dist/cli.mjs)',
+
+  'run.explained.discoveryLeak':
+    'discovery leak, wholly accounted for by the Site asset list: {urls}',
+  'run.explained.mirrorGapExtra': 'mirror gap: {count} extra files not in the gallery any more',
+
+  'defect.none': 'No defects found.',
+  'defect.discoveryLeak': 'discovery leak: {count} URLs',
+  'defect.nonConverged': 'discovery did not converge',
+  'defect.emptyResult': 'discovery returned nothing',
+  'defect.persistentFailures': 'persistent failures: {count}',
+  'defect.emptyFiles': 'empty files: {files}',
+  'defect.siteAssetNotChecked': 'Site asset false-positive check: not checked',
+  'defect.siteAssetFalsePositive': 'Site assets mistaken for Wallpapers: {count}',
+  'defect.gallerySourceUnavailable': 'the Gallery list could not be read',
+  'defect.mirrorGapNotChecked': 'Mirror gap: not checked',
+  'defect.mirrorGapMissing': 'Mirror gap: {count} listed Wallpapers missing from the Mirror',
+  'defect.mirrorGapExtra': 'Mirror gap: {count} extra Mirror files not in the gallery any more',
 } satisfies Record<MessageKey, string>
+
+/**
+ * The refusal code → message key map (#47). `Record<RefusalCode, MessageKey>`
+ * is what makes a code without copy a `tsc` error; the dictionary test walks
+ * the contract's own tuples and checks the other half — that each key resolves
+ * to written-out text in both locales.
+ */
+export const REFUSAL_MESSAGE_KEYS: Record<RefusalCode, MessageKey> = {
+  'run-busy': 'refusal.runBusy',
+  'orphaned-run': 'refusal.orphanedRun',
+  'missing-prerequisite': 'refusal.missingPrerequisite',
+}
+
+/** The prerequisite code → message key map (#47), same guarantee as above. */
+export const PREREQUISITE_MESSAGE_KEYS: Record<PrerequisiteCode, MessageKey> = {
+  'playwright-cli': 'prerequisite.playwrightCli',
+  chrome: 'prerequisite.chrome',
+  'env-file': 'prerequisite.envFile',
+  'tsx-entry': 'prerequisite.tsxEntry',
+}
+
+/** The explained reason kind → message key map (#47). */
+export const EXPLAINED_REASON_MESSAGE_KEYS: Record<ExplainedReasonKind, MessageKey> = {
+  'discovery-leak': 'run.explained.discoveryLeak',
+  'mirror-gap-extra': 'run.explained.mirrorGapExtra',
+}
 
 const dictionaries: Record<Locale, Record<MessageKey, string>> = { 'zh-CN': zhCN, en }
 

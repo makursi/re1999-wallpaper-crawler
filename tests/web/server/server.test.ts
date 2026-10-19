@@ -98,7 +98,7 @@ async function serve(overrides: Partial<ConsoleServerDeps> = {}): Promise<Consol
   const service = await startConsoleServer(fixture(), {
     runState: () => IDLE_RUN_FACTS,
     galleryFacts: () => UNREAD_GALLERY_FACTS,
-    startRun: async () => ({ started: false, reason: 'starting a Run is not implemented yet' }),
+    startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
     token: TOKEN,
     port: 0,
     ...overrides,

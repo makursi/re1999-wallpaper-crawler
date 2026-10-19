@@ -370,8 +370,7 @@ async function handleRequest(
       return
     }
     const result = await deps.startRun()
-    const payload: ConsoleRunStartPayload = { started: result.started, reason: result.reason }
-    if (result.missing !== undefined) payload.missing = result.missing
+    const payload: ConsoleRunStartPayload = { started: result.started, refusal: result.refusal }
     sendJson(res, result.status ?? (result.started ? 202 : 409), payload)
     return
   }
@@ -398,7 +397,7 @@ async function handleRequest(
     const cleaned = await deps.cleanupRun()
     const payload: ConsoleRunCleanupPayload = {
       cleaned: cleaned.cleaned,
-      reason: cleaned.reason,
+      refusal: cleaned.refusal,
     }
     sendJson(res, cleaned.status ?? (cleaned.cleaned ? 200 : 409), payload)
     return

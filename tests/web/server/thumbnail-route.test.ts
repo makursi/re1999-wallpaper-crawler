@@ -96,7 +96,7 @@ async function serve(
   const service = await startConsoleServer(built.config, {
     runState: () => IDLE_RUN_FACTS,
     galleryFacts: () => UNREAD_GALLERY_FACTS,
-    startRun: async () => ({ started: false, reason: 'starting a Run is not implemented yet' }),
+    startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
     token: TOKEN,
     port: 0,
     ...overrides,

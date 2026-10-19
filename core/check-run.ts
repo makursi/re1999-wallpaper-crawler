@@ -15,13 +15,25 @@ import process from 'node:process'
 import { GALLERY_STATE_FILE, LOG_DIR } from './config.js'
 import { readGalleryState } from './gallery/gallery-state.js'
 import type { RunReport } from './report/report.js'
-import type { RunVerdict } from './report/run-log.js'
+import type { RunExplainedReason, RunVerdict } from './report/run-log.js'
 import { assessRun, logRunIdOf, parseRunReport, runReportRecordPresent } from './report/run-log.js'
 import { createFileProbe, newestRunLogPath } from './run-log-file.js'
 
 /** One line of the verdict, on stdout, so the output can be piped and read. */
 function line(text: string): void {
   process.stdout.write(`${text}\n`)
+}
+
+/**
+ * One explained reason, as this command prints it. The verdict carries the
+ * reason as data (#47) and this is the terminal's own format of it — the page
+ * formats the same value in its reader's language, and the two never share a
+ * sentence.
+ */
+function describeExplained(reason: RunExplainedReason): string {
+  return reason.kind === 'discovery-leak'
+    ? `discoveryLeak: ${reason.urls.join(', ')}`
+    : `mirrorGap: extra ${reason.count}`
 }
 
 /**
@@ -125,7 +137,7 @@ function printVerdict({ verdict, reading, report, recordPresent, stateRunId }: R
   line(JSON.stringify(report.defects))
   if (verdict.explained.length > 0) {
     line('Explained (routine, recorded rather than failed):')
-    for (const item of verdict.explained) line(`  - ${item}`)
+    for (const item of verdict.explained) line(`  - ${describeExplained(item)}`)
   }
   line(`Claimed new files missing on disk : ${verdict.missingOnDisk.length}`)
   for (const filename of verdict.missingOnDisk) line(`  - ${filename}`)

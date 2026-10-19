@@ -7,7 +7,8 @@ all in the page: the service sent finished sentences (`BUSY_REASON`,
 `ORPHANED_RUN_REASON`, `missing prerequisite(s): …`) and the page rendered them
 verbatim, so the copy lived in two processes and neither could be translated
 alone. Spec #43 makes the interface Chinese-first. This ADR records the
-mechanism and the split it forces; ticket #47 records the half the service owes.
+mechanism and the split it forces; ticket #47 landed the half the service owed
+and the contract it landed on is described below.
 
 - **The dictionary is hand-rolled, typed data.** `web/src/i18n/messages.ts` holds
   one object per locale and a `translate` lookup — no runtime, no plugin, no
@@ -49,15 +50,33 @@ mechanism and the split it forces; ticket #47 records the half the service owes.
   effect that applies both runs at module load, so a remembered choice is
   applied to the document `web/index.html` served with `zh-CN` and 壁纸图鉴
   before anything renders.
-- **The service emits codes; the page owns every word.** The contract
-  (`web/api-types.ts`) is being turned into stable codes plus parameters —
-  `run-busy` / `orphaned-run` / `missing-prerequisite`, the prerequisite names
-  as codes, and `verdictReasons` as structured objects — and the page maps each
-  to a message. **That is ticket #47**, and this ADR records it as part of the
-  same decision rather than a separate one: one of the two processes must own
-  the words, and it is the one that knows what language the reader chose. The
-  `clean | explained | defect` verdict was already a code, so this ticket maps
-  it (`verdict.clean` …) and nothing else on that path changed.
+- **The service emits codes; the page owns every word.** Ticket #47 landed it.
+  The contract (`web/api-types.ts`) carries stable codes plus parameters and no
+  sentence: a start or a cleanup refusal is `{ code, missing }`, `code` one of
+  `run-busy` / `orphaned-run` / `missing-prerequisite` and `missing` the
+  prerequisite codes (`playwright-cli` / `chrome` / `env-file` / `tsx-entry`);
+  the verdict's own reasons are structured objects
+  (`{ kind: 'discovery-leak', urls }`, `{ kind: 'mirror-gap-extra', count }`)
+  rather than the pre-formatted `discoveryLeak: …` / `mirrorGap: extra N`
+  strings `core/report/run-log.ts` used to build; the Run report's `defects`
+  block was already structured, and the page now renders it as translated rows
+  instead of one raw JSON blob. The `clean | explained | defect` verdict was
+  already a code, and the page maps it (`verdict.clean` …). One of the two
+  processes must own the words, and it is the one that knows what language the
+  reader chose.
+- **The code vocabulary is runtime data in the contract, on purpose.** The
+  unions `RefusalCode`, `PrerequisiteCode` and `ExplainedReasonKind` are derived
+  from the `const` tuples `REFUSAL_CODES`, `PREREQUISITE_CODES` and
+  `EXPLAINED_REASON_KINDS`, exported so the dictionary test can enumerate them.
+  `messages.ts` holds `Record<Code, MessageKey>` maps, which make a code without
+  copy a `tsc` error; the test walks the tuples and checks the data half — a
+  written-out message for every code in both locales. The rest of
+  `api-types.ts` stays type-only, so an `import type` is still erased and no
+  service code reaches the browser bundle (spec decision 27). The page's one
+  place that turns a refusal into a sentence is `web/src/i18n/refusal.ts`, which
+  is also what re-words a refusal already on screen when the switch moves.
+  `core/check-run.ts` is the terminal's formatter of the same structured
+  reasons; it is the agent's half and stays English.
 - **The interface is still dark only** (ADR 0013). The language switch is the
   page's only preference; a light theme would still be a value change, not a
   rewrite, and no message carries a colour or a layout.
@@ -94,10 +113,11 @@ mechanism and the split it forces; ticket #47 records the half the service owes.
 ## Consequences
 
 - Every user-visible string in `web/src/*.vue` and `web/index.html` resolves
-  through the dictionary; the only remaining English the page shows is the
-  service's prose (the refusal reasons, the `explained` verdict reasons and the
-  raw `defects` block), which ticket #47 converts, plus runtime error messages
-  (`HTTP 500`), which are not copy.
+  through the dictionary. Since #47 no English prose from the service reaches
+  the page at all: the refusal codes, the prerequisite codes, the `explained`
+  verdict reasons and the `defects` rows are all messages. What remains outside
+  the dictionary is runtime error text (`HTTP 500`, a transport failure), which
+  is not copy.
 - Two sentences that used to bold a number inline — the Mirror/Gallery counts
   and the Run verdict line — are now whole parameterised messages, because
   emphasis inside a sentence would mean markup in the dictionary. Nothing else

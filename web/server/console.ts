@@ -38,7 +38,6 @@ import {
   createRunCleaner,
   createRunLauncher,
   createRunStarter,
-  ORPHANED_RUN_REASON,
   stopDecision,
 } from './run-control.js'
 import { createRunLogSource } from './run-log-source.js'
@@ -294,7 +293,7 @@ async function main(options: ConsoleOptions): Promise<void> {
     // persistent Browser session, so neither may be started over; the reason
     // the page shows differs, because the actions differ.
     isRunInFlight: () => runLogSource.facts().state !== 'idle',
-    busyReason: () => (runLogSource.facts().state === 'orphaned' ? ORPHANED_RUN_REASON : null),
+    refusalCode: () => (runLogSource.facts().state === 'orphaned' ? 'orphaned-run' : null),
     missingPrerequisites: () => missingPrerequisites({ projectRoot: config.projectRoot }),
   })
   const cleanupRun = createRunCleaner({

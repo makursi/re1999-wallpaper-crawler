@@ -64,7 +64,7 @@ async function serve(
     galleryFacts: async () => galleryFactsOf(await source.get()),
     galleryList: source,
     newSinceLastRun: () => 12,
-    startRun: async () => ({ started: false, reason: 'starting a Run is not implemented yet' }),
+    startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
     token: TOKEN,
     port: 0,
     ...overrides,
@@ -157,7 +157,7 @@ describe('the gallery route without a list source', () => {
     const service = await startConsoleServer(fixture(), {
       runState: () => IDLE_RUN_FACTS,
       galleryFacts: async () => galleryFactsOf(await source.get()),
-      startRun: async () => ({ started: false, reason: 'not implemented yet' }),
+      startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
       token: TOKEN,
       port: 0,
     })

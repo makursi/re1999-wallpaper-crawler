@@ -27,6 +27,16 @@ export type RunDefects = RunReport['defects']
 export type VerdictState = 'clean' | 'explained' | 'defect'
 
 /**
+ * One routine defect class the verdict explained — structured data, not a
+ * sentence (#47). `check-run` formats these for its terminal output; the page
+ * formats the same values in the reader's language, and neither owns the other's
+ * words.
+ */
+export type RunExplainedReason =
+  | { kind: 'discovery-leak'; urls: string[] }
+  | { kind: 'mirror-gap-extra'; count: number }
+
+/**
  * The verdict: not a boolean, because the runbook asks the operator to judge
  * facts (numbers, defects, the state match) that a boolean would throw away.
  */
@@ -41,8 +51,8 @@ export interface RunVerdict {
   missingOnDisk: string[]
   /** The Run report's defect block, verbatim, so the verdict cannot disagree with the log. */
   defects: RunDefects | null
-  /** The routine defect classes that were detected, named. */
-  explained: string[]
+  /** The routine defect classes that were detected, as structured reasons. */
+  explained: RunExplainedReason[]
 }
 
 /**
@@ -247,13 +257,19 @@ function leakAccountedFor(defects: RunDefects, siteAssetUrls: readonly string[])
   return leaked.length > 0 && leaked.every(url => siteAssetUrls.includes(url))
 }
 
-/** The routine classes that were detected, named for the output. */
-function explainedDefects(defects: RunDefects, siteAssetUrls: readonly string[]): string[] {
-  const named: string[] = []
+/**
+ * The routine classes that were detected, as structured reasons. Data, not
+ * prose: `check-run` is one formatter and the page is another (`#47`).
+ */
+function explainedDefects(
+  defects: RunDefects,
+  siteAssetUrls: readonly string[],
+): RunExplainedReason[] {
+  const named: RunExplainedReason[] = []
   if (leakAccountedFor(defects, siteAssetUrls))
-    named.push(`discoveryLeak: ${defects.discoveryLeak.urls.join(', ')}`)
+    named.push({ kind: 'discovery-leak', urls: [...defects.discoveryLeak.urls] })
   if (defects.mirrorGap !== null && defects.mirrorGap.extra > 0)
-    named.push(`mirrorGap: extra ${defects.mirrorGap.extra}`)
+    named.push({ kind: 'mirror-gap-extra', count: defects.mirrorGap.extra })
   return named
 }
 
