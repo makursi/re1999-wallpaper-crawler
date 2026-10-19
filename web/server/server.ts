@@ -416,7 +416,7 @@ async function handleRequest(
   }
 
   if (url.pathname.startsWith(ASSET_PREFIX)) {
-    sendAsset(res, config.distDir, url.pathname)
+    sendAsset(res, config.distDir, url.pathname, deps.token)
     return
   }
 
@@ -436,7 +436,9 @@ async function handleRequest(
  * 3. **Token** has to be the one this start generated. It is the only defence
  *    a `no-cors` GET or a markup subresource leaves, so it is required on
  *    every request, assets included — which is why `sendPage` rewrites the
- *    built page's asset URLs to carry it.
+ *    built page's asset URLs to carry it, and `rewriteStylesheet` does the same
+ *    for the `url()` references inside the built stylesheet, which a browser
+ *    does not resolve with the stylesheet's own query string.
  */
 function isAuthorized(req: http.IncomingMessage, url: URL, port: number, token: string): boolean {
   const host = (req.headers.host ?? '').toLowerCase()
@@ -490,15 +492,87 @@ function sendPage(res: http.ServerResponse, distDir: string, token: string): voi
   const body = html.replace(
     /(src|href)="\.\/(assets\/[^"]+)"/g,
     (_match, attribute: string, assetPath: string) =>
-      `${attribute}="./${assetPath}?token=${encodeURIComponent(token)}"`,
+      `${attribute}="${withToken(`./${assetPath}`, token)}"`,
   )
 
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' })
   res.end(body)
 }
 
+/**
+ * Append this start's token to one relative reference — the one place the
+ * rewrite's two halves (the page's markup and the stylesheet's `url()`) agree on
+ * what "carry the token" means.
+ *
+ * `?` when the reference has no query, `&` when it already has one, and
+ * unchanged when it already carries a `token` parameter — so a second pass over
+ * the same reference cannot produce `?token=…?token=…` or `?v=2?token=…`.
+ *
+ * A `#fragment` stays last: `url(./sprite.svg#icon)` has to become
+ * `./sprite.svg?token=<t>#icon`, because a browser never sends a fragment to the
+ * server and a token placed after the `#` would arrive as nothing at all.
+ */
+function withToken(reference: string, token: string): string {
+  const hash = reference.indexOf('#')
+  const target = hash === -1 ? reference : reference.slice(0, hash)
+  const fragment = hash === -1 ? '' : reference.slice(hash)
+
+  const query = target.indexOf('?')
+  if (query !== -1) {
+    const parameters = new URLSearchParams(target.slice(query + 1))
+    if (parameters.has('token')) return reference
+  }
+  const separator = query === -1 ? '?' : '&'
+  return `${target}${separator}token=${encodeURIComponent(token)}${fragment}`
+}
+
+/**
+ * The `url()` references a stylesheet resolves itself, in either quoting style:
+ * `url(./x.woff2)`, `url("./x.woff2")` and `url('./x.woff2')`.
+ *
+ * Only `./`-relative references are matched. That is exactly what Vite emits
+ * with `base: './'`, and it is what leaves the other three forms a stylesheet
+ * can hold untouched: an absolute `url(https://…)`, an inline `url(data:…)` and
+ * a document fragment `url(#mask)` — none of which a token belongs on.
+ */
+const CSS_URL_REFERENCE = /url\(\s*(?:(["'])\.\/([^"']*)\1|\.\/([^)"'\s]*))\s*\)/g
+
+/**
+ * Serve a stylesheet with the token appended to every relative `url()` it
+ * embeds, for the same reason the page's markup gets one — and one the page's
+ * rewrite cannot reach.
+ *
+ * A browser resolving a relative `url()` inside a stylesheet does **not**
+ * inherit the stylesheet's own query string: it resolves against the
+ * stylesheet's URL with the query dropped. So `index-<hash>.css?token=<t>`
+ * pointing at `url(./font.woff2)` made the browser request
+ * `/assets/font.woff2` with no token, and the guard refused all 16 webfonts
+ * while `document.fonts` reported 110 declared faces and none loaded. The
+ * token has to be written into the reference itself.
+ *
+ * This covers every asset a stylesheet can embed, not just fonts: a
+ * `background-image`, a mask, a cursor — anything `url()` can name.
+ */
+function rewriteStylesheet(css: string, token: string): string {
+  return css.replace(
+    CSS_URL_REFERENCE,
+    (match: string, quote: string, quoted: string, bare: string) => {
+      const reference = quoted === undefined ? bare : quoted
+      const rewritten = withToken(`./${reference}`, token)
+      // Keep the reference's original quoting, so the served stylesheet differs
+      // from the built one only in the token.
+      return quote === undefined ? `url(${rewritten})` : `url(${quote}${rewritten}${quote})`
+    },
+  )
+}
+
 /** Serve one built asset from the page's `assets/`, refusing anything outside it. */
-function sendAsset(res: http.ServerResponse, distDir: string, pathname: string): void {
+function sendAsset(
+  res: http.ServerResponse,
+  distDir: string,
+  pathname: string,
+  token: string,
+): void {
   const assetsDir = path.join(distDir, 'assets')
   let name: string
   try {
@@ -525,13 +599,20 @@ function sendAsset(res: http.ServerResponse, distDir: string, pathname: string):
     return
   }
 
+  const contentType = CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream'
+  // A stylesheet is the one asset that names other assets, and the browser will
+  // not lend it its query string — so its references are handed the token here.
+  const payload = contentType.startsWith('text/css')
+    ? rewriteStylesheet(body.toString('utf8'), token)
+    : body
+
   res.writeHead(200, {
-    'content-type': CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream',
+    'content-type': contentType,
     // Vite's asset names carry a content hash, so a year-long cache is honest.
     'cache-control': 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
   })
-  res.end(body)
+  res.end(payload)
 }
 
 function sendJson(

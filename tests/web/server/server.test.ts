@@ -13,6 +13,32 @@ import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
 /** The names Vite emits: one content hash per asset, referenced relatively. */
 const ASSET_JS = 'assets/index-BO_xJMyK.js'
 const ASSET_CSS = 'assets/index-3uP6b3CG.css'
+/**
+ * Two files the stylesheet points at, the way Vite's font and image plugins emit
+ * them: named relatively to the stylesheet itself, both sitting beside it in
+ * `assets/`. The service must not care what the extension is.
+ */
+const FONT_FILE = 'geist-latin-wght-normal-BgDaEnEv.woff2'
+const HERO_FILE = 'paper-Dd1a2b3c.png'
+
+/**
+ * A stylesheet shaped like the built one: a font face and a background image
+ * referenced relatively, beside references the service must leave alone.
+ */
+const STYLESHEET = `@font-face {
+  font-family: 'Geist Variable';
+  src: url(./${FONT_FILE}) format('woff2');
+}
+
+.hero { background-image: url("./${HERO_FILE}") }
+.versioned { background-image: url(./${HERO_FILE}?v=2) }
+.fragmented { background-image: url(./${HERO_FILE}#tile) }
+.remote { background-image: url(https://cdn.example/remote.woff2) }
+.inline { background-image: url(data:image/png;base64,AAAA) }
+.mask { mask-image: url(#mask) }
+
+body { margin: 0 }
+`
 
 const INDEX_HTML = `<!doctype html>
 <html lang="en">
@@ -58,7 +84,12 @@ function fixture(): ConsoleConfig {
   fs.mkdirSync(path.join(config.distDir, 'assets'), { recursive: true })
   fs.writeFileSync(path.join(config.distDir, 'index.html'), INDEX_HTML)
   fs.writeFileSync(path.join(config.distDir, ASSET_JS), 'export {}\n')
-  fs.writeFileSync(path.join(config.distDir, ASSET_CSS), 'body { margin: 0 }\n')
+  fs.writeFileSync(path.join(config.distDir, ASSET_CSS), STYLESHEET)
+  // The two files the stylesheet points at: a font and an image, both beside it
+  // in `assets/`. The bytes do not matter, only that a request for either is
+  // served (or refused).
+  fs.writeFileSync(path.join(config.distDir, 'assets', FONT_FILE), 'wOF2')
+  fs.writeFileSync(path.join(config.distDir, 'assets', HERO_FILE), 'png')
 
   return config
 }
@@ -272,6 +303,64 @@ describe('the built page', () => {
     )
 
     expect(traversal.status).toBe(404)
+  })
+})
+
+/**
+ * The font trap, as a test: a browser resolving a relative `url()` inside a
+ * stylesheet does not inherit the stylesheet's own query string, so the token
+ * has to be on the `url()` itself. Before the fix every `woff2` request arrived
+ * without it and the guard refused it — 16 of 16, measured in the browser.
+ */
+describe('the built stylesheet', () => {
+  it('serves a stylesheet with the token on each local url() it embeds', async () => {
+    const service = await serve()
+
+    const response = await fetch(`${service.origin}/${ASSET_CSS}?token=${TOKEN}`)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8')
+    const css = await response.text()
+    expect(css).toContain(`url(./${FONT_FILE}?token=${TOKEN})`)
+    expect(css).toContain(`url("./${HERO_FILE}?token=${TOKEN}")`)
+    // Already carries a query string: append with `&`, never a second `?`.
+    expect(css).toContain(`url(./${HERO_FILE}?v=2&token=${TOKEN})`)
+    // A fragment stays last: the server never sees anything after the `#`, so a
+    // token put there would arrive as nothing.
+    expect(css).toContain(`url(./${HERO_FILE}?token=${TOKEN}#tile)`)
+    // Not ours to rewrite: a remote URL, a data URL and a fragment.
+    expect(css).toContain('url(https://cdn.example/remote.woff2)')
+    expect(css).toContain('url(data:image/png;base64,AAAA)')
+    expect(css).toContain('url(#mask)')
+  })
+
+  it('serves the font the rewritten url() names, and still refuses it without a token', async () => {
+    const service = await serve()
+
+    // The URL the browser derives from the served stylesheet: the stylesheet's
+    // own token does not travel with it, so the rewrite is what makes it work.
+    const css = await (await fetch(`${service.origin}/${ASSET_CSS}?token=${TOKEN}`)).text()
+    const referenced = css.match(/url\("?\.\/([^")?]+\.woff2)\?token=/)
+    expect(referenced).not.toBeNull()
+    const fontPath = `assets/${referenced?.[1] ?? ''}`
+
+    const font = await fetch(`${service.origin}/${fontPath}?token=${TOKEN}`)
+    expect(font.status).toBe(200)
+    expect(font.headers.get('content-type')).toBe('font/woff2')
+
+    // The guard is unchanged: the token is handed over by the stylesheet, not
+    // waved through for a font.
+    expect((await fetch(`${service.origin}/${fontPath}`)).status).toBe(403)
+  })
+
+  it('leaves the page rewrite and the guard alone', async () => {
+    const service = await serve()
+
+    const html = await (await fetch(`${service.origin}/?token=${TOKEN}`)).text()
+
+    expect(html).toContain(`src="./${ASSET_JS}?token=${TOKEN}"`)
+    expect(html).toContain(`href="./${ASSET_CSS}?token=${TOKEN}"`)
+    expect((await fetch(`${service.origin}/${ASSET_CSS}`)).status).toBe(403)
   })
 })
 
