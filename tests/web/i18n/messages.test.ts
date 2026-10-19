@@ -17,6 +17,7 @@ import {
   isLocale,
   messagesFor,
   translate,
+  translateParts,
 } from '../../../web/src/i18n/messages.js'
 
 /** Every message key a locale carries, sorted, so two locales can be compared. */
@@ -79,5 +80,30 @@ describe('the locale dictionary', () => {
   it('returns the message unchanged when it names no parameters', () => {
     expect(translate('zh-CN', 'app.readingMirror')).toBe('正在读取镜像……')
     expect(translate('en', 'app.readingMirror')).toBe('Reading the Mirror…')
+  })
+
+  it('leaves a placeholder with no parameter in the text rather than dropping it', () => {
+    expect(translate('en', 'run.line', { runId: '2026-10-18T01-03-31' })).toBe(
+      'Run 2026-10-18T01-03-31 — verdict: {verdict}',
+    )
+  })
+
+  it('splits a message at its parameters, so a value can be a data cell', () => {
+    // The pieces are what `Message.vue` renders: the parameter's value marked by
+    // name, the sentence's own text around it unmarked.
+    expect(translateParts('zh-CN', 'app.wallpapersInMirror', { count: 12 })).toEqual([
+      { text: '镜像中有 ', name: null },
+      { text: '12', name: 'count' },
+      { text: ' 张壁纸', name: null },
+    ])
+  })
+
+  it('marks every parameter in a message, and only the parameters', () => {
+    expect(translateParts('en', 'run.line', { runId: 'r-1', verdict: 'clean' })).toEqual([
+      { text: 'Run ', name: null },
+      { text: 'r-1', name: 'runId' },
+      { text: ' — verdict: ', name: null },
+      { text: 'clean', name: 'verdict' },
+    ])
   })
 })

@@ -23,9 +23,11 @@ import {
   DEFAULT_LOCALE,
   isLocale,
   translate,
+  translateParts,
   type Locale,
   type MessageKey,
   type MessageParams,
+  type MessagePart,
 } from './messages'
 
 /** The one `localStorage` key the language choice is remembered under. */
@@ -47,6 +49,15 @@ export const locale = ref<Locale>(storedLocale())
 /** One message, in the locale currently in force. */
 export function t(key: MessageKey, params?: MessageParams): string {
   return translate(locale.value, key, params)
+}
+
+/**
+ * The same message as its pieces, values marked — what `Message.vue` renders so
+ * a data cell inside a sentence can take the numeral role (`numeric`, the type
+ * role ticket #49 landed) while the sentence around it stays prose.
+ */
+export function tParts(key: MessageKey, params?: MessageParams): MessagePart[] {
+  return translateParts(locale.value, key, params)
 }
 
 /** Switch the language. Everything that follows the switch does so from here. */

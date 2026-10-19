@@ -20,6 +20,15 @@ mechanism and the split it forces; ticket #47 records the half the service owes.
   `tests/web/i18n/messages.test.ts` pins the same property from the data side:
   identical key sets, no blank value, and the same `{name}` placeholders in both
   languages for every key. It is the ticket's one new seam, and it needs no DOM.
+- **A message's parameters are data cells.** Ticket #49 put a value inside a
+  sentence in the numeral role (`numeric`: the page's numeral face with tabular
+  figures), and a whole parameterised sentence cannot carry a class on one word
+  of itself. So the lookup has a second form: `translateParts` returns the
+  message split at its `{name}` parameters, each piece marked with the
+  parameter it is, and `web/src/i18n/Message.vue` renders every parameter as a
+  data cell while the message's own text stays prose. The dictionary keeps whole
+  sentences — no language has to live with the element order of the template —
+  and the numeral role still lands on the values.
 - **There is no fallback chain, and that is the point.** A locale's messages are
   complete or the build fails; nothing falls back to English, so the English
   page cannot half-exist as Chinese sentences and vice versa. `translate` is
@@ -94,16 +103,21 @@ mechanism and the split it forces; ticket #47 records the half the service owes.
   emphasis inside a sentence would mean markup in the dictionary. Nothing else
   in the templates moved; ticket #48 owns the panel's look and can restore the
   emphasis in the template if it wants it.
+- Ticket #49's type roles survive the merge: the headings keep `font-serif`, and
+  every value that used to be interpolated straight into a template is now a
+  message parameter rendered by `Message.vue`, which puts the same `numeric`
+  class on it. The value's cell is one component's business, not each template's.
 - The dictionary is data, so it is not screenshot evidence: the switch, the
   persisted choice, `<html lang>` and `document.title` were verified in a real
   browser against the real Mirror on 2026-10-19 (Chinese by default, `en` after
   a click, `en` still after a reload, and 壁纸图鉴 / Wallpaper Gallery as the
   title in each).
-- The built page grew by the two dictionaries: 156.11 kB → 163.11 kB raw and
-  56.50 kB → 59.04 kB gzipped (the interface's own stylesheet moved 14.95 kB →
-  15.11 kB, the switch's few utilities against one spurious rule the comments
-  had been generating — see below). That is the whole cost of the feature, and
-  it stays inside the bundle: no runtime request, no CDN, no new dependency.
+- The page's JavaScript grew by the two dictionaries and the piece renderer:
+  156.11 kB → 164.09 kB raw and 56.50 kB → 59.31 kB gzipped, measured on the
+  branch merged with #49's fonts. The interface's own stylesheet moved 14.95 kB
+  → 15.11 kB (the switch's few utilities, against one spurious rule the comments
+  had been generating — see below). That is the whole cost of the feature, and it
+  stays inside the bundle: no runtime request, no CDN, no new dependency.
 - UnoCSS extracts class-like tokens from `.vue` comments too, which is how a
   comment saying the page has no `<style>` block was shipping a `.block` rule
   nobody used. The comments touched here say "record" and "element" instead, and

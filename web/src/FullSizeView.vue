@@ -23,6 +23,7 @@ import { ref } from 'vue'
 
 import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
+import Message from './i18n/Message.vue'
 
 const props = defineProps<{
   /** The gallery's own id; `null` for a Mirror file the list no longer holds. */
@@ -69,7 +70,9 @@ function onOpenChange(open: boolean): void {
                announces, so both are hidden. -->
           <VisuallyHidden>
             <DialogTitle>{{ name }}</DialogTitle>
-            <DialogDescription>{{ t('viewer.galleryId', { id: id ?? '—' }) }}</DialogDescription>
+            <DialogDescription>
+              <Message message="viewer.galleryId" :params="{ id: id ?? '—' }" />
+            </DialogDescription>
           </VisuallyHidden>
           <img
             class="max-h-[80vh] max-w-full object-contain"
@@ -78,7 +81,9 @@ function onOpenChange(open: boolean): void {
             @error="failure = true"
           />
           <figcaption class="flex items-baseline gap-3 text-sm text-primary">
-            <span>{{ t('viewer.galleryId', { id: id ?? '—' }) }}</span>
+            <!-- The id is a data cell and takes the numeral role (#49); the
+                 `<span>` keeps the caption's three flex items intact. -->
+            <span><Message message="viewer.galleryId" :params="{ id: id ?? '—' }" /></span>
             <code class="min-w-0 flex-1 truncate text-secondary">{{ name }}</code>
             <DialogClose as-child>
               <!-- The small-control weight: a regular Phosphor stroke, never

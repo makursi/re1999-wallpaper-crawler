@@ -5,6 +5,7 @@ import type { ConsoleGalleryPayload, ConsoleGalleryRow } from '../api-types.js'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
 import { t } from './i18n/locale'
+import Message from './i18n/Message.vue'
 import type { MessageKey } from './i18n/messages'
 
 const gallery = ref<ConsoleGalleryPayload | null>(null)
@@ -60,8 +61,8 @@ const officialTotal = computed(() => {
   return total == null ? t('gallery.notRead') : total
 })
 
-/** The newest-Run clause, or `null` when there is nothing to compare against. */
-const newestRunAdded = computed(() => gallery.value?.newSinceLastRun ?? null)
+/** The newest-Run clause, or nothing when there is nothing to compare against. */
+const newestRunAdded = computed(() => gallery.value?.newSinceLastRun ?? undefined)
 
 /** `true` when a file with this name stands a chance of being an image. */
 function isImageName(name: string): boolean {
@@ -91,26 +92,33 @@ function rowKey(row: ConsoleGalleryRow): string {
 
 <template>
   <section class="mt-8">
-    <h2 class="text-xl font-bold">{{ t('gallery.heading') }}</h2>
+    <!-- The wall's heading is a Chinese heading role (`font-serif`), and every
+         count and id on this view — the two list totals, the counters in the
+         gap line, and each row's gallery id — is a numeral cell and takes
+         `numeric` (#49). A row's file name stays a `code` identifier: it is
+         dense data, and the reset already renders it in the numeral role's
+         family. The counts and the ids that live inside a sentence are the
+         values of a dictionary message, so they render through `Message.vue`,
+         which marks exactly those pieces. -->
+    <h2 class="font-serif text-xl font-bold">{{ t('gallery.heading') }}</h2>
     <p v-if="failure !== null">{{ failure }}</p>
     <p v-else-if="gallery === null">{{ t('gallery.reading') }}</p>
     <template v-else>
       <p>
-        {{
-          t('gallery.counts', { officialTotal: officialTotal, mirrorCount: gallery.mirrorCount })
-        }}
+        <Message
+          message="gallery.counts"
+          :params="{ officialTotal: officialTotal, mirrorCount: gallery.mirrorCount }"
+        />
       </p>
-      <p v-if="newestRunAdded !== null">
-        {{ t('gallery.newestRunAdded', { newSinceLastRun: newestRunAdded }) }}
+      <p v-if="newestRunAdded !== undefined">
+        <Message message="gallery.newestRunAdded" :params="{ newSinceLastRun: newestRunAdded }" />
       </p>
       <p v-if="!gallery.listAvailable">{{ t('gallery.listUnavailable') }}</p>
       <p v-else-if="gallery.mirrorGap !== null">
-        {{
-          t('gallery.mirrorGap', {
-            missing: gallery.mirrorGap.missing,
-            extra: gallery.mirrorGap.extra,
-          })
-        }}
+        <Message
+          message="gallery.mirrorGap"
+          :params="{ missing: gallery.mirrorGap.missing, extra: gallery.mirrorGap.extra }"
+        />
       </p>
       <!-- The wall is a grid of tiles, each a token-styled surface with the
            1px border reserved up front, so hovering swaps its colour without

@@ -10,6 +10,9 @@
 // surface inside the English page as a surprise at runtime.
 //
 // This module is pure data plus a lookup: no Vue, no DOM, no `localStorage`.
+// The lookup returns a message whole (`translate`) or split at its parameters
+// (`translateParts`), which is how a value inside a sentence takes the numeral
+// role without markup entering the dictionary (`web/src/i18n/Message.vue`).
 // Which locale the page is in, and what a switch does to `<html lang>` and
 // `document.title`, live in `web/src/i18n/locale.ts`, so this seam stays
 // collectable by the test runner without a DOM environment.
@@ -218,15 +221,52 @@ export function messagesFor(locale: Locale): Readonly<Record<MessageKey, string>
 const PLACEHOLDER = /\{(\w+)\}/g
 
 /**
- * One message, in one language, with its parameters filled in. A parameter the
- * message does not name is ignored, and a placeholder with no parameter is left
- * as written — visible in the page as `{count}` rather than silently dropped.
+ * One piece of a message: either the message's own text, or the value a
+ * parameter filled in. Keeping them apart is what lets a template give the
+ * values the numeral role without putting markup in the dictionary — a
+ * parameter is a value from the data (a count, an id, a file name, a code) and
+ * the message's own text is prose.
+ */
+export interface MessagePart {
+  /** The piece as written: literal text, or the parameter's value. */
+  text: string
+  /** The parameter this piece is the value of; `null` for the message's own text. */
+  name: string | null
+}
+
+/**
+ * One message, split at its parameters. A parameter the message does not name
+ * is ignored, and a placeholder with no parameter is left as written — visible
+ * in the page as `{count}` rather than silently dropped.
+ */
+export function translateParts(
+  locale: Locale,
+  key: MessageKey,
+  params?: MessageParams,
+): MessagePart[] {
+  const message = dictionaries[locale][key]
+  if (params === undefined) return [{ text: message, name: null }]
+  const parts: MessagePart[] = []
+  let end = 0
+  for (const match of message.matchAll(PLACEHOLDER)) {
+    const start = match.index ?? end
+    const value = params[match[1]]
+    if (value === undefined) continue
+    if (start > end) parts.push({ text: message.slice(end, start), name: null })
+    parts.push({ text: String(value), name: match[1] })
+    end = start + match[0].length
+  }
+  if (end < message.length) parts.push({ text: message.slice(end), name: null })
+  return parts
+}
+
+/**
+ * One message, in one language, with its parameters filled in — the pieces of
+ * `translateParts`, joined. This is what a sentence with no data cell in it
+ * needs; a value that must render as a data cell goes through `Message.vue`.
  */
 export function translate(locale: Locale, key: MessageKey, params?: MessageParams): string {
-  const message = dictionaries[locale][key]
-  if (params === undefined) return message
-  return message.replace(PLACEHOLDER, (placeholder, name: string) => {
-    const value = params[name]
-    return value === undefined ? placeholder : String(value)
-  })
+  return translateParts(locale, key, params)
+    .map(part => part.text)
+    .join('')
 }

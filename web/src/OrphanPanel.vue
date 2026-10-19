@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { ConsoleRunCleanupPayload, ConsoleStatusPayload } from '../api-types.js'
 import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
+import Message from './i18n/Message.vue'
 
 /**
  * An Orphaned Run, and the one action the page offers for it (#36).
@@ -50,8 +51,11 @@ async function cleanUp(): Promise<void> {
 <template>
   <section class="mt-4">
     <!-- The state is derived from a log, so the id is there; `?? ''` is only
-         because the payload's type cannot say that. -->
-    <p>{{ t('orphan.line', { runId: status.runId ?? '', logName: logName }) }}</p>
+         because the payload's type cannot say that. The Run's id and the log's
+         name are both data cells, so they take the numeral role (#49). -->
+    <p>
+      <Message message="orphan.line" :params="{ runId: status.runId ?? '', logName: logName }" />
+    </p>
     <p class="text-muted text-sm">{{ t('orphan.explanation') }}</p>
     <p>
       <button

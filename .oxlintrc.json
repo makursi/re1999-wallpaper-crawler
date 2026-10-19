@@ -14,10 +14,14 @@
     "eqeqeq": ["error", "always", { "null": "ignore" }],
     "no-debugger": "error",
     "no-console": ["warn", { "allow": ["error"] }],
-    // Loading dotenv for its side effect is the point of the import, and so is
-    // importing UnoCSS's generated stylesheet: the virtual module *is* the
-    // stylesheet, so there is no binding to assign.
-    "import/no-unassigned-import": ["warn", { "allow": ["dotenv/config", "virtual:uno.css"] }],
+    // Loading dotenv for its side effect is the point of the import, and so are
+    // UnoCSS's generated stylesheet and the self-hosted font packages: the
+    // virtual module *is* the stylesheet, and a `@fontsource-variable` import
+    // *is* its `@font-face` rules, so there is no binding to assign.
+    "import/no-unassigned-import": [
+      "warn",
+      { "allow": ["dotenv/config", "virtual:uno.css", "@fontsource-variable/*"] }
+    ],
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "warn"
   },

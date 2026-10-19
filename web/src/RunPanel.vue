@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { ConsoleRunStartPayload, ConsoleStatusPayload, ConsoleVerdict } from '../api-types.js'
 import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
+import Message from './i18n/Message.vue'
 import type { MessageKey } from './i18n/messages'
 import OrphanPanel from './OrphanPanel.vue'
 
@@ -42,8 +43,8 @@ const progress = computed(() => {
     : t('app.mirrorAgainstTotal', { count: mirror, total })
 })
 
-/** The panel's one line while a Run is in flight. */
-const inFlight = computed(() => t('run.inFlight', { progress: progress.value }))
+/** The in-flight line's one parameter: the Mirror-against-total progress phrase. */
+const inFlightParams = computed(() => ({ progress: progress.value }))
 
 /** The Run report's Gallery numbers, in the panel's words. */
 const galleryLine = computed(() => {
@@ -195,19 +196,30 @@ onUnmounted(stopPolling)
 
 <template>
   <section class="mt-8">
-    <h2 class="text-[1.1rem] font-bold">{{ t('run.heading') }}</h2>
+    <!-- The panel's heading is a Chinese heading role, so it takes `font-serif`
+         even though its label is Latin today — that is the stack's Latin display
+         face doing its job. Every value this panel interpolates is a data cell
+         and renders through `Message.vue`, which is what puts the run id,
+         timestamps and counts in the numeral role (#49); the surrounding words
+         stay in the body face. -->
+    <h2 class="font-serif text-[1.1rem] font-bold">{{ t('run.heading') }}</h2>
 
     <p v-if="status === null">{{ t('run.readingLog') }}</p>
 
     <template v-else>
-      <p v-if="status.state === 'running'">{{ inFlight }}</p>
+      <p v-if="status.state === 'running'">
+        <Message message="run.inFlight" :params="inFlightParams" />
+      </p>
       <!-- An Orphaned Run has its own component: it is the one state with an
            action, and the action is a POST the page must not get wrong. -->
       <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="readStatus" />
       <p v-else-if="status.runId === null">{{ t('run.noLog') }}</p>
       <template v-else>
         <p>
-          {{ t('run.line', { runId: status.runId, verdict: verdictLabel(status.verdict) }) }}
+          <Message
+            message="run.line"
+            :params="{ runId: status.runId ?? '', verdict: verdictLabel(status.verdict) }"
+          />
         </p>
         <!-- The causes the report's `defects` record cannot carry: a `defect`
              whose record reads clean still has one of these to show
@@ -221,8 +233,8 @@ onUnmounted(stopPolling)
         </template>
         <p v-if="status.report === null" class="text-danger">{{ missingReport }}</p>
         <template v-else>
-          <p>{{ t('run.gallery', { line: galleryLine }) }}</p>
-          <p>{{ t('run.download', { line: downloadLine }) }}</p>
+          <p><Message message="run.gallery" :params="{ line: galleryLine }" /></p>
+          <p><Message message="run.download" :params="{ line: downloadLine }" /></p>
           <p>
             {{ t('run.defects') }} <code class="break-all">{{ defects }}</code>
           </p>
