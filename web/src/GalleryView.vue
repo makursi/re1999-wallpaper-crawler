@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import type { ConsoleGalleryPayload, ConsoleGalleryRow } from '../../src/console/api-types.js'
+import type { ConsoleGalleryPayload, ConsoleGalleryRow } from '../api-types.js'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
 
@@ -15,7 +15,7 @@ async function loadGallery(): Promise<void> {
     const response = await fetch(`/api/gallery?token=${encodeURIComponent(consoleToken())}`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     // The service's own payload; its shape is declared once, in
-    // src/console/api-types.ts, and imported here as a type only.
+    // web/api-types.ts, and imported here as a type only.
     gallery.value = (await response.json()) as ConsoleGalleryPayload
   } catch (error) {
     failure.value = error instanceof Error ? error.message : String(error)

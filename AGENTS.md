@@ -21,13 +21,15 @@ Then `pnpm install` for project dependencies.
 |------|---------|
 | Scrape wallpapers | `pnpm save-wallpapers` (`tsx src/main.ts`) |
 | Check the newest Run | `pnpm check-run` (`tsx src/check-run.ts`) |
+| Console (local page) | `pnpm console` (`tsx web/server/console.ts`, flags `--port`, `--no-open`) |
+| Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
 | Tests | `pnpm test` (`vitest run`) |
-| Typecheck | `pnpm typecheck` (`tsc --noEmit`) |
+| Typecheck | `pnpm typecheck` (`tsc --noEmit` + `vue-tsc -p web/tsconfig.web.json`) |
 | Lint | `pnpm lint` (`oxlint --type-aware .`) |
 | Format | `pnpm fmt` / `pnpm fmt:check` (`oxfmt`) |
 
-CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck` and `test`
-on every PR and on pushes to `main`. `.github/workflows/autofix.yml` runs
+CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck`, the page
+bundle build and `test` on every PR and on pushes to `main`. `.github/workflows/autofix.yml` runs
 `pnpm lint:fix && pnpm fmt` on PRs and commits the result back to the branch, so
 a PR does not have to be formatted by hand — it needs the
 [autofix.ci App](https://github.com/apps/autofix-ci) installed on the repo.
@@ -98,8 +100,10 @@ Run never got there".
 
 ## Architecture
 
+The Console has a directory of its own, `web/`, apart from the crawler's `src/`:
+
 ```
-src/
+src/                         — the crawler
 ├── config.ts                — zod-validated .env config, shared constants
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
@@ -115,21 +119,35 @@ src/
 └── report/
     ├── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
     └── run-log.ts           — the reverse: parseRunReport + assessRun, the three-state verdict (unit-tested)
-tests/
+web/                         — the Console, whole
+├── index.html               — the page's entry document
+├── api-types.ts             — the type-only API contract the page and the service share
+├── vite.config.ts           — the page's bundler config (root = this directory, output web/dist/)
+├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts)
+├── src/                     — the page (Vue 3): App.vue, the panels, the built-in token
+└── server/                  — the service, and the one command that starts it
+    ├── console.ts           — the entry point: build the page if absent, bind loopback, open it
+    ├── server.ts            — loopback HTTP, token/Host/Origin guard, page + asset send
+    ├── run-control.ts       — the Run launcher, the one-at-a-time rule, the stop decision
+    └── …                    — the readers (Run log, Gallery list, Mirror, thumbnails)
+tests/                       — mirrors the sources it tests
 ├── logger.test.ts
 ├── wallpaper-url.test.ts
 ├── gallery/
 │   ├── gallery-source.test.ts
 │   └── gallery-state.test.ts
-└── report/
-    ├── report.test.ts
-    └── run-log.test.ts
+├── report/
+│   ├── report.test.ts
+│   └── run-log.test.ts
+└── web/server/              — the Console service's tests (and their two helpers)
 scripts/
 ├── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ```
 
-Tests mirror `src/` under `tests/` (`src/report/report.ts` → `tests/report/report.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in `src/` never runs.
+A Run's data stays at the repository root, because both programs read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010).
+
+Tests mirror the source tree under `tests/` (`src/report/report.ts` → `tests/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
 
 **Network-first design**: image URLs are captured via `page.on("response")` listening for `content-type: image/*`, _not_ from DOM scanning. DOM is only used to drive scrolling/clicking to trigger lazy loads.
 

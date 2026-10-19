@@ -18,9 +18,12 @@
 - **Console** — the human entry point: a local service started by one command
   that serves a page reading the Run log directory, the Gallery list and the
   Mirror.
-  Owns: `src/console/` (the service and the type-only API contract the two
-  share) and `web/` (the page — `vite.config.ts` sets `root: web`); started by
-  the `console` script. Vocabulary in CONTEXT.md → Console.
+  Owns: `web/` — `web/server/` (the service and its entry point),
+  `web/api-types.ts` (the type-only API contract the service and the page
+  share), `web/src/` (the page), and the page's tooling (`web/vite.config.ts`,
+  `web/tsconfig.web.json`, and the artifacts they produce: `web/dist/`, the
+  thumbnail cache under `web/.console-cache/`); started by the `console` script.
+  Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `src/wallpaper-url.ts`, which both Discovery's output and
   Download's input pass through.
@@ -70,5 +73,7 @@
 | Discovery script     | `scripts/run-discovery.js`       |
 | Discovery loader     | `src/discovery/discovery-loader.ts` |
 | Download + cookies   | `src/download/download.ts`       |
-| Console service + shared API types | `src/console/`        |
-| Console page (Vue 3, built by Vite) | `web/`              |
+| Console service + entry point | `web/server/`            |
+| Console API contract | `web/api-types.ts`               |
+| Console page (Vue 3, built by Vite) | `web/src/`, `web/index.html` |
+| Console tooling (bundler, type program) | `web/vite.config.ts`, `web/tsconfig.web.json` |

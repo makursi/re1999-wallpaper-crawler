@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type { ConsoleRunCleanupPayload, ConsoleStatusPayload } from '../../src/console/api-types.js'
+import type { ConsoleRunCleanupPayload, ConsoleStatusPayload } from '../api-types.js'
 import { consoleToken } from './console-token'
 
 /**

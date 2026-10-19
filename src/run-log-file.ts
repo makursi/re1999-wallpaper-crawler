@@ -2,7 +2,7 @@
 //
 // Two readers have to answer the same two questions about the Run log directory
 // with the same code: `src/check-run.ts` (the agent-facing CLI) and
-// `src/console/run-log-source.ts` (the page's reader). Which
+// `web/server/run-log-source.ts` (the page's reader). Which
 // `save-wallpapers-*.jsonl` is newest, and whether a claimed new file is on
 // disk with a non-zero size. The verdict is `assessRun`'s, and the probe is one
 // of its *inputs*, so a drift between the two readers would make the page and
@@ -11,7 +11,7 @@
 //
 // It lives at the `src/` root on purpose: `src/report/**` is pure and keeps the
 // filesystem out of the verdict, and the pipeline must never import
-// `src/console/**`.
+// `web/server/**`.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'

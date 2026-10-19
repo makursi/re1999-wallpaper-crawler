@@ -413,6 +413,30 @@
 
 ---
 
+### 2026-10-19 — Console 独立成层：web/（spec #39 / 票 #40）
+
+**触因**：仓库是两个程序挤在一棵树里：爬虫产出 Mirror，Console 供人看。Console 的服务散在爬虫的 `src/` 里，页面却另有 `web/`，于是「同一个程序的两半」隔两棵树；页面的构建配置、类型检查程序和构建产物又和爬虫的挤在仓根。代价每次访问都付：任何「这个文件属于哪个程序」的问题都只能读 import 回答，不能靠看。
+
+**决策**（spec #39 的实现决定 1–14；本轮只做 Console 那一半，`core/` 在下一票）：
+- **边界**：Console 独占 `web/` 一棵树 —— `web/server/`（服务 + 唯一入口 `console.ts`）、`web/api-types.ts`（页面与服务共享的类型契约，提到层根，因为把它留在服务目录里等于宣称它是服务的私事）、`web/src/`（页面）、`web/index.html`，以及只有页面需要的工具：`web/vite.config.ts`、`web/tsconfig.web.json`。
+- **两个锚点，互不推导**：仓根锚点仍是 `PROJECT_ROOT`（Run 的 cwd，`.env`/`node_modules`/`images/`/`logs/` 的家），入点模块深度不变所以它仍解析到仓根；web 层锚点由 `web/server/console.ts` 自己推（`path.resolve(import.meta.dirname, '..')` = `web/`），只有它知道层根，且**不**从 `PROJECT_ROOT` 反推（spec 决定 7）。层的产物随层：`web/dist/`（构建页面）、`web/.console-cache/`（缩略图缓存，仍在 Mirror 之外，ADR 0010）；一个 Run 写的数据（`images/`、`logs/`）留仓根，因为两层都读。
+- **命名**：拒 `crawler/` / `scraper/` —— 词表明确回避这两个词（本程序不跟随链接），与领域模型矛盾的目录名会误导此后每一次 grep。
+- **`scripts/` 原地不动**：run-code 载荷的排除在两个工具配置里按字面路径钉死，目录名又被 discovery-loader 指名，三种静默失败换不来本轮任何收益 —— 记为开放问题，不是本轮解决。
+- **类型程序按目录列**：Node 程序 `tsconfig.json` 显式含 `web/server/**/*` 与 `web/api-types.ts`（没有任何测试 import 的入口因此不会悄悄掉出检查），页面程序 `web/tsconfig.web.json` 只含 `web/src/**` + `api-types.ts`；`typecheck` 变成 `tsc --noEmit && vue-tsc -p web/tsconfig.web.json`。
+- **构建指向层配置**：`vite.config.ts` 移到 `web/`（`root` = 层根，`outDir` = `web/dist`），启动命令、`build:web`、`dev:web` 三者一致地写 `--config web/vite.config.ts`；CI 的 bundle gate 仍构建页面。
+- **测试镜像源**：`tests/console/**` → `tests/web/server/**`，两个不是测试的 helper（`run-fixtures.ts`、`test-image.ts`）随所服务的测试一起搬；`vitest.config.ts` 的收集模式不用改。
+
+**验证**：
+- 四件套 + 打包全绿（改动后实测）：`pnpm typecheck` 0；`pnpm lint` 65 files / 218 rules，0 warning 0 error；`pnpm fmt:check` 76 files clean；`pnpm test` **25 files / 268 tests passed**（与基线逐数相同 —— 这是「只搬家」的直接证据）；`pnpm build:web` → `web/dist/index.html` + hashed assets。
+- **Console 冒烟（真跑，跑前删掉 `web/dist` 以逼出进程内构建）**：`pnpm console --no-open` → 自己构建页面 → `Console: http://127.0.0.1:8791/?token=…`；`GET /?token` **200** 且页面里 2 条资源 URL 被改写成带 token，改写后的资源 **200**；`GET /api/status?token` **200** 真实数据（`runId 2026-10-18T01-03-31`、`state idle`、`mirrorCount 1013`、`officialTotal 1010`、`verdict explained` —— 活的清单接口答了 1010）；`GET /api/status`（无 token）**403**；`GET /api/nope?token` **404**；`GET /api/thumbnail/<真文件名>` **200** 且缓存落在 `web/.console-cache/thumbnails/`，仓根同名路径**不存在**；杀进程后端口释放。
+- 没跑抓取 Run：本轮不改爬虫任何路径假设，跑一轮证明不了这次改动（spec 的 Testing Decisions 明写如此，PR 里也要写明）。也没有新测试缝 —— 这轮没有行为可断言，四个门 + 一次真冒烟就是全部证据。
+
+**教训**：
+- **「纯搬家」也需要一个会响的证据**：单测、lint、typecheck 都拦不住路径写错（`web/.console-cache` 与 `.console-cache` 的差别没有任何断言覆盖），只有真发一次缩略图请求能拦。
+- **锚点的价值在于它只有一个来源**：web 层根从入点模块深度推出，所以入口搬到哪层、层根就跟到哪；若改成从仓根 `join` 出来，布局一变就静默指错地方 —— 这正是 spec 把「两个锚点互不推导」写成决定的原因。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |

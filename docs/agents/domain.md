@@ -25,8 +25,8 @@ resolved.
 This repo declares **multiple contexts** — `CONTEXT-MAP.md` is present — but keeps
 **one glossary file**: each context's vocabulary is a section of the root
 `CONTEXT.md`, not a `CONTEXT.md` of its own. That is deliberate; the contexts share
-the Wallpaper URL set vocabulary. So don't go looking for `src/<context>/CONTEXT.md`,
-and don't create one to match a template.
+the Wallpaper URL set vocabulary. So don't go looking for a `CONTEXT.md` inside a
+source tree, and don't create one to match a template.
 
 ```
 /
@@ -36,12 +36,15 @@ and don't create one to match a template.
 ├── docs/
 │   ├── adr/                ← system-wide decisions
 │   └── agents/             ← these files: how agents read the repo
-└── src/
-    ├── discovery/          ← traverses the page, produces the raw capture
-    ├── download/           ← consumes the Wallpaper URL set, writes files
-    ├── gallery/            ← the site's list, the mirror check, cross-Run memory
-    ├── report/             ← pure analysis: metrics, defects, the Run report
-    └── console/            ← the human entry point: the service and its page
+├── src/                    ← the crawler
+│   ├── discovery/          ← traverses the page, produces the raw capture
+│   ├── download/           ← consumes the Wallpaper URL set, writes files
+│   ├── gallery/            ← the site's list, the mirror check, cross-Run memory
+│   └── report/             ← pure analysis: metrics, defects, the Run report
+└── web/                    ← the Console, whole
+    ├── server/             ← the service and the one command that starts it
+    ├── src/                ← the page
+    └── api-types.ts        ← the contract the service and the page share
 ```
 
 ## Use the glossary's vocabulary
