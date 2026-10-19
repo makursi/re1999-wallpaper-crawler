@@ -31,6 +31,7 @@ import type { ConsoleRunState } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console-config.js'
 import { createGalleryListSource } from './gallery-list-source.js'
+import { createImageSizeCache } from './image-sizes.js'
 import { missingPrerequisites, tsxEntryPath } from './prerequisites.js'
 import type { RunLauncher } from './run-control.js'
 import {
@@ -47,6 +48,7 @@ import { startConsoleServer } from './server.js'
 import { galleryFactsOf } from './status.js'
 import {
   ensureThumbnail,
+  realImageSizeReader,
   realThumbnailCache,
   realThumbnailGenerator,
   THUMBNAIL_CACHE_DIR_NAME,
@@ -317,6 +319,12 @@ async function main(options: ConsoleOptions): Promise<void> {
     // inside `web/server/thumbnails.ts`, so a broken native binary is a 500 on
     // one tile — never a crash, and never a failed Run.
     thumbnailSource: realThumbnailSource(),
+    // The wall's second input (#48): each Wallpaper's own pixel size, so the
+    // masonry can place a tile before its lazy thumbnail arrives. Memoised here
+    // rather than in the route, because the measurement has to outlive a
+    // request — the Mirror does not change under a page that is merely reloading
+    // it, and the names embed a content hash, so a hit is never stale.
+    imageSizeSource: createImageSizeCache(realImageSizeReader),
     startRun,
     cleanupRun,
     token: randomBytes(16).toString('hex'),

@@ -284,7 +284,9 @@ onUnmounted(stopPolling)
 </script>
 
 <template>
-  <section class="mt-8">
+  <!-- The panel is the drawer's content now (#48), so it owns no outer margin:
+       the layer's own gap spaces it from the drawer's title. -->
+  <section>
     <!-- The panel's heading is a Chinese heading role, so it takes `font-serif`
          even though its label is Latin today — that is the stack's Latin display
          face doing its job. Every value this panel interpolates is a data cell

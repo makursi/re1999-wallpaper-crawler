@@ -55,6 +55,22 @@ const tokens = {
   '--token-color-warning': '#d8a24a',
   '--token-color-danger': '#cf6f5c',
   '--token-color-scrim': 'rgb(0 0 0 / 80%)',
+  // The floating navigation's own surface: the glass layer is the opaque
+  // surface with air in it, never a second colour, so a blur filter behind
+  // it reads as the wall passing under glass and not as a grey bar.
+  '--token-color-glass': 'rgb(19 24 24 / 72%)',
+  // The atmosphere (#48), recreated in CSS because no site asset may enter the
+  // repository. The amber is the accent's own family, kept faint on purpose:
+  // it is a glow bleeding from one edge, not a light source.
+  '--token-color-glow': 'rgb(219 111 57 / 18%)',
+  // The 100px scrim the floating pill sits on. It fades the page's own base
+  // colour to nothing rather than drawing a bar, which is what keeps a long
+  // gallery from being cut in two by its navigation.
+  '--token-nav-scrim': 'linear-gradient(to bottom, var(--token-color-bg) 0%, rgb(0 0 0 / 0%) 100%)',
+  // The grain: fractal noise, desaturated, tiled. A `data:` URI rather than an
+  // image file, because the repository carries no art and the page makes no
+  // request. It is painted at 3% opacity by the preflight below.
+  '--token-grain': `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E")`,
   // The three type roles, each an ordered stack rather than a family. The order
   // is the decision: `serif` puts the Latin display face first, so Latin glyphs
   // in a Chinese heading take Playfair Display and CJK glyphs fall through to
@@ -75,7 +91,9 @@ const tokens = {
   '--token-radius-md': '0.5rem',
   '--token-radius-pill': '9999px',
   // The measured page rhythm: a 16px grid gutter and a 7vw page edge. The rest
-  // of the scale is UnoCSS's own 0.25rem step (`p-3`, `gap-4`, `mt-8`).
+  // of the scale is UnoCSS's own 0.25rem step, left unnamed on purpose: the
+  // extractor reads class-shaped words out of comments too, so a utility a
+  // comment merely mentions still becomes a rule nobody uses.
   '--token-space-gutter': '1rem',
   '--token-space-page': '7vw',
   '--token-ease-standard': 'cubic-bezier(0.4, 0, 0.2, 1)',
@@ -138,6 +156,7 @@ export default defineConfig({
       warning: 'var(--token-color-warning)',
       danger: 'var(--token-color-danger)',
       scrim: 'var(--token-color-scrim)',
+      glass: 'var(--token-color-glass)',
     },
     radius: {
       none: 'var(--token-radius-none)',
@@ -156,6 +175,57 @@ export default defineConfig({
     duration: {
       hover: 'var(--token-duration-hover)',
       enter: 'var(--token-duration-enter)',
+    },
+    // The two motions the interface actually performs (#48), both spent on
+    // things that arrive: `rise-*` is the site's own `fadeInUp` register — two
+    // rem up, fading in — and `slide-*` is the same gesture sideways for the
+    // drawer. The `out` halves exist because a layer that only animates in is
+    // half-animated; reka-ui keeps a closing layer mounted on the strength of
+    // the animation-name it computes, so the exit is a keyframe too.
+    //
+    // The durations and curves are the *tokens*, not literals: under
+    // `prefers-reduced-motion` they collapse to 1ms in one place, and both
+    // directions of every layer collapse with them.
+    animation: {
+      keyframes: {
+        'rise-in':
+          '{from{opacity:0;transform:translate3d(0,2rem,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+        'rise-out':
+          '{from{opacity:1;transform:translate3d(0,0,0)}to{opacity:0;transform:translate3d(0,2rem,0)}}',
+        'fade-in': '{from{opacity:0}to{opacity:1}}',
+        'fade-out': '{from{opacity:1}to{opacity:0}}',
+        'slide-in-right':
+          '{from{opacity:0;transform:translate3d(2rem,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+        'slide-out-right':
+          '{from{opacity:1;transform:translate3d(0,0,0)}to{opacity:0;transform:translate3d(2rem,0,0)}}',
+      },
+      durations: {
+        'rise-in': 'var(--token-duration-enter)',
+        'rise-out': 'var(--token-duration-enter)',
+        'fade-in': 'var(--token-duration-enter)',
+        'fade-out': 'var(--token-duration-enter)',
+        'slide-in-right': 'var(--token-duration-enter)',
+        'slide-out-right': 'var(--token-duration-enter)',
+      },
+      timingFns: {
+        'rise-in': 'var(--token-ease-out-expo)',
+        'rise-out': 'var(--token-ease-out-expo)',
+        'fade-in': 'var(--token-ease-out-expo)',
+        'fade-out': 'var(--token-ease-out-expo)',
+        'slide-in-right': 'var(--token-ease-out-expo)',
+        'slide-out-right': 'var(--token-ease-out-expo)',
+      },
+      // `both`, so a layer holds its first frame before the animation starts and
+      // its last one after it ends — otherwise an entering layer flashes in its
+      // final position for one frame.
+      properties: {
+        'rise-in': { 'animation-fill-mode': 'both' },
+        'rise-out': { 'animation-fill-mode': 'both' },
+        'fade-in': { 'animation-fill-mode': 'both' },
+        'fade-out': { 'animation-fill-mode': 'both' },
+        'slide-in-right': { 'animation-fill-mode': 'both' },
+        'slide-out-right': { 'animation-fill-mode': 'both' },
+      },
     },
   },
   // The numeral role, in one class. A number needs the family *and* the
@@ -193,6 +263,36 @@ ${rootTokens}
 body {
   background-color: var(--token-color-bg);
   color: var(--token-color-text);
+}
+
+/*
+ * The atmosphere (#48), in CSS and in nothing else: no BG2.png, no logo, no
+ * font file from the gallery. Two fixed pseudo-elements behind the page — an
+ * amber glow bleeding in from the right, and a very light grain over
+ * everything — and both are 'pointer-events: none', so the wall underneath
+ * stays clickable through them. They are painted above the canvas and below
+ * the content by their negative z-index, which is what makes them *atmosphere*
+ * rather than a layer someone has to dismiss.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(60rem 42rem at 100% 8%, var(--token-color-glow), transparent 70%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--token-grain);
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  opacity: 0.03;
 }
 
 /*

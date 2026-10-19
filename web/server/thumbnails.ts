@@ -19,6 +19,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
+import type { ImageSizeReader } from './image-sizes.js'
+
 /** The pinned size: the longest edge, in pixels (spec decision 23). */
 export const THUMBNAIL_MAX_EDGE = 400
 
@@ -143,4 +145,23 @@ export const realThumbnailCache: ThumbnailCache = {
       throw error
     }
   },
+}
+
+/**
+ * One file's own pixel size, read from its header (#48).
+ *
+ * It lives in this module because this module is the image library's only
+ * import site: the dynamic import is what turns "sharp is absent or broken"
+ * into a rejected promise at the call site rather than a crash during module
+ * evaluation, and the size collector
+ * (`web/server/image-sizes.ts`) treats that rejection as one tile without a
+ * measured size instead of a failed gallery.
+ */
+export const realImageSizeReader: ImageSizeReader = async file => {
+  const { default: sharp } = await import('sharp')
+  const metadata = await sharp(file).metadata()
+  if (metadata.width === undefined || metadata.height === undefined) {
+    throw new Error(`no pixel size in ${path.basename(file)}`)
+  }
+  return { width: metadata.width, height: metadata.height }
 }

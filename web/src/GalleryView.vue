@@ -1,4 +1,26 @@
 <script setup lang="ts">
+// ── The wall (#48) ──────────────────────────────────────────────────
+//
+// The gallery is the page's hero: five columns of Wallpapers, sorted into the
+// shortest column, at their own proportions and uncropped. Everything else the
+// page used to stack above it — the Run panel and the Orphan panel — lives in
+// the drawer (`App.vue`), so this view is the wall and a one-band caption that
+// reads it: what the list said, what the Mirror holds, and what the two
+// disagree about.
+//
+// The layout is a pure function of the Mirror's own numbers. Each row carries
+// the file's pixel size (`/api/gallery`'s `sizes`, measured by the service), so
+// a tile's box is reserved before its lazy thumbnail arrives — which is what
+// keeps the wall still while it loads, and what lets `web/src/masonry.ts`
+// balance the columns against real heights instead of guessing from whatever
+// the browser happens to have loaded. A row the service could not measure falls
+// back to a portrait placeholder box, which is a guess and is allowed to be one.
+//
+// The dialog belongs here rather than in the viewer: each tile is a
+// `DialogTrigger`, which is what gives reka-ui a trigger to hand focus back to
+// when the viewer closes (#48's first verified defect).
+
+import { DialogRoot, DialogTrigger } from 'reka-ui'
 import { computed, onMounted, ref } from 'vue'
 
 import type { ConsoleGalleryPayload, ConsoleGalleryRow } from '../api-types.js'
@@ -7,11 +29,28 @@ import FullSizeView from './FullSizeView.vue'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
 import type { MessageKey } from './i18n/messages'
+import { columnsOf } from './masonry'
+
+/**
+ * The wall's columns. Five is the gallery's own measurement (spec #43: about
+ * 314px a column at 1920, with 16px gutters and a 7vw page edge), and it is
+ * fixed rather than responsive because the wall is the page: a narrower window
+ * shows the same catalogue in narrower columns, which is what a contact sheet
+ * does.
+ */
+const COLUMN_COUNT = 5
+
+/** The box an unmeasured tile reserves: a 3:4 portrait, the shape most are. */
+const PLACEHOLDER_BOX = '3 / 4'
+const PLACEHOLDER_HEIGHT = 4 / 3
 
 const gallery = ref<ConsoleGalleryPayload | null>(null)
 const failure = ref<string | null>(null)
-/** The tile whose full-size view is open; `null` when none is. */
-const opened = ref<ConsoleGalleryRow | null>(null)
+
+/** The tile the viewer is showing; kept after a close so the exit can finish. */
+const shown = ref<ConsoleGalleryRow | null>(null)
+/** Whether the viewer is open; `shown` deliberately outlives it (see above). */
+const viewerOpen = ref(false)
 
 async function loadGallery(): Promise<void> {
   try {
@@ -45,14 +84,15 @@ const STATE_LABEL_KEYS: Record<ConsoleGalleryRow['state'], MessageKey> = {
 }
 
 /**
- * The tone each state reads in. The two absent states are the danger token; a
- * file that is simply there takes the page's own text level, which is why its
- * entry is empty rather than a class.
+ * The tone a state that has no image reads in. `missing` is the fault — the
+ * official list names a Wallpaper the Mirror does not hold — while
+ * `not-in-gallery` is the list having moved on; the two are different
+ * statements, so they are not the same colour.
  */
 const STATE_TONES: Record<ConsoleGalleryRow['state'], string> = {
-  'on-disk': '',
+  'on-disk': 'text-secondary',
   missing: 'text-danger',
-  'not-in-gallery': 'text-danger',
+  'not-in-gallery': 'text-warning',
 }
 
 /** The official total as the reader sees it: a number, or "not read". */
@@ -76,6 +116,31 @@ function isViewable(row: ConsoleGalleryRow): boolean {
   return isImageName(row.name)
 }
 
+/** The Mirror's measured size for a row, or `null` when there is not one. */
+function measuredSize(row: ConsoleGalleryRow): { width: number; height: number } | null {
+  const size = gallery.value?.sizes[row.name]
+  return size !== undefined && size.width > 0 && size.height > 0 ? size : null
+}
+
+/** A tile's height for its width — what the columns are balanced against. */
+function heightOf(row: ConsoleGalleryRow): number {
+  const size = measuredSize(row)
+  return size === null ? PLACEHOLDER_HEIGHT : size.height / size.width
+}
+
+/**
+ * The box a tile reserves. The Mirror's own proportion when it was measurable,
+ * so the image lands in a box it exactly fills; a portrait placeholder when it
+ * was not, so the wall still has a shape.
+ */
+function boxOf(row: ConsoleGalleryRow): string {
+  const size = measuredSize(row)
+  return size === null ? PLACEHOLDER_BOX : `${size.width} / ${size.height}`
+}
+
+/** The wall: the rows in gallery order, dealt into the five columns. */
+const columns = computed(() => columnsOf(gallery.value?.rows ?? [], COLUMN_COUNT, heightOf))
+
 /**
  * A tile's thumbnail URL — the cache-backed route, with the token on it the way
  * every other request carries it.
@@ -88,81 +153,109 @@ function thumbnailUrl(name: string): string {
 function rowKey(row: ConsoleGalleryRow): string {
   return `${row.id ?? 'no-id'} ${row.name}`
 }
+
+/** Open the viewer on a tile. The `<DialogTrigger>` beside this opens the root. */
+function openViewer(row: ConsoleGalleryRow): void {
+  shown.value = row
+  viewerOpen.value = true
+}
+
+/**
+ * The root's own state, which is the truth: every close — Escape, the close
+ * control, a click on the scrim — arrives here, and `shown` is left in place so
+ * the primitive can play the exit and hand focus back to the tile.
+ */
+function onViewerOpenChange(open: boolean): void {
+  viewerOpen.value = open
+}
 </script>
 
 <template>
-  <section class="mt-8">
-    <!-- The wall's heading is a Chinese heading role (`font-serif`), and every
-         count and id on this view — the two list totals, the counters in the
-         gap line, and each row's gallery id — is a numeral cell and takes
-         `numeric` (#49). A row's file name stays a `code` identifier: it is
-         dense data, and the reset already renders it in the numeral role's
-         family. The counts and the ids that live inside a sentence are the
-         values of a dictionary message, so they render through `Message.vue`,
-         which marks exactly those pieces. -->
-    <h2 class="font-serif text-xl font-bold">{{ t('gallery.heading') }}</h2>
-    <p v-if="failure !== null">{{ failure }}</p>
-    <p v-else-if="gallery === null">{{ t('gallery.reading') }}</p>
-    <template v-else>
-      <p>
-        <Message
-          message="gallery.counts"
-          :params="{ officialTotal: officialTotal, mirrorCount: gallery.mirrorCount }"
-        />
+  <section class="pb-24">
+    <!-- The caption: the reading of the wall, not a panel. Every count and id
+         in it is a data cell and renders through `Message.vue`, which is what
+         puts it in the numeral role. -->
+    <div class="mb-8 flex flex-col gap-2">
+      <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+        <h2 class="font-serif text-2xl font-bold">{{ t('gallery.heading') }}</h2>
+        <p v-if="gallery !== null" class="text-secondary text-sm">
+          <Message
+            message="gallery.counts"
+            :params="{ officialTotal, mirrorCount: gallery.mirrorCount }"
+          />
+        </p>
+        <p v-if="newestRunAdded !== undefined" class="text-secondary text-sm">
+          <Message message="gallery.newestRunAdded" :params="{ newSinceLastRun: newestRunAdded }" />
+        </p>
+      </div>
+      <p v-if="failure !== null" class="text-danger text-sm">{{ failure }}</p>
+      <p v-else-if="gallery === null" class="text-muted text-sm">{{ t('gallery.reading') }}</p>
+      <p v-else-if="!gallery.listAvailable" class="max-w-[52rem] text-muted text-sm">
+        {{ t('gallery.listUnavailable') }}
       </p>
-      <p v-if="newestRunAdded !== undefined">
-        <Message message="gallery.newestRunAdded" :params="{ newSinceLastRun: newestRunAdded }" />
-      </p>
-      <p v-if="!gallery.listAvailable">{{ t('gallery.listUnavailable') }}</p>
-      <p v-else-if="gallery.mirrorGap !== null">
+      <p v-else-if="gallery.mirrorGap !== null" class="max-w-[52rem] text-muted text-sm">
         <Message
           message="gallery.mirrorGap"
           :params="{ missing: gallery.mirrorGap.missing, extra: gallery.mirrorGap.extra }"
         />
       </p>
-      <!-- The wall is a grid of tiles, each a token-styled surface with the
-           1px border reserved up front, so hovering swaps its colour without
-           moving anything. -->
-      <ul class="mt-4 grid list-none grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3 p-0">
-        <li v-for="row in gallery.rows" :key="rowKey(row)">
-          <button
-            v-if="isViewable(row)"
-            type="button"
-            class="grid h-[10rem] w-full cursor-pointer place-items-center overflow-hidden rounded-sm border border-border bg-surface p-0 transition-colors duration-hover ease-standard hover:border-accent"
-            @click="opened = row"
-            :aria-label="t('gallery.tileShow', { name: row.name })"
-          >
-            <img
-              class="max-h-full max-w-full object-contain"
-              :src="thumbnailUrl(row.name)"
-              :alt="row.name"
-              loading="lazy"
-            />
-          </button>
-          <!-- A Wallpaper with no local file is a state, not a fault: a local
-               placeholder, never a broken image and never a fetch to the CDN
-               (spec decision 25; #35 AC 5). -->
-          <div
-            v-else
-            class="grid h-[10rem] w-full place-items-center overflow-hidden rounded-sm border border-dashed border-border bg-surface p-0 text-[0.8rem] text-muted"
-            role="img"
-            :aria-label="t('gallery.tileNotOnDisk', { name: row.name })"
-          >
-            <span>{{ t('gallery.notOnDisk') }}</span>
-          </div>
-          <p class="mt-1 flex justify-between gap-2 text-[0.8rem]">
-            <strong>{{ row.id ?? '—' }}</strong>
-            <span :class="STATE_TONES[row.state]">{{ t(STATE_LABEL_KEYS[row.state]) }}</span>
-          </p>
-          <code class="text-xs break-all">{{ row.name }}</code>
-        </li>
-      </ul>
-    </template>
-    <FullSizeView
-      v-if="opened !== null"
-      :id="opened.id"
-      :name="opened.name"
-      @close="opened = null"
-    />
+    </div>
+
+    <!-- One `DialogRoot` for the wall, so each tile can be the trigger. -->
+    <DialogRoot :open="viewerOpen" @update:open="onViewerOpenChange">
+      <div class="flex items-start gap-gutter">
+        <div
+          v-for="(column, index) in columns"
+          :key="index"
+          class="flex min-w-0 flex-1 flex-col gap-gutter"
+        >
+          <template v-for="row in column" :key="rowKey(row)">
+            <!-- A tile is square-cornered, shadowless and carries its 1px border
+                 from the start — transparent until hover, so the rust hairline
+                 costs no layout at all. -->
+            <DialogTrigger v-if="isViewable(row)" as-child>
+              <button
+                type="button"
+                class="block w-full cursor-pointer overflow-hidden border border-transparent bg-surface p-0 transition-colors duration-hover ease-standard hover:border-accent focus-visible:border-accent focus-visible:outline-none"
+                :style="{ aspectRatio: boxOf(row) }"
+                :aria-label="t('gallery.tileShow', { name: row.name })"
+                @click="openViewer(row)"
+              >
+                <img
+                  class="block h-full w-full object-contain"
+                  :src="thumbnailUrl(row.name)"
+                  :alt="row.name"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </button>
+            </DialogTrigger>
+            <!-- A Wallpaper with no local file is a state, not a fault: a local
+                 placeholder, never a broken image and never a fetch to the CDN
+                 (spec decision 25; #35 AC 5). It keeps the row's own name, so
+                 the identifier stays readable for a tile that cannot be
+                 opened. -->
+            <div
+              v-else
+              class="grid w-full place-content-center gap-1 overflow-hidden border border-dashed border-border bg-surface p-2 text-center text-xs"
+              role="img"
+              :style="{ aspectRatio: boxOf(row) }"
+              :aria-label="t('gallery.tileNotOnDisk', { name: row.name })"
+            >
+              <span class="i-ph-image-light mx-auto text-xl text-muted" aria-hidden="true" />
+              <span :class="STATE_TONES[row.state]">{{ t(STATE_LABEL_KEYS[row.state]) }}</span>
+              <code class="break-all text-[0.7rem] text-muted">{{ row.name }}</code>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <FullSizeView
+        v-if="shown !== null"
+        :id="shown.id"
+        :name="shown.name"
+        @close="onViewerOpenChange(false)"
+      />
+    </DialogRoot>
   </section>
 </template>

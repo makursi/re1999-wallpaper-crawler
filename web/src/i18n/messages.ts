@@ -53,6 +53,16 @@ const zhCN = {
   'language.chinese': '中文',
   'language.english': 'English',
 
+  // The floating navigation, and the drawer it opens (#48). The nav carries the
+  // product name, the one number that answers "is there anything new", the
+  // language switch and the way into the Run panel; the panel itself moved into
+  // a layer, so the wall is the page. The mirror count is a data cell and
+  // renders through `Message.vue`, as every count does.
+  'nav.mirrorCount': '镜像 {count}',
+  'nav.run': '运行',
+  'drawer.title': '运行面板',
+  'drawer.close': '关闭(Esc)',
+
   // The Run panel. Every value the service used to send as prose is now a code
   // (#47); what is here is the panel's own words, and the code → message maps
   // at the bottom of this file hold each service code to its copy.
@@ -117,6 +127,13 @@ const zhCN = {
   'viewer.galleryId': '官方 id {id}',
   'viewer.close': '关闭(Esc)',
   'viewer.missingFile': '该文件已不在镜像中。',
+  // The control pill (#48). Zoom is a factor of the height-fitted image, and the
+  // percentage beside the controls is the page's own reading of it — a data
+  // cell, so it takes the numeral role like every other number here.
+  'viewer.zoomOut': '缩小',
+  'viewer.zoomIn': '放大',
+  'viewer.reset': '复位',
+  'viewer.zoomPercent': '缩放 {percent}%',
 
   // ── The service's codes (#47) ─────────────────────────────────────
   //
@@ -185,6 +202,11 @@ const en = {
   'language.chinese': '中文',
   'language.english': 'English',
 
+  'nav.mirrorCount': 'Mirror {count}',
+  'nav.run': 'Run',
+  'drawer.title': 'Run panel',
+  'drawer.close': 'Close (Esc)',
+
   'run.heading': 'Run',
   'run.readingLog': 'Reading the Run log…',
   'run.inFlight': 'A Run is in flight: {progress}.',
@@ -243,6 +265,10 @@ const en = {
   'viewer.galleryId': 'Gallery id {id}',
   'viewer.close': 'Close (Esc)',
   'viewer.missingFile': 'That file is no longer in the Mirror.',
+  'viewer.zoomOut': 'Zoom out',
+  'viewer.zoomIn': 'Zoom in',
+  'viewer.reset': 'Reset',
+  'viewer.zoomPercent': 'Zoom {percent}%',
 
   'refusal.runBusy':
     "A Run is already in flight: the pipeline clears and deletes its one persistent Browser session as its first step, so two concurrent Runs would destroy each other's state.",

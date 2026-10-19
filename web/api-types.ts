@@ -252,6 +252,19 @@ export interface ConsoleStatusPayload {
 /** How a gallery row stands against the Mirror (spec decision 17). */
 export type ConsoleGalleryRowState = 'on-disk' | 'missing' | 'not-in-gallery'
 
+/**
+ * One Wallpaper's own pixel size (#48).
+ *
+ * The gallery wall is masonry: a tile stands in the shortest column, and a tile
+ * that reports its height *after* it loads re-balances the wall under the
+ * reader's cursor. So the page needs the proportion before the image arrives,
+ * and the service is the only side that can read it off the file.
+ */
+export interface ConsoleImageSize {
+  width: number
+  height: number
+}
+
 /** One row of the gallery: a Gallery list entry, or a Mirror extra. */
 export interface ConsoleGalleryRow {
   /** The gallery's own id; `null` for a Mirror file the list does not contain. */
@@ -281,4 +294,12 @@ export interface ConsoleGalleryPayload {
   mirrorGap: { missing: number; extra: number } | null
   /** Wallpapers in the Mirror: every non-dot entry (web/server/mirror.ts). */
   mirrorCount: number
+  /**
+   * The rows' own pixel sizes, by file name (#48). A name the service could not
+   * measure — a file that is not there, a name that is not an image, a Mirror
+   * the image library cannot read — is absent from this map rather than present
+   * as `0 × 0`: "not measured" is not a size, and the page falls back to a
+   * placeholder proportion for those tiles.
+   */
+  sizes: Record<string, ConsoleImageSize>
 }
