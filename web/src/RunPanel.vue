@@ -150,19 +150,30 @@ onUnmounted(stopPolling)
 
 <template>
   <section class="mt-8">
-    <h2 class="text-[1.1rem] font-bold">Run</h2>
+    <!-- The panel's heading is a Chinese heading role, so it takes `font-serif`
+         even though its label is Latin today — that is the stack's Latin display
+         face doing its job. The three data fragments (the in-flight progress,
+         the Gallery line and the Download line) are held in `numeric`, the
+         numeral role: `galleryLine` and `downloadLine` are already the run
+         report's numbers in a cell, and `progress` is counts inside one
+         sentence. The surrounding words stay in the body face. -->
+    <h2 class="font-serif text-[1.1rem] font-bold">Run</h2>
 
     <p v-if="status === null">Reading the Run log…</p>
 
     <template v-else>
-      <p v-if="status.state === 'running'">A Run is in flight: {{ progress }}.</p>
+      <p v-if="status.state === 'running'">
+        A Run is in flight: <span class="numeric">{{ progress }}</span
+        >.
+      </p>
       <!-- An Orphaned Run has its own component: it is the one state with an
            action, and the action is a POST the page must not get wrong. -->
       <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="readStatus" />
       <p v-else-if="status.runId === null">No Run log has been read.</p>
       <template v-else>
         <p>
-          Run {{ status.runId }} — verdict: <strong>{{ status.verdict }}</strong>
+          Run <span class="numeric">{{ status.runId }}</span> — verdict:
+          <strong>{{ status.verdict }}</strong>
         </p>
         <!-- The causes the report's `defects` block cannot carry: a `defect`
              whose defect block reads clean still has one of these to show
@@ -178,8 +189,12 @@ onUnmounted(stopPolling)
         </template>
         <p v-if="status.report === null" class="text-danger">{{ missingReport }}</p>
         <template v-else>
-          <p>Gallery: {{ galleryLine }}</p>
-          <p>Download: {{ downloadLine }}</p>
+          <p>
+            Gallery: <span class="numeric">{{ galleryLine }}</span>
+          </p>
+          <p>
+            Download: <span class="numeric">{{ downloadLine }}</span>
+          </p>
           <p>
             Defects: <code class="break-all">{{ defects }}</code>
           </p>

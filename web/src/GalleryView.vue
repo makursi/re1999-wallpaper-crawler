@@ -80,16 +80,23 @@ function rowKey(row: ConsoleGalleryRow): string {
 
 <template>
   <section class="mt-8">
-    <h2 class="text-xl font-bold">Gallery</h2>
+    <!-- The wall's heading is a Chinese heading role (`font-serif`), and every
+         count and id on this view — the two list totals, the counters in the
+         gap line, and each row's gallery id — is a numeral cell and takes
+         `numeric`. A row's file name stays a `code` identifier: it is dense
+         data, and the reset already renders it in the numeral role's family. -->
+    <h2 class="font-serif text-xl font-bold">Gallery</h2>
     <p v-if="failure !== null">{{ failure }}</p>
     <p v-else-if="gallery === null">Reading the Gallery list…</p>
     <template v-else>
       <p>
         The Gallery list holds
-        <strong>{{ gallery.officialTotal === null ? 'not read' : gallery.officialTotal }}</strong>
-        entries; the Mirror holds <strong>{{ gallery.mirrorCount }}</strong> files.
+        <strong class="numeric">{{
+          gallery.officialTotal === null ? 'not read' : gallery.officialTotal
+        }}</strong>
+        entries; the Mirror holds <strong class="numeric">{{ gallery.mirrorCount }}</strong> files.
         <template v-if="gallery.newSinceLastRun !== null">
-          The newest Run added <strong>{{ gallery.newSinceLastRun }}</strong
+          The newest Run added <strong class="numeric">{{ gallery.newSinceLastRun }}</strong
           >.
         </template>
       </p>
@@ -98,8 +105,9 @@ function rowKey(row: ConsoleGalleryRow): string {
         said about which Wallpapers are missing, and nothing here is a count of them.
       </p>
       <p v-else-if="gallery.mirrorGap !== null">
-        {{ gallery.mirrorGap.missing }} listed Wallpapers are missing from the Mirror;
-        {{ gallery.mirrorGap.extra }} Mirror files are not in the gallery any more.
+        <span class="numeric">{{ gallery.mirrorGap.missing }}</span> listed Wallpapers are missing
+        from the Mirror; <span class="numeric">{{ gallery.mirrorGap.extra }}</span> Mirror files are
+        not in the gallery any more.
       </p>
       <!-- The wall is a grid of tiles, each a token-styled surface with the
            1px border reserved up front, so hovering swaps its colour without
@@ -132,7 +140,7 @@ function rowKey(row: ConsoleGalleryRow): string {
             <span>not on disk</span>
           </div>
           <p class="mt-1 flex justify-between gap-2 text-[0.8rem]">
-            <strong>{{ row.id ?? '—' }}</strong>
+            <strong class="numeric">{{ row.id ?? '—' }}</strong>
             <span :class="STATE_TONES[row.state]">{{ STATE_LABELS[row.state] }}</span>
           </p>
           <code class="text-xs break-all">{{ row.name }}</code>

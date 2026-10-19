@@ -78,7 +78,7 @@ function onOpenChange(open: boolean): void {
           />
           <figcaption class="flex items-baseline gap-3 text-sm text-primary">
             <span
-              >Gallery id <strong>{{ id ?? '—' }}</strong></span
+              >Gallery id <strong class="numeric">{{ id ?? '—' }}</strong></span
             >
             <code class="min-w-0 flex-1 truncate text-secondary">{{ name }}</code>
             <DialogClose as-child>

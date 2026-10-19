@@ -48,7 +48,7 @@ async function cleanUp(): Promise<void> {
 <template>
   <section class="mt-4">
     <p>
-      Orphaned Run <strong>{{ status.runId }}</strong> — the Run log
+      Orphaned Run <strong class="numeric">{{ status.runId }}</strong> — the Run log
       <code class="break-all">{{ logName }}</code> has no Run report and was written recently.
     </p>
     <p class="text-muted text-sm">

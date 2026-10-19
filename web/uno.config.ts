@@ -12,9 +12,14 @@
 // light theme could later be added by overriding `:root` alone — the door the
 // spec leaves open, and the only reason the indirection exists.
 //
-// Nothing here reaches the network at runtime: `presetIcons` reads the local
+// Nothing here reaches the network at runtime. `presetIcons` reads the local
 // `@iconify-json/ph` collection at build time and emits every icon it is asked
-// for as an inline data URI in the stylesheet.
+// for as an inline data URI in the stylesheet, and the three type roles below
+// name families the page self-hosts: the `@font-face` rules and the woff2 files
+// come from the `@fontsource-variable` packages, whose CSS `web/src/main.ts`
+// imports, and Vite emits the referenced bytes into `web/dist`. No font file is
+// committed — `web/dist` is git-ignored and the bytes live in `node_modules`.
+// The design record for the type roles is docs/adr/0015.
 import { defineConfig, presetIcons, presetWind4 } from 'unocss'
 
 /**
@@ -30,6 +35,10 @@ import { defineConfig, presetIcons, presetWind4 } from 'unocss'
  * fullscreen scrim. Success, warning and danger are not the gallery's — it has
  * no such states — so they are new values chosen to sit in the same muted,
  * printed register.
+ *
+ * The three font-family stacks are tokens for the same reason the colours are:
+ * the ordered list of families is written once, here, and `theme.font` refers to
+ * it by role.
  */
 const tokens = {
   '--token-color-bg': '#0a0d0e',
@@ -46,6 +55,20 @@ const tokens = {
   '--token-color-warning': '#d8a24a',
   '--token-color-danger': '#cf6f5c',
   '--token-color-scrim': 'rgb(0 0 0 / 80%)',
+  // The three type roles, each an ordered stack rather than a family. The order
+  // is the decision: `serif` puts the Latin display face first, so Latin glyphs
+  // in a Chinese heading take Playfair Display and CJK glyphs fall through to
+  // Noto Serif SC, the OFL face the gallery's own Source Han Serif body text
+  // resolves to. `sans` names the CJK families explicitly, because `system-ui`
+  // carries no CJK glyph on Windows. `mono` is Geist for Latin and for the
+  // tabular figures a number needs, and it falls back to the body stack for the
+  // CJK glyphs Geist does not have — the role is tabular, not monospaced, and a
+  // data cell may still hold a Chinese word.
+  '--token-font-serif':
+    "'Playfair Display Variable', 'Noto Serif SC Variable', 'Songti SC', 'SimSun', serif",
+  '--token-font-sans':
+    "system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif",
+  '--token-font-mono': "'Geist Variable', 'Geist', var(--token-font-sans)",
   // Square is the gallery's own tile, so `none` is a first-class radius.
   '--token-radius-none': '0',
   '--token-radius-sm': '0.25rem',
@@ -90,6 +113,17 @@ export default defineConfig({
     }),
   ],
   theme: {
+    // `font-serif` is the Chinese headings' and navigation's stack,
+    // `font-sans` the page's base and its dense data's, and `font-mono` the
+    // numerals'. Each names its token, as every colour does, so the family list
+    // is written once — in the token block above — and a component names the
+    // role. `font-sans` is also the base face: wind4's reset points
+    // `--default-font-family` at it.
+    font: {
+      serif: 'var(--token-font-serif)',
+      sans: 'var(--token-font-sans)',
+      mono: 'var(--token-font-mono)',
+    },
     colors: {
       base: 'var(--token-color-bg)',
       'base-raised': 'var(--token-color-bg-raised)',
@@ -123,6 +157,15 @@ export default defineConfig({
       hover: 'var(--token-duration-hover)',
       enter: 'var(--token-duration-enter)',
     },
+  },
+  // The numeral role, in one class. A number needs the family *and* the
+  // figures, and half the role is a defect — a count in Geist with proportional
+  // digits still jumps column to column — so they are not separately reachable:
+  // a data cell writes `numeric` (a run id, a timestamp, a count, a rate, a
+  // gallery id) and gets Geist with `tabular-nums`. Geist carries a `tnum`
+  // feature (measured in the emitted woff2), so the declaration does something.
+  shortcuts: {
+    numeric: 'font-mono tabular-nums',
   },
   // `theme.duration` is the scale, but wind4's transition rule accepts only a
   // number or a bracket there — it never looks a theme key up — so the two
