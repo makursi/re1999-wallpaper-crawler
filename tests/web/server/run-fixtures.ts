@@ -14,9 +14,9 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import type { GalleryState } from '../../../src/gallery/gallery-state.js'
-import type { RunReport } from '../../../src/report/report.js'
-import type { RunDefects } from '../../../src/report/run-log.js'
+import type { GalleryState } from '../../../core/gallery/gallery-state.js'
+import type { RunReport } from '../../../core/report/report.js'
+import type { RunDefects } from '../../../core/report/run-log.js'
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { RunLogSourceOptions } from '../../../web/server/run-log-source.js'
 
@@ -42,7 +42,7 @@ export function defects(over: Partial<RunDefects> = {}): RunDefects {
   }
 }
 
-/** A Run report record, as `src/main.ts` writes it — the JSONL line itself. */
+/** A Run report record, as `core/main.ts` writes it — the JSONL line itself. */
 export function runReport(over: Partial<RunReport> = {}): RunReport {
   return {
     type: 'run_report',

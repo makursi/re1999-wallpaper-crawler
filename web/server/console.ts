@@ -2,7 +2,7 @@
 //
 // The one command: build the page if it is not on disk, start the loopback
 // service, print the URL it bound and open it in the default browser. It reads
-// `src/config.ts` — which parses `.env` at import time — and injects a
+// `core/config.ts` — which parses `.env` at import time — and injects a
 // configuration value, so nothing under `web/server/` ever reads the
 // environment and `tests/**` keeps needing no `.env` (spec decision 29).
 //
@@ -24,9 +24,9 @@ import {
   LOG_DIR,
   PROJECT_ROOT,
   SESSION,
-} from '../../src/config.js'
-import { fetchGalleryList } from '../../src/gallery/gallery-source.js'
-import { newestRunLogName } from '../../src/run-log-file.js'
+} from '../../core/config.js'
+import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
+import { newestRunLogName } from '../../core/run-log-file.js'
 import type { ConsoleRunState } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console-config.js'
@@ -268,7 +268,7 @@ async function main(options: ConsoleOptions): Promise<void> {
   const launcher = createRunLauncher({
     nodePath: process.execPath,
     tsxEntry: tsxEntryPath(config.projectRoot),
-    mainEntry: path.join(config.projectRoot, 'src', 'main.ts'),
+    mainEntry: path.join(config.projectRoot, 'core', 'main.ts'),
     projectRoot: config.projectRoot,
     onStarted: () => {
       ownRunLogName = null

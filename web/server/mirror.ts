@@ -9,7 +9,7 @@ import * as fs from 'node:fs'
  *
  * This is deliberately NOT `isWallpaperFile`, because `mergeGalleryStats`
  * filters the Mirror's names with `!name.startsWith('.')` before it computes
- * `extraOnDisk` (src/gallery/gallery-state.ts:62). A name the Run report counts
+ * `extraOnDisk` (core/gallery/gallery-state.ts:62). A name the Run report counts
  * as extra has to be a name this count includes, or a stray `notes.txt` — or a
  * cache directory that somebody put back inside `images/` — would make the page
  * and the Run report disagree about the same directory. Both predicates return
@@ -22,7 +22,7 @@ export function countMirrorNames(names: readonly string[]): number {
 
 /**
  * `countMirrorNames` against the Mirror on disk. A Mirror that is not there
- * yet holds nothing — the reading `src/main.ts` takes when it reads `images/`.
+ * yet holds nothing — the reading `core/main.ts` takes when it reads `images/`.
  */
 export function countMirrorWallpapers(imagesDir: string): number {
   try {

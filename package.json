@@ -6,8 +6,8 @@
   "license": "ISC",
   "type": "module",
   "scripts": {
-    "save-wallpapers": "tsx src/main.ts",
-    "check-run": "tsx src/check-run.ts",
+    "save-wallpapers": "tsx core/main.ts",
+    "check-run": "tsx core/check-run.ts",
     "console": "tsx web/server/console.ts",
     "build:web": "vite build --config web/vite.config.ts",
     "dev:web": "vite --config web/vite.config.ts",

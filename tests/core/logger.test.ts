@@ -4,7 +4,7 @@ import * as path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { createLogger } from '../src/logger.js'
+import { createLogger } from '../../core/logger.js'
 
 let logDir: string
 

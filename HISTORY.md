@@ -437,6 +437,31 @@
 
 ---
 
+### 2026-10-19 — 爬虫收进 core/，布局落定（spec #39 / 票 #41）
+
+**触因**：上一票把 Console 挪出去之后，原来那棵树里剩下的就是爬虫自己 —— 但它仍叫 `src/`，也就是「不是 Console 的地方」；仓根答不出「哪个目录是爬虫」。
+
+**决策**：
+- `src/` → `core/`，子目录名与内容一字不动；仓根恰好两个源目录（`core/`、`web/`），第三个 `scripts/` 只是协议载荷 + 提交护栏，不是层。
+- 一切指路的地方同一改到位：Console 的 import（`../../core/**`）、三个命令（`tsx core/main.ts`、`tsx core/check-run.ts`、`tsx web/server/console.ts`）、Node 类型程序（`core/**/*`、`web/server/**/*`、`web/api-types.ts`、`web/vite.config.ts` 按目录列，入口没有测试 import 也不会掉出去）、测试树（`tests/core/**`、`tests/web/server/**`）及其 import。
+- **入口点是这条改动里唯一不会自己喊出来的路径**：Console 的启动器把 `mainEntry` 指到 `path.join(projectRoot, 'core', 'main.ts')` —— 这个文件不存在时，四个门一个都不会红（子进程起不来时页面照样报「已开始」）。所以本轮**实测该文件存在**，不靠推断。
+- 文档同步：AGENTS.md 的架构块改成「两层、两目录」（它在此之前甚至没提过 Console）、测试树按 `tests/core/**` 重画、CONTEXT-MAP 的所有权清单与「Where things live」表、docs/agents/domain.md 的树、runbook 的命令（`tsx core/check-run.ts`）。
+- **就地改了 run-code 载荷里的一句注释**（`src/wallpaper-url.ts` → `core/wallpaper-url.ts`）。这是对 AGENTS.md「改这个载荷要用真跑验证」的**有意识例外**：改的是注释字节，载荷仍是裸 `async (page) => {…}` 表达式，于是验证方式是**协议同构的解析**（把文件按 `(\n<内容>\n)` 包进 `new Function`，与 playwright-cli 的包装一致），不是跑一轮爬虫 —— 本轮**没有跑抓取 Run**（票面明写），所以这条例外的边界留在这里。
+- 否决「本轮一并搬 `scripts/`」与「在仓根引入第三棵共享目录」：前者是三种静默失败换名字好看，后者是给一个读者做共享层（Console 是 Run 产物的读者，不是第二个库消费者）。`scripts/` 的去留写成开放问题。
+
+**验证**：
+- 四件套 + 打包全绿：`pnpm typecheck` 0；`pnpm lint` 0 warning 0 error；`pnpm fmt:check` clean；`pnpm test` **25 files / 268 tests passed**（与搬 `web/` 那轮逐数相同 —— 只搬家，测试一行没改语义）；`pnpm build:web` → `web/dist/`。
+- **入口点实测存在**：`core/main.ts` 在 `mainEntry` 指的那个路径上（实测 `True`），Console 的启动器因此不会静默指向一个不存在的文件。
+- **Console 冒烟在最终树上重跑**：`pnpm console --no-open` 自己构建页面 → 页面 200 且 2 条资源 URL 带 token、改写后的资源 200、`/api/status?token` 200 真实数据（`runId 2026-10-18T01-03-31`、`mirrorCount 1013`、`officialTotal 1010`）、无 token 403、未知路由 404、缩略图 200 且缓存落在 `web/.console-cache/thumbnails/`、杀进程后端口释放。
+- 协议载荷：`node --check scripts/run-discovery.js` 通过；按包装方式 `(\n<内容>\n)` 做 `new Function` 解析通过（若被格式化插了前导 `;`，这里就是 `SyntaxError`）。
+- 没跑抓取 Run：爬虫的路径假设未变（`core/config.ts` 仍是一层深，`PROJECT_ROOT` 仍解析到仓根），跑一轮证明不了这次改动；PR 里写明。
+
+**教训**：
+- **不会失败的那一处才要特意验**：`mainEntry` 指错时没有任何门会红（页面照报「已开始」），所以它需要一次显式的存在性检查，而不是指望四个门兜底。
+- 违反一条写在文档里的规则（「改载荷要真跑」）时，唯一站得住的做法是把**替代证据和它的适用边界**一起写进记录，而不是悄悄绕过或假装没违规。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -466,6 +491,9 @@
 | 把 Run log 的文件 target 留在 pino transport（worker 线程），只补 `logger.flush()` + error handler | `2026-09-15T09-36-50` 那轮 worker 停摆后主线程静默续跑、退 0 且丢光 `run_report`；`flush()` 只能缩窗，已死的 worker 无从 flush | ADR 0007 |
 | 用 Node 原生类型擦除（`node src/main.ts`）替代 tsx | 源码以 `.js` 后缀 import 兄弟模块，Node 不改写为 `.ts`，模块解析直接失败（Node 24.18 实测 `ERR_MODULE_NOT_FOUND`） | 2026-10-18 |
 | 换启动器（如 `node node_modules/tsx/dist/cli.mjs`）规避受限沙箱的命名管道限制 | 需要管道的是管线自己的子进程（`playwright-cli` + esbuild service），换启动方式绕不开；且属明令禁止的「retry another way」 | 2026-10-18 |
+| 把爬虫目录命名为 `crawler/` / `scraper/` | 词表明确回避这两个词（本程序不跟随链接），与领域模型矛盾的目录名会误导此后每一次 grep | 2026-10-19 |
+| 本轮一并搬 `scripts/`（或重新钉它的载荷排除方式） | run-code 载荷的排除在两个工具配置里按**字面路径**钉死、目录名又被 discovery-loader 指名——三种静默失败换一个好看点的名字 | 2026-10-19 |
+| 在仓根给两层引入第三棵「共享」目录 | Console 是 Run 产物的读者，不是第二个库消费者；给一个读者做共享层是白买的抽象 | 2026-10-19 |
 
 ## 验证规范（所有迭代通用）
 
@@ -475,6 +503,8 @@
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题
+
+- **`scripts/` 该不该属于某一层（2026-10-19 记录）**：布局收成两层后，`scripts/` 是仓根剩下的第三棵树 —— run-code 协议载荷（`run-discovery.js`）与提交护栏（`check-branch.mjs`）。本轮**明确不解决**：载荷的排除按字面路径钉在两个工具配置里、目录名又被 `core/discovery/discovery-loader.ts` 指名，搬它要么连带改这两处排除方式，要么冒静默失联的风险，而收益只是名字好看。留给将来单独一轮（连同载荷排除方式一起重新钉），或就承认它是「协议载荷与工具」的第三棵树。
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - ~~**过滤逻辑分两道**~~ **已解决（2026-09-15 晚）**：`scripts/run-discovery.js` 的 `shouldKeep` 只剩 `data:`/`blob:`（它们不是可抓取的 URL），23 个 UI 图标文件名与 SVG 判定归入 `src/wallpaper-url.ts`（新增 `filenameIn` 规则）。`combinedCount` 因此真的是原始捕获——真跑实测 172 → 484，多出来的就是以前被静默丢掉的图标 URL，它们现在出现在 `siteAssets`（7 → 34）。

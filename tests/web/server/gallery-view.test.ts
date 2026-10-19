@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import type { GalleryList } from '../../../src/gallery/gallery-source.js'
-import { parseGalleryList } from '../../../src/gallery/gallery-source.js'
-import { mergeGalleryStats } from '../../../src/gallery/gallery-state.js'
+import type { GalleryList } from '../../../core/gallery/gallery-source.js'
+import { parseGalleryList } from '../../../core/gallery/gallery-source.js'
+import { mergeGalleryStats } from '../../../core/gallery/gallery-state.js'
 import { buildGalleryView } from '../../../web/server/gallery-view.js'
 
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'

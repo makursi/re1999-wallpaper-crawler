@@ -14,9 +14,9 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import { readGalleryState } from '../../src/gallery/gallery-state.js'
-import { runReportRecordPresent } from '../../src/report/run-log.js'
-import { createFileProbe, newestRunLogName } from '../../src/run-log-file.js'
+import { readGalleryState } from '../../core/gallery/gallery-state.js'
+import { runReportRecordPresent } from '../../core/report/run-log.js'
+import { createFileProbe, newestRunLogName } from '../../core/run-log-file.js'
 import type { ConsoleRunFacts } from './status.js'
 import { deriveRunFacts } from './status.js'
 
@@ -124,7 +124,7 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
         ownChildExited: own !== null && own === logName,
         acknowledged: logName !== null && acknowledged.has(logName),
         galleryState: readGalleryState(options.galleryStateFile),
-        // `check-run`'s own probe (`src/run-log-file.ts`), not a copy of it:
+        // `check-run`'s own probe (`core/run-log-file.ts`), not a copy of it:
         // the probe is one of `assessRun`'s inputs, so a drift between this
         // reader and the command would make them disagree about the same log.
         probe: createFileProbe(options.imagesDir),

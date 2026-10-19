@@ -3,8 +3,8 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { GalleryList } from '../../../src/gallery/gallery-source.js'
-import { mergeGalleryStats } from '../../../src/gallery/gallery-state.js'
+import type { GalleryList } from '../../../core/gallery/gallery-source.js'
+import { mergeGalleryStats } from '../../../core/gallery/gallery-state.js'
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { ThumbnailSource } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'

@@ -8,7 +8,7 @@
 /** Which Run the Console is looking at (spec decision 16). */
 export type ConsoleRunState = 'idle' | 'running' | 'orphaned'
 
-/** The three-state verdict `check-run` prints (src/report/run-log.ts). */
+/** The three-state verdict `check-run` prints (core/report/run-log.ts). */
 export type ConsoleVerdict = 'clean' | 'explained' | 'defect'
 
 /**
@@ -16,7 +16,7 @@ export type ConsoleVerdict = 'clean' | 'explained' | 'defect'
  *
  * Declared structurally instead of imported: the page's tsconfig
  * (`web/tsconfig.web.json`) deliberately has no node types, and importing
- * `src/report/run-log.ts` would pull `src/gallery/gallery-state.ts` — and its
+ * `core/report/run-log.ts` would pull `core/gallery/gallery-state.ts` — and its
  * `node:fs` — into the page's type program. `web/server/status.ts` carries the
  * compile-time check that this declaration and the Run report's stay the same
  * type.
@@ -96,7 +96,7 @@ export interface ConsoleDownloadMetrics {
  * The newest Run report, verbatim (`RunReport`).
  *
  * Structural for the same reason `ConsoleDefects` is: importing
- * `src/report/report.ts` would pull `src/gallery/gallery-state.ts`, and its
+ * `core/report/report.ts` would pull `core/gallery/gallery-state.ts`, and its
  * `node:fs`, into the page's type program. `web/server/status.ts` carries the
  * compile-time check that the two stay the same type, so the page cannot
  * quietly lose a field the Run report grew.
@@ -150,7 +150,7 @@ export interface ConsoleRunCleanupPayload {
  * whether the Gallery state names this Run (`stateMatchesReport`), the claimed
  * new files the probe rejected (`missingOnDisk`), and the routine classes the
  * verdict explained. `check-run` prints all three next to the report's defects
- * (src/check-run.ts › `printVerdict`), so the page can show them too: a Run
+ * (core/check-run.ts › `printVerdict`), so the page can show them too: a Run
  * whose report's defect block is entirely clean must never read `defect` with
  * nothing to explain why (#34 story 11).
  */

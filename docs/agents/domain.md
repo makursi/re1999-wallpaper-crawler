@@ -36,7 +36,7 @@ source tree, and don't create one to match a template.
 ├── docs/
 │   ├── adr/                ← system-wide decisions
 │   └── agents/             ← these files: how agents read the repo
-├── src/                    ← the crawler
+├── core/                   ← the crawler
 │   ├── discovery/          ← traverses the page, produces the raw capture
 │   ├── download/           ← consumes the Wallpaper URL set, writes files
 │   ├── gallery/            ← the site's list, the mirror check, cross-Run memory

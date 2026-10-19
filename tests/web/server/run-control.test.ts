@@ -72,7 +72,7 @@ function launcherWith(
   return createRunLauncher({
     nodePath: 'C:\\nvm4w\\nodejs\\node.exe',
     tsxEntry: path.join('C:\\root', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
-    mainEntry: path.join('C:\\root', 'src', 'main.ts'),
+    mainEntry: path.join('C:\\root', 'core', 'main.ts'),
     projectRoot: 'C:\\root',
     ...overrides,
   })
@@ -207,7 +207,7 @@ describe('createRunLauncher', () => {
     expect(command).toBe('C:\\nvm4w\\nodejs\\node.exe')
     expect(args).toEqual([
       path.join('C:\\root', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
-      path.join('C:\\root', 'src', 'main.ts'),
+      path.join('C:\\root', 'core', 'main.ts'),
     ])
     expect(options.cwd).toBe('C:\\root')
     // Never a shell, never `npx`, never `pnpm` (spec decision 6).

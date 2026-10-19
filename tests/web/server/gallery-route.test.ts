@@ -3,8 +3,8 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { GalleryList } from '../../../src/gallery/gallery-source.js'
-import { GallerySourceError } from '../../../src/gallery/gallery-source.js'
+import type { GalleryList } from '../../../core/gallery/gallery-source.js'
+import { GallerySourceError } from '../../../core/gallery/gallery-source.js'
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { GalleryListSource } from '../../../web/server/gallery-list-source.js'
 import { createGalleryListSource } from '../../../web/server/gallery-list-source.js'

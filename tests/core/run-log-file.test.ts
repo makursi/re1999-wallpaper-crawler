@@ -1,7 +1,7 @@
 // ── The Run log directory, as both entries read it (B5) ─────────────
 //
 // The pick and the probe are the two facts `check-run` and the Console's reader
-// share; they are extracted into `src/run-log-file.ts` so the page and the
+// share; they are extracted into `core/run-log-file.ts` so the page and the
 // command cannot drift. `check-run`'s own printed output was diffed byte for
 // byte by hand when the extraction landed, so what these pin is the two
 // shared decisions themselves: name order (never mtime), and a probe that
@@ -13,7 +13,7 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createFileProbe, newestRunLogName, newestRunLogPath } from '../src/run-log-file.js'
+import { createFileProbe, newestRunLogName, newestRunLogPath } from '../../core/run-log-file.js'
 
 const roots: string[] = []
 

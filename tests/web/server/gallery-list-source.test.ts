@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { GalleryList } from '../../../src/gallery/gallery-source.js'
-import { GallerySourceError } from '../../../src/gallery/gallery-source.js'
+import type { GalleryList } from '../../../core/gallery/gallery-source.js'
+import { GallerySourceError } from '../../../core/gallery/gallery-source.js'
 import { createGalleryListSource } from '../../../web/server/gallery-list-source.js'
 
 const list: GalleryList = {

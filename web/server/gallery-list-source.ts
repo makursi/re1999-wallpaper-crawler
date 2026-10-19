@@ -8,9 +8,9 @@
 // A failed read is cached too, as `null`: `null` is the contract's "not read"
 // (ADR 0006), and a broken endpoint must not get one request per poll. The
 // `GallerySourceError` is absorbed here, at the Console's own fetch site,
-// exactly as `src/main.ts:172-183` absorbs it for a Run.
+// exactly as `core/main.ts:172-183` absorbs it for a Run.
 
-import type { GalleryList } from '../../src/gallery/gallery-source.js'
+import type { GalleryList } from '../../core/gallery/gallery-source.js'
 
 export interface GalleryListSource {
   /** The list, or `null` for "not read" — which is never "empty". */

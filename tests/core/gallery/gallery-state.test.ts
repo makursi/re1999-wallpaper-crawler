@@ -4,13 +4,13 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { GalleryList } from '../../src/gallery/gallery-source.js'
+import type { GalleryList } from '../../../core/gallery/gallery-source.js'
 import {
   mergeGalleryStats,
   readGalleryState,
   unavailableGalleryStats,
   writeGalleryState,
-} from '../../src/gallery/gallery-state.js'
+} from '../../../core/gallery/gallery-state.js'
 
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'
 

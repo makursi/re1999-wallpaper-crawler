@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { RunReport } from '../../../src/report/report.js'
-import { assessRun, logRunIdOf, parseRunReport } from '../../../src/report/run-log.js'
+import type { RunReport } from '../../../core/report/report.js'
+import { assessRun, logRunIdOf, parseRunReport } from '../../../core/report/run-log.js'
 import type { ConsoleStatusPayload } from '../../../web/api-types.js'
 import type { ConsoleRunLogFacts } from '../../../web/server/status.js'
 import { buildStatus, deriveRunFacts } from '../../../web/server/status.js'

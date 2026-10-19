@@ -3,16 +3,16 @@
 ## Contexts
 
 - **Discovery** — traverses the page and produces the raw capture.
-  Owns: `scripts/run-discovery.js`, `src/discovery/discovery-loader.ts`; orchestrated by
-  `src/main.ts` (steps 0–3). Vocabulary in CONTEXT.md → Discovery.
+  Owns: `scripts/run-discovery.js`, `core/discovery/discovery-loader.ts`; orchestrated by
+  `core/main.ts` (steps 0–3). Vocabulary in CONTEXT.md → Discovery.
 - **Download** — consumes the Wallpaper URL set and writes files to disk.
-  Owns: `src/download/download.ts`; orchestrated by `src/main.ts` (steps 4–5).
+  Owns: `core/download/download.ts`; orchestrated by `core/main.ts` (steps 4–5).
   Vocabulary in CONTEXT.md → Download.
 - **Gallery tracking** — the site's own inventory of the gallery, the mirror
   check against `images/`, and the cross-run memory of which entries have been
   seen.
-  Owns: `src/gallery/gallery-source.ts` (the list endpoint),
-  `src/gallery/gallery-state.ts` (`images/.gallery-state.json`); `src/main.ts`
+  Owns: `core/gallery/gallery-source.ts` (the list endpoint),
+  `core/gallery/gallery-state.ts` (`images/.gallery-state.json`); `core/main.ts`
   fetches the list once during discovery (step 3) and writes the state at the
   end of the Run (step 6). Vocabulary in CONTEXT.md → Gallery tracking.
 - **Console** — the human entry point: a local service started by one command
@@ -25,14 +25,14 @@
   thumbnail cache under `web/.console-cache/`); started by the `console` script.
   Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
-  Wallpaper lives in `src/wallpaper-url.ts`, which both Discovery's output and
+  Wallpaper lives in `core/wallpaper-url.ts`, which both Discovery's output and
   Download's input pass through.
 
 ## Relationships
 
 - **Discovery → Site asset filter → Download**: Discovery publishes the raw
   capture (bridged via `window.__wpUrls`); the Site asset filter in
-  `src/wallpaper-url.ts` partitions it into Wallpapers and Site assets; Download
+  `core/wallpaper-url.ts` partitions it into Wallpapers and Site assets; Download
   consumes only the Wallpapers and writes them to `images/`.
 - **Discovery → Download (shared)**: the Browser session's Session cookies are
   extracted after discovery and reused by Download for auth.
@@ -63,16 +63,16 @@
 
 | Concern              | File                             |
 |----------------------|----------------------------------|
-| Configuration (.env) | `src/config.ts`                  |
-| Logging              | `src/logger.ts`                  |
-| Wallpaper URL set / Site asset rules | `src/wallpaper-url.ts`           |
-| Gallery list (site endpoint) | `src/gallery/gallery-source.ts` |
-| Gallery state + Mirror gap | `src/gallery/gallery-state.ts` |
-| Analysis/report      | `src/report/report.ts`           |
-| Orchestration        | `src/main.ts`                    |
+| Configuration (.env) | `core/config.ts`                  |
+| Logging              | `core/logger.ts`                  |
+| Wallpaper URL set / Site asset rules | `core/wallpaper-url.ts`           |
+| Gallery list (site endpoint) | `core/gallery/gallery-source.ts` |
+| Gallery state + Mirror gap | `core/gallery/gallery-state.ts` |
+| Analysis/report      | `core/report/report.ts`           |
+| Orchestration        | `core/main.ts`                    |
 | Discovery script     | `scripts/run-discovery.js`       |
-| Discovery loader     | `src/discovery/discovery-loader.ts` |
-| Download + cookies   | `src/download/download.ts`       |
+| Discovery loader     | `core/discovery/discovery-loader.ts` |
+| Download + cookies   | `core/download/download.ts`       |
 | Console service + entry point | `web/server/`            |
 | Console API contract | `web/api-types.ts`               |
 | Console page (Vue 3, built by Vite) | `web/src/`, `web/index.html` |

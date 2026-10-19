@@ -1,12 +1,12 @@
 // ── Run log: reading a Run's verdict back ───────────────────────────
 //
-// `src/report/report.ts` builds a Run report from a Run's data; this module
+// `core/report/report.ts` builds a Run report from a Run's data; this module
 // reads one back. It answers the question the operator runbook asks at the end
 // of a Run — was it clean? — from the Run log's own records, so the answer is
 // mechanical rather than four hand-written parses and a reconciliation done in
 // the agent's head.
 //
-// The module is pure: the filesystem stays in the CLI entry (`src/check-run.ts`),
+// The module is pure: the filesystem stays in the CLI entry (`core/check-run.ts`),
 // which passes in the file check as a probe. That is what keeps the verdict
 // testable without a filesystem.
 //

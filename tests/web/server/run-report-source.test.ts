@@ -4,8 +4,8 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { RunReport } from '../../../src/report/report.js'
-import { newestRunLogName } from '../../../src/run-log-file.js'
+import type { RunReport } from '../../../core/report/report.js'
+import { newestRunLogName } from '../../../core/run-log-file.js'
 import { readNewestRunReport } from '../../../web/server/run-report-source.js'
 
 const dirs: string[] = []
@@ -20,7 +20,7 @@ function logDir(): string {
   return dir
 }
 
-/** A Run report record, as `src/main.ts` writes it — one JSONL line, verbatim. */
+/** A Run report record, as `core/main.ts` writes it — one JSONL line, verbatim. */
 function report(over: Partial<RunReport> = {}): RunReport {
   return {
     type: 'run_report',

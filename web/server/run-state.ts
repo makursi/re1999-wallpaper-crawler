@@ -14,7 +14,7 @@
 // is 791 h old and its report was lost (ADR 0007), which is a defect in the log
 // and a statement about the Run's verdict, not about it still being alive.
 
-import { runReportRecordPresent } from '../../src/report/run-log.js'
+import { runReportRecordPresent } from '../../core/report/run-log.js'
 import type { ConsoleRunState } from '../api-types.js'
 
 /**

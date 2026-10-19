@@ -3,9 +3,9 @@
 // The CLI entry for `pnpm check-run`: find the newest Run log, read the Run
 // report out of it, and print the verdict. It owns every filesystem call — the
 // newest log, the Gallery state, and the file probe — and the exit code; the
-// verdict itself is the pure `assessRun` in `src/report/run-log.ts`.
+// verdict itself is the pure `assessRun` in `core/report/run-log.ts`.
 //
-// That split is the same one `src/main.ts` keeps: this file is glue, and the
+// That split is the same one `core/main.ts` keeps: this file is glue, and the
 // logic that can be wrong lives where it can be tested.
 
 import * as fs from 'node:fs'
@@ -35,7 +35,7 @@ type LogReading =
   | { kind: 'text'; file: string; text: string }
 
 function readNewestLog(dir: string): LogReading {
-  // The newest log is `src/run-log-file.ts`'s pick — the same function the
+  // The newest log is `core/run-log-file.ts`'s pick — the same function the
   // Console's reader calls, so the page and this command can never disagree
   // about which Run is the newest.
   const file = newestRunLogPath(dir)

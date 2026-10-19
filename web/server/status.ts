@@ -18,11 +18,11 @@
 //
 // #34 extends this file; #33 owns `ConsoleGalleryFacts`, which is untouched.
 
-import type { GalleryList } from '../../src/gallery/gallery-source.js'
-import type { GalleryState } from '../../src/gallery/gallery-state.js'
-import type { RunReport } from '../../src/report/report.js'
-import type { FileProbe, RunDefects, RunVerdict } from '../../src/report/run-log.js'
-import { assessRun, logRunIdOf, parseRunReport } from '../../src/report/run-log.js'
+import type { GalleryList } from '../../core/gallery/gallery-source.js'
+import type { GalleryState } from '../../core/gallery/gallery-state.js'
+import type { RunReport } from '../../core/report/report.js'
+import type { FileProbe, RunDefects, RunVerdict } from '../../core/report/run-log.js'
+import { assessRun, logRunIdOf, parseRunReport } from '../../core/report/run-log.js'
 import type {
   ConsoleDefects,
   ConsoleRunReport,

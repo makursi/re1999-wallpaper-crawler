@@ -28,7 +28,7 @@ onMounted(() => {
 
 /**
  * The image extensions the service serves (`IMAGE_EXTENSIONS`,
- * src/wallpaper-url.ts). A `not-in-gallery` file can be any non-dot name the
+ * core/wallpaper-url.ts). A `not-in-gallery` file can be any non-dot name the
  * Mirror holds, so the tile asks for a thumbnail only when the name could be
  * an image at all — otherwise the request is a guaranteed 400 per tile.
  */

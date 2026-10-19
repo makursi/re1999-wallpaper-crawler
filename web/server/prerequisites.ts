@@ -12,7 +12,7 @@
 //     chromium under `%LOCALAPPDATA%` is present but is not what a Run uses.
 //   - `.env` is parsed with `dotenv`'s own parser and validated against the two
 //     keys the Run's config requires (`BASE_ORIGIN`, `PAGE_PATH`) — the same
-//     view `dotenv/config` gives the Run, without importing `src/config.ts`
+//     view `dotenv/config` gives the Run, without importing `core/config.ts`
 //     (which parses the environment at import time and would break the test
 //     suite's no-`.env` property).
 //
@@ -145,7 +145,7 @@ function registryDefaultValue(key: string): string | null {
 }
 
 /**
- * The two keys `src/config.ts` requires of the environment — everything else in
+ * The two keys `core/config.ts` requires of the environment — everything else in
  * its schema has a default. The file must exist; the values are read the way
  * `dotenv/config` reads them, where the real environment wins over the file.
  */

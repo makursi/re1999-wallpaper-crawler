@@ -6,8 +6,8 @@ import {
   fetchGalleryList,
   officialNamesOf,
   parseGalleryList,
-} from '../../src/gallery/gallery-source.js'
-import type { GalleryList } from '../../src/gallery/gallery-source.js'
+} from '../../../core/gallery/gallery-source.js'
+import type { GalleryList } from '../../../core/gallery/gallery-source.js'
 
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'
 

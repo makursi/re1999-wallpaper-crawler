@@ -1,7 +1,7 @@
 // ── The Console's configuration value ───────────────────────────────
 //
 // The service never reads the environment. `web/server/console.ts` reads
-// `src/config.ts` — which parses `.env` at import time — and injects one of
+// `core/config.ts` — which parses `.env` at import time — and injects one of
 // these, which is what keeps `tests/**` running with no `.env` (spec decision
 // 29).
 
@@ -20,7 +20,7 @@ export interface ConsoleConfig {
   galleryStateFile: string
   /** The built page's root: Vite's `build.outDir`, under the web layer's root. */
   distDir: string
-  /** The site's Gallery list endpoint (src/config.ts › GALLERY_LIST_URL). */
+  /** The site's Gallery list endpoint (core/config.ts › GALLERY_LIST_URL). */
   galleryListEndpoint: string
 }
 

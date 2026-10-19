@@ -13,7 +13,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import { isWallpaperFile } from '../../src/wallpaper-url.js'
+import { isWallpaperFile } from '../../core/wallpaper-url.js'
 
 /** Why a name was refused. The route maps all of them to its own answers. */
 export const MIRROR_REFUSALS = {

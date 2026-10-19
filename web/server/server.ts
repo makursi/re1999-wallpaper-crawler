@@ -8,7 +8,7 @@
 //
 // Everything the server needs arrives by injection (spec decision 29): the
 // configuration value and the three readers. `web/server/console.ts` is the only
-// place that reads `src/config.ts`, which is what keeps `tests/**` free of a
+// place that reads `core/config.ts`, which is what keeps `tests/**` free of a
 // `.env`.
 
 import { timingSafeEqual } from 'node:crypto'
@@ -16,7 +16,7 @@ import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'node:path'
 
-import { IMAGE_EXTENSIONS } from '../../src/wallpaper-url.js'
+import { IMAGE_EXTENSIONS } from '../../core/wallpaper-url.js'
 import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
@@ -147,7 +147,7 @@ const CONTENT_TYPES: Record<string, string> = {
 
 /**
  * The image routes' answer, for exactly the extensions a Wallpaper can have
- * (`IMAGE_EXTENSIONS`, src/wallpaper-url.ts): derived from `CONTENT_TYPES` so
+ * (`IMAGE_EXTENSIONS`, core/wallpaper-url.ts): derived from `CONTENT_TYPES` so
  * the two tables cannot disagree about what a `.jpg` is, and from the Wallpaper
  * URL set's own list so the routes serve what the pipeline downloads.
  */

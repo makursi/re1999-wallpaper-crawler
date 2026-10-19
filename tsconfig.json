@@ -19,7 +19,7 @@
   // shared contract it reads (web/api-types.ts) are the web program's
   // (web/tsconfig.web.json); the service is here, where `node:` types exist.
   "include": [
-    "src/**/*",
+    "core/**/*",
     "tests/**/*",
     "vitest.config.ts",
     "web/vite.config.ts",

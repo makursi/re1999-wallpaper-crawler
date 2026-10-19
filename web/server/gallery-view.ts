@@ -8,12 +8,12 @@
 // same way.
 //
 // The gap arithmetic deliberately copies `mergeGalleryStats`
-// (src/gallery/gallery-state.ts:61-66), because the page and the Run report
+// (core/gallery/gallery-state.ts:61-66), because the page and the Run report
 // have to agree about the same directory (spec decision 18).
 
-import type { GalleryList } from '../../src/gallery/gallery-source.js'
-import { officialNamesOf } from '../../src/gallery/gallery-source.js'
-import { wallpaperNameOf } from '../../src/wallpaper-url.js'
+import type { GalleryList } from '../../core/gallery/gallery-source.js'
+import { officialNamesOf } from '../../core/gallery/gallery-source.js'
+import { wallpaperNameOf } from '../../core/wallpaper-url.js'
 import type { ConsoleGalleryPayload } from '../api-types.js'
 import type { Same } from './same.js'
 

@@ -3,7 +3,7 @@
 // The Console needs one number that only a Run report carries: the newest
 // Run's `gallery.newSinceLastRun`. It is read here, from the Run log directory
 // alone (spec decision 7), with the same two facts `check-run` uses — the same
-// file (`newestRunLogName` in `src/run-log-file.ts`: `readdirSync` filtered to
+// file (`newestRunLogName` in `core/run-log-file.ts`: `readdirSync` filtered to
 // `save-wallpapers-*.jsonl`, sorted by name and last, **never** by mtime — the
 // same function `check-run` now calls) and the same parser (`parseRunReport`,
 // never a hand-rolled `JSON.parse`, so the report schema's `null`-coherence
@@ -16,9 +16,9 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import type { RunReport } from '../../src/report/report.js'
-import { parseRunReport } from '../../src/report/run-log.js'
-import { newestRunLogName } from '../../src/run-log-file.js'
+import type { RunReport } from '../../core/report/report.js'
+import { parseRunReport } from '../../core/report/run-log.js'
+import { newestRunLogName } from '../../core/run-log-file.js'
 
 /**
  * The newest Run's report, verbatim, or `null` when there is no readable one.

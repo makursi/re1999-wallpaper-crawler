@@ -251,7 +251,7 @@ async (page) => {
   // Filter helpers. Payloads are dropped here and nowhere else: `data:` and
   // `blob:` are not URLs the crawler can fetch, so they never enter the capture
   // and `combinedCount` stays the raw capture. Which of the captured URLs is a
-  // Wallpaper is decided in TypeScript (src/wallpaper-url.ts), so the drop is
+  // Wallpaper is decided in TypeScript (core/wallpaper-url.ts), so the drop is
   // unit-tested and shows up in the Run report as a Site asset.
   function isFetchableUrl(url) {
     return !url.startsWith("data:") && !url.startsWith("blob:");

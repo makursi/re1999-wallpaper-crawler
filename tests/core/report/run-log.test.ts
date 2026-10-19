@@ -3,15 +3,15 @@ import * as os from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 
-import type { GalleryState } from '../../src/gallery/gallery-state.js'
-import type { RunReport } from '../../src/report/report.js'
-import type { RunDefects, FileProbe } from '../../src/report/run-log.js'
+import type { GalleryState } from '../../../core/gallery/gallery-state.js'
+import type { RunReport } from '../../../core/report/report.js'
+import type { RunDefects, FileProbe } from '../../../core/report/run-log.js'
 import {
   assessRun,
   logRunIdOf,
   parseRunReport,
   runReportRecordPresent,
-} from '../../src/report/run-log.js'
+} from '../../../core/report/run-log.js'
 
 const EOL = os.EOL
 
@@ -40,7 +40,7 @@ function reportLine(record: RunReport): string {
   return JSON.stringify(record)
 }
 
-/** A Run report record, as `src/main.ts` writes it — the JSONL line without the pino envelope. */
+/** A Run report record, as `core/main.ts` writes it — the JSONL line without the pino envelope. */
 function report(over: Partial<RunReport> = {}): RunReport {
   return {
     type: 'run_report',

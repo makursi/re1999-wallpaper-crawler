@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import type { GalleryStats } from '../../src/gallery/gallery-state.js'
-import type { DiscoveryStats, DownloadOutcome, RunMeta } from '../../src/report/report.js'
-import { buildRunReport, classifyOutcomes, detectLeaks } from '../../src/report/report.js'
+import type { GalleryStats } from '../../../core/gallery/gallery-state.js'
+import type { DiscoveryStats, DownloadOutcome, RunMeta } from '../../../core/report/report.js'
+import { buildRunReport, classifyOutcomes, detectLeaks } from '../../../core/report/report.js'
 
 function ok(
   url: string,
