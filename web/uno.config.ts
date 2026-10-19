@@ -55,6 +55,10 @@ const tokens = {
   '--token-color-warning': '#d8a24a',
   '--token-color-danger': '#cf6f5c',
   '--token-color-scrim': 'rgb(0 0 0 / 80%)',
+  // The wall's logotype ink: the muted brown the gallery paints its own
+  // display word in, measured from its CSS. A mark, not body text, so it is
+  // deliberately below the body's contrast rather than a fourth text level.
+  '--token-color-logotype': '#56463a',
   // The floating navigation's own surface: the glass layer is the opaque
   // surface with air in it, never a second colour, so a blur filter behind
   // it reads as the wall passing under glass and not as a grey bar.
@@ -156,6 +160,7 @@ export default defineConfig({
       warning: 'var(--token-color-warning)',
       danger: 'var(--token-color-danger)',
       scrim: 'var(--token-color-scrim)',
+      logotype: 'var(--token-color-logotype)',
       glass: 'var(--token-color-glass)',
     },
     radius: {
@@ -236,6 +241,11 @@ export default defineConfig({
   // feature (measured in the emitted woff2), so the declaration does something.
   shortcuts: {
     numeric: 'font-mono tabular-nums',
+    // The page's one action control: the Run panel's start and the Orphan
+    // panel's cleanup are the same button, so its utilities are written here
+    // rather than pasted into both templates.
+    'action-button':
+      'cursor-pointer rounded-sm border border-border bg-surface px-[0.9rem] py-[0.4rem] transition-colors duration-hover ease-standard hover:border-accent disabled:cursor-not-allowed disabled:opacity-50',
   },
   // `theme.duration` is the scale, but wind4's transition rule accepts only a
   // number or a bracket there — it never looks a theme key up — so the two

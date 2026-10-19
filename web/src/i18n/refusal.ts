@@ -9,6 +9,7 @@
 
 import type { ConsoleRefusal } from '../../api-types.js'
 import { t } from './locale'
+import type { MessageKey } from './messages'
 import { PREREQUISITE_MESSAGE_KEYS, REFUSAL_MESSAGE_KEYS } from './messages'
 
 /** One refusal, said in the locale currently in force. */
@@ -19,4 +20,38 @@ export function describeRefusal(refusal: ConsoleRefusal): string {
     .map(code => t(PREREQUISITE_MESSAGE_KEYS[code]))
     .join(t('run.causeSeparator'))
   return t(key, { missing })
+}
+
+/**
+ * The three shapes a refusal is met in: the service's own code plus parameters
+ * (#47), an HTTP refusal whose body carried no code (the request guard's 403),
+ * and a transport error, which is a runtime message rather than copy
+ * (docs/adr/0014). Both panels show refusals, so the shape and the sentence it
+ * reads as live here once rather than once per panel.
+ */
+export type RefusalView =
+  | { kind: 'code'; refusal: ConsoleRefusal }
+  | { kind: 'status'; status: number }
+  | { kind: 'error'; message: string }
+
+/** The refusal a request's answer carries: the code it sent, or its HTTP status. */
+export function refusalOf(status: number, code: ConsoleRefusal | null): RefusalView {
+  return code != null ? { kind: 'code', refusal: code } : { kind: 'status', status }
+}
+
+/** The refusal a thrown request carries: the transport's own message, not copy. */
+export function refusalFromError(error: unknown): RefusalView {
+  return { kind: 'error', message: error instanceof Error ? error.message : String(error) }
+}
+
+/**
+ * The refusal as one sentence; `null` when there is none to show. `refusedKey`
+ * is the panel's own message for an HTTP refusal, because a start and a cleanup
+ * are refused by different sentences.
+ */
+export function refusalTextOf(view: RefusalView | null, refusedKey: MessageKey): string | null {
+  if (view === null) return null
+  if (view.kind === 'code') return describeRefusal(view.refusal)
+  if (view.kind === 'status') return t(refusedKey, { status: view.status })
+  return view.message
 }

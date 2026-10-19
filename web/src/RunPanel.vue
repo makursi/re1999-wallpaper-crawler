@@ -4,7 +4,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type {
   ConsoleDefects,
   ConsoleExplainedReason,
-  ConsoleRefusal,
   ConsoleRunStartPayload,
   ConsoleStatusPayload,
   ConsoleVerdict,
@@ -12,23 +11,14 @@ import type {
 import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
-import { EXPLAINED_REASON_MESSAGE_KEYS } from './i18n/messages'
+import { EXPLAINED_REASON_MESSAGE_KEYS, VERDICT_MESSAGE_KEYS } from './i18n/messages'
 import type { MessageKey, MessageParams } from './i18n/messages'
-import { describeRefusal } from './i18n/refusal'
+import type { RefusalView } from './i18n/refusal'
+import { refusalFromError, refusalOf, refusalTextOf } from './i18n/refusal'
 import OrphanPanel from './OrphanPanel.vue'
 
 const status = ref<ConsoleStatusPayload | null>(null)
-/**
- * The last refusal, in the three shapes the page can meet one: the service's own
- * code plus parameters (#47), an HTTP refusal whose body carried no code (the
- * request guard's 403), and a transport error, which is a runtime message rather
- * than copy (docs/adr/0014).
- */
-type RefusalView =
-  | { kind: 'code'; refusal: ConsoleRefusal }
-  | { kind: 'status'; status: number }
-  | { kind: 'error'; message: string }
-
+/** The last refusal, in the three shapes the page can meet one (#47). */
 const refusal = ref<RefusalView | null>(null)
 const starting = ref(false)
 
@@ -39,29 +29,16 @@ interface MessageRow {
 }
 
 /** The refusal as one sentence; `null` when there is none to show. */
-const refusalText = computed(() => {
-  const view = refusal.value
-  if (view === null) return null
-  if (view.kind === 'code') return describeRefusal(view.refusal)
-  if (view.kind === 'status') return t('run.refusedStart', { status: view.status })
-  return view.message
-})
+const refusalText = computed(() => refusalTextOf(refusal.value, 'run.refusedStart'))
 
 /**
- * The verdict's three codes, as the page says them. `check-run` prints the code
- * itself and the service ships it untouched — a `clean|explained|defect` is
- * already machine language — while the reader's word for it is the page's, which
- * is why the mapping lives here and not in the service (docs/adr/0014).
+ * The verdict as the page says it: `check-run` prints the `clean|explained|defect`
+ * code and the service ships it untouched, while the reader's word for it is the
+ * page's — the mapping is in the dictionary, not in the service (docs/adr/0014).
+ * The empty string means there is no verdict to show.
  */
-const VERDICT_KEYS: Record<ConsoleVerdict, MessageKey> = {
-  clean: 'verdict.clean',
-  explained: 'verdict.explained',
-  defect: 'verdict.defect',
-}
-
-/** The verdict as the page says it; the empty string while there is no verdict. */
 function verdictLabel(code: ConsoleVerdict | null): string {
-  return code === null ? '' : t(VERDICT_KEYS[code])
+  return code === null ? '' : t(VERDICT_MESSAGE_KEYS[code])
 }
 
 /**
@@ -255,20 +232,14 @@ async function startRun(): Promise<void> {
       // The service sends a code and its parameters; the sentence is the
       // dictionary's, in the reader's language (#47). A body without one is an
       // HTTP refusal (the guard's 403), named by its status instead.
-      refusal.value =
-        body.refusal != null
-          ? { kind: 'code', refusal: body.refusal }
-          : { kind: 'status', status: response.status }
+      refusal.value = refusalOf(response.status, body.refusal)
       return
     }
     // The Run's identity is its log, so it is read back rather than assumed.
     await readStatus()
   } catch (error) {
     // A transport failure is a runtime message, not copy (docs/adr/0014).
-    refusal.value = {
-      kind: 'error',
-      message: error instanceof Error ? error.message : String(error),
-    }
+    refusal.value = refusalFromError(error)
   } finally {
     starting.value = false
   }
@@ -345,7 +316,7 @@ onUnmounted(stopPolling)
     <p>
       <button
         type="button"
-        class="cursor-pointer rounded-sm border border-border bg-surface px-[0.9rem] py-[0.4rem] transition-colors duration-hover ease-standard hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+        class="action-button"
         :disabled="starting || status?.state === 'running'"
         @click="startRun"
       >
