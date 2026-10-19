@@ -11,7 +11,12 @@
 import { spawn as defaultSpawn } from 'node:child_process'
 import process from 'node:process'
 
-import type { ConsoleRunState } from '../api-types.js'
+import type {
+  ConsoleRefusal,
+  ConsoleRunState,
+  PrerequisiteCode,
+  RefusalCode,
+} from '../api-types.js'
 import type { RunCleaner, RunStartResult, RunStarter } from './server.js'
 
 export interface RunLauncher {
@@ -155,18 +160,14 @@ export function killProcessTree(pid: number, deps: KillTreeDeps = {}): void {
   }
 }
 
-/** The refusal a Run already in flight gets, reason included (ADR 0009). */
-const BUSY_REASON =
-  "a Run is already in flight: the pipeline clears and deletes its one persistent Browser session as its first step, so two concurrent Runs would destroy each other's state"
-
 /**
- * The refusal an Orphaned Run gives a start (#36). Deliberately not the
- * one-at-a-time reason: no Run is *known* to be in flight — the leftover may be
- * a dead Run or one still writing — and there is an action for the owner to
- * take, which the page offers next to the reason.
+ * A refusal, as the contract carries it: a stable code and its parameters. The
+ * service never writes the sentence — the page does, in the reader's language
+ * (#47, docs/adr/0014).
  */
-export const ORPHANED_RUN_REASON =
-  'an Orphaned Run is present: its Run log has no Run report and was written recently, so it may still be writing. Clean it up from the page if it is a leftover; a new Run starts after that'
+function refusal(code: RefusalCode, missing: PrerequisiteCode[] = []): ConsoleRefusal {
+  return { code, missing }
+}
 
 export interface RunStarterDeps {
   launcher: RunLauncher
@@ -176,44 +177,40 @@ export interface RunStarterDeps {
    * session — the state comes from the log, never from a handle (ADR 0009).
    */
   isRunInFlight: () => boolean
-  /** The names of the global prerequisites this machine is missing (#34 §2). */
-  missingPrerequisites: () => readonly string[]
+  /** The codes of the global prerequisites this machine is missing (#34 §2). */
+  missingPrerequisites: () => readonly PrerequisiteCode[]
   /**
-   * A more specific reason than the one-at-a-time one, or `null` for it (#36).
+   * A more specific code than the one-at-a-time one, or `null` for it (#36).
    * It is what lets an Orphaned Run name the cleanup instead of claiming a Run
    * is in flight, while both refusals stay one `409` in one place.
    */
-  busyReason?: () => string | null
+  refusalCode?: () => RefusalCode | null
 }
 
 /**
  * The one-at-a-time rule (spec decision 9; ADR 0009), and the two refusals the
- * page must be able to read: `409` when a Run is already in flight, `412` with
- * the missing prerequisite's name when one is absent.
+ * page must be able to read: `409` with `run-busy` (or `orphaned-run`) when a
+ * Run is already in flight, `412` with `missing-prerequisite` and the missing
+ * prerequisites' codes when one is absent.
  *
  * The prerequisites are checked here rather than left to the child so a missing
- * `playwright-cli` or Chrome is a named message; `pwc('close-all')` swallows
+ * `playwright-cli` or Chrome is a named code; `pwc('close-all')` swallows
  * that failure, so the Run would otherwise die at `pwc('open …')` with the
  * reason buried in stderr.
  */
 export function createRunStarter(deps: RunStarterDeps): RunStarter {
   return async (): Promise<RunStartResult> => {
     if (deps.launcher.isAlive() || deps.isRunInFlight()) {
-      return { started: false, status: 409, reason: deps.busyReason?.() ?? BUSY_REASON }
+      return { started: false, status: 409, refusal: refusal(deps.refusalCode?.() ?? 'run-busy') }
     }
 
     const missing = [...deps.missingPrerequisites()]
     if (missing.length > 0) {
-      return {
-        started: false,
-        status: 412,
-        reason: `missing prerequisite${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`,
-        missing,
-      }
+      return { started: false, status: 412, refusal: refusal('missing-prerequisite', missing) }
     }
 
     deps.launcher.start()
-    return { started: true, status: 202, reason: null }
+    return { started: true, status: 202, refusal: null }
   }
 }
 
@@ -310,11 +307,11 @@ export interface RunCleanerDeps {
 export function createRunCleaner(deps: RunCleanerDeps): RunCleaner {
   return async () => {
     if (deps.isRunInFlight()) {
-      return { cleaned: false, status: 409, reason: BUSY_REASON }
+      return { cleaned: false, status: 409, refusal: refusal('run-busy') }
     }
 
     deps.closeBrowserSession()
     deps.acknowledgeOrphan()
-    return { cleaned: true, status: 200, reason: null }
+    return { cleaned: true, status: 200, refusal: null }
   }
 }

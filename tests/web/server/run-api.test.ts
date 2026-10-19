@@ -4,6 +4,7 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import type { PrerequisiteCode } from '../../../web/api-types.js'
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { RunLauncher } from '../../../web/server/run-control.js'
 import { createRunStarter } from '../../../web/server/run-control.js'
@@ -38,8 +39,8 @@ interface Harness {
 }
 
 interface ServeOptions {
-  /** The names the injected prerequisite check reports as missing. */
-  prerequisites?: string[]
+  /** The codes the injected prerequisite check reports as missing. */
+  prerequisites?: PrerequisiteCode[]
   officialTotal?: number | null
   listAvailable?: boolean
 }
@@ -160,11 +161,11 @@ describe('POST /api/run', () => {
     const response = await postStart(harness)
 
     expect(response.status).toBe(202)
-    expect(await response.json()).toMatchObject({ started: true, reason: null })
+    expect(await response.json()).toMatchObject({ started: true, refusal: null })
     expect(harness.starts()).toBe(1)
   })
 
-  it('refuses a second start while one runs, and the refusal states why', async () => {
+  it('refuses a second start while one runs, with the run-busy code', async () => {
     const harness = await serve()
     await postStart(harness)
 
@@ -173,21 +174,22 @@ describe('POST /api/run', () => {
     expect(second.status).toBe(409)
     const body: unknown = await second.json()
     expect(body).toMatchObject({ started: false })
-    expect(body).toMatchObject({ reason: expect.stringMatching(/already in flight/i) })
-    // The reason ADR 0009 insists on: one persistent Browser session.
-    expect(body).toMatchObject({ reason: expect.stringMatching(/session/i) })
+    // The code, not the sentence: the page owns the reader's language (#47).
+    expect(body).toMatchObject({ refusal: { code: 'run-busy' } })
     expect(harness.starts()).toBe(1)
   })
 
-  it('names a missing prerequisite and starts nothing', async () => {
-    const harness = await serve({ prerequisites: ['chrome', 'tsx entry'] })
+  it('names every missing prerequisite as a code and starts nothing', async () => {
+    const harness = await serve({ prerequisites: ['chrome', 'tsx-entry'] })
 
     const response = await postStart(harness)
 
     expect(response.status).toBe(412)
     const body: unknown = await response.json()
-    expect(body).toMatchObject({ started: false, missing: ['chrome', 'tsx entry'] })
-    expect(body).toMatchObject({ reason: expect.stringContaining('chrome') })
+    expect(body).toMatchObject({
+      started: false,
+      refusal: { code: 'missing-prerequisite', missing: ['chrome', 'tsx-entry'] },
+    })
     expect(harness.starts()).toBe(0)
   })
 

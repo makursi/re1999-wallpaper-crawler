@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
+import UnoCSS from 'unocss/vite'
 import { defineConfig } from 'vite'
 
 // The page's build config, at the web layer's root: `here` is the layer root,
@@ -18,7 +19,17 @@ export default defineConfig({
   // Console's own http service, which appends its token to each emitted asset
   // URL (web/server/server.ts › sendPage).
   base: './',
-  plugins: [vue()],
+  // The design system travels with the page layer it styles, so the plugin is
+  // handed that layer's `uno.config.ts` by path. The path is explicit rather
+  // than discovered: the plugin's first config load happens while its root is
+  // still the process's working directory, and a discovery miss there logs a
+  // "config not found" error before the root is corrected — noise on a build
+  // that then succeeds. The page's entry imports `virtual:uno.css`, and that
+  // virtual module only exists while this plugin is in the list.
+  plugins: [
+    vue(),
+    UnoCSS({ configFile: fileURLToPath(new URL('uno.config.ts', import.meta.url)) }),
+  ],
   build: { outDir: `${here}dist`, emptyOutDir: true },
   // `dev:web` only: the service must already be running on 8791, and GETs carry
   // no Origin, so the guard admits them without an extra allowed origin.

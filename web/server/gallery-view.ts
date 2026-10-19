@@ -14,7 +14,7 @@
 import type { GalleryList } from '../../core/gallery/gallery-source.js'
 import { officialNamesOf } from '../../core/gallery/gallery-source.js'
 import { wallpaperNameOf } from '../../core/wallpaper-url.js'
-import type { ConsoleGalleryPayload } from '../api-types.js'
+import type { ConsoleGalleryPayload, ConsoleImageSize } from '../api-types.js'
 import type { Same } from './same.js'
 
 /** How a row stands against the Mirror. */
@@ -87,19 +87,29 @@ export function buildGalleryView(input: {
 }
 
 /**
- * The payload `GET /api/gallery` answers: the view plus the Mirror's count.
+ * The payload `GET /api/gallery` answers: the view, the Mirror's count, and the
+ * rows' own pixel sizes (#48).
  *
- * The conditional return type is a compile-time check that the pure view and
- * the API contract in `api-types.ts` stay the same shape: a field added,
- * dropped or retyped on either side turns the return type into `never`, so
- * this stops compiling rather than letting the page be handed a payload the
+ * The sizes arrive from the route rather than from this pure view, because
+ * reading them is a filesystem touch and this module has none. They are the
+ * second input the wall needs and the page cannot supply: a masonry column is
+ * balanced against heights, and the thumbnails are lazy.
+ *
+ * The conditional return type is a compile-time check that the pure view, the
+ * sizes and the API contract in `api-types.ts` stay the same shape: a field
+ * added, dropped or retyped on either side turns the return type into `never`,
+ * so this stops compiling rather than letting the page be handed a payload the
  * service does not send.
  */
 export function toGalleryPayload(
   view: GalleryView,
   mirrorCount: number,
-): Same<GalleryView & { mirrorCount: number }, ConsoleGalleryPayload> extends true
+  sizes: Record<string, ConsoleImageSize>,
+): Same<
+  GalleryView & { mirrorCount: number; sizes: Record<string, ConsoleImageSize> },
+  ConsoleGalleryPayload
+> extends true
   ? ConsoleGalleryPayload
   : never {
-  return { ...view, mirrorCount }
+  return { ...view, mirrorCount, sizes }
 }

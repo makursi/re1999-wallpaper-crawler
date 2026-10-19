@@ -303,7 +303,8 @@ describe('assessRun', () => {
     )
 
     expect(verdict.verdict).toBe('explained')
-    expect(verdict.explained).toContain(`discoveryLeak: ${leak}`)
+    // Structured, not a sentence: the page lays it out in the reader's language.
+    expect(verdict.explained).toEqual([{ kind: 'discovery-leak', urls: [leak] }])
   })
 
   it('treats a leak URL absent from the Site asset list as a defect', () => {
@@ -345,7 +346,7 @@ describe('assessRun', () => {
       present,
     )
     expect(extra.verdict).toBe('explained')
-    expect(extra.explained).toContain('mirrorGap: extra 3')
+    expect(extra.explained).toEqual([{ kind: 'mirror-gap-extra', count: 3 }])
 
     const missing = assessRun(
       report({ defects: defects({ mirrorGap: { missing: 2, extra: 0 } }) }),
@@ -426,6 +427,9 @@ describe('assessRun', () => {
     )
 
     expect(verdict.verdict).toBe('defect')
-    expect(verdict.explained).toEqual([`discoveryLeak: ${leak}`, 'mirrorGap: extra 3'])
+    expect(verdict.explained).toEqual([
+      { kind: 'discovery-leak', urls: [leak] },
+      { kind: 'mirror-gap-extra', count: 3 },
+    ])
   })
 })

@@ -8,12 +8,17 @@ disk. The repo is one project split into two sub-domains — **Discovery** and
 
 ## Language
 
+Every entry names its term in English, the language the code, the Run log and
+the contracts are written in. The parenthesis carries the term's Chinese
+canonical name — the word the bilingual interface says (`web/src/i18n/messages.ts`,
+docs/adr/0014) — so a reader meeting 「镜像」 on the page can find Mirror here.
+
 ### Shared
 
-**Wallpaper**:
+**Wallpaper (壁纸)**:
 An image that passed discovery filtering (not an icon, SVG, data: or blob:
 URI) and is queued for download to disk.
-_Avoid_: picture, background, 壁纸
+_Avoid_: picture, background, 图片, 背景
 
 **Image**:
 Any image URL observed by the browser — from a network response or a DOM
@@ -74,7 +79,7 @@ no new image requests arrive and the page height is stable — proof that
 discovery is complete.
 _Avoid_: convergence, idle detection
 
-**Site asset**:
+**Site asset (站点资源)**:
 A resource the page or the CDN serves alongside the gallery that is not a
 Wallpaper: the page's own HTML document, analytics pixels, and the site's UI
 art (page background, music-player covers, icons). Marked by the rules in
@@ -93,7 +98,7 @@ _Avoid_: cleanup, sanitizer
 
 ### Gallery tracking
 
-**Gallery list**:
+**Gallery list (官方清单)**:
 The site's own inventory of the gallery, from its list endpoint: every entry
 with the id the gallery numbers it by, plus the total. One request, no session.
 It is the authoritative Wallpaper URL set.
@@ -119,17 +124,17 @@ to "did the site publish anything?". `null`, not `0`, on a first Run: there is
 nothing to compare against.
 _Avoid_: delta, growth, 新增
 
-**Mirror**:
+**Mirror (镜像)**:
 The local copy of the gallery — the Wallpaper files in `images/`.
 _Avoid_: library, collection, dataset
 
-**Mirror gap**:
+**Mirror gap (镜像缺口)**:
 A difference between the Gallery list and the Mirror: `missingFromDisk`
 (official entries with no local file) or `extraOnDisk` (local files the list
 does not contain — retired art, or junk the filter let through).
 _Avoid_: diff, drift
 
-**Discovery coverage**:
+**Discovery coverage (覆盖率)**:
 The share of the Gallery list that one Run's capture contained. A Run sees a
 small slice by design; the number says how small.
 _Avoid_: hit rate, recall
@@ -162,7 +167,7 @@ _Avoid_: auth, login
 
 ### Console
 
-**Console**:
+**Console (本地控制台)**:
 The human entry point to this repository: one command starts a local service
 that serves a page in the browser. It starts a Run as a child process and never
 imports the pipeline; it knows Runs by reading the Run log directory rather than
@@ -172,19 +177,19 @@ _Avoid_: GUI, dashboard, admin panel, web app
 
 ### Diagnostics
 
-**Run**:
+**Run (运行)**:
 One invocation of the whole scraper, from session clear through download
 summary, producing one JSONL log and one Run report.
 _Avoid_: execution, session run
 
-**Run log**:
+**Run log (运行日志)**:
 The one JSONL file a Run writes, from its first `run_meta` record to its
 `run_report`. It is that Run's audit trail, so the Run is only verifiable
 through it: a Run log that stops before `run_report` is a defect in the log,
 **not** evidence that the Run failed. See docs/adr/0007.
 _Avoid_: log file, log output, 日志
 
-**Orphaned Run**:
+**Orphaned Run (孤儿运行)**:
 A Run left over from an earlier session, identified from the Run log directory
 alone: a log with a `run_meta`, no `run_report` and a recent modification time.
 A state, not an error path — a missing Run report is a defect in the log, not

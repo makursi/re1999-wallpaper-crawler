@@ -93,7 +93,7 @@ describe('missingPrerequisites', () => {
       checks: { ...ALL_PRESENT, playwrightCli: () => false, tsxEntry: () => false },
     })
 
-    expect(missing).toEqual(['playwright-cli', 'tsx entry'])
+    expect(missing).toEqual(['playwright-cli', 'tsx-entry'])
   })
 
   it('names the whole gap rather than the first thing it finds', () => {
@@ -107,7 +107,7 @@ describe('missingPrerequisites', () => {
       },
     })
 
-    expect(missing).toEqual(['playwright-cli', 'chrome', '.env', 'tsx entry'])
+    expect(missing).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
   })
 
   it('names nothing when the machine has all four', () => {
@@ -128,10 +128,11 @@ describe('createRunStarter', () => {
 
     expect(result.started).toBe(true)
     expect(result.status).toBe(202)
+    expect(result.refusal).toBeNull()
     expect(bound.starts()).toBe(1)
   })
 
-  it('refuses a second start while a Run lives, and states why', async () => {
+  it('refuses a second start while a Run lives, with the run-busy code', async () => {
     const bound = countingLauncher(true)
     const starter = createRunStarter({
       launcher: bound.launcher,
@@ -143,9 +144,8 @@ describe('createRunStarter', () => {
 
     expect(result.started).toBe(false)
     expect(result.status).toBe(409)
-    // The reason the pipeline insists on: one persistent Browser session.
-    expect(result.reason).toMatch(/already in flight/i)
-    expect(result.reason).toMatch(/session/i)
+    // The one-at-a-time rule, as a code: the page owns the sentence.
+    expect(result.refusal).toEqual({ code: 'run-busy', missing: [] })
     expect(bound.starts()).toBe(0)
   })
 
@@ -161,24 +161,26 @@ describe('createRunStarter', () => {
     const result = await starter()
 
     expect(result.status).toBe(409)
+    expect(result.refusal).toEqual({ code: 'run-busy', missing: [] })
     expect(bound.starts()).toBe(0)
   })
 
-  it('names every missing prerequisite and starts nothing', async () => {
+  it('names every missing prerequisite as a code and starts nothing', async () => {
     const bound = countingLauncher(false)
     const starter = createRunStarter({
       launcher: bound.launcher,
       isRunInFlight: () => false,
-      missingPrerequisites: () => ['chrome', 'tsx entry'],
+      missingPrerequisites: () => ['chrome', 'tsx-entry'],
     })
 
     const result = await starter()
 
     expect(result.started).toBe(false)
     expect(result.status).toBe(412)
-    expect(result.reason).toContain('chrome')
-    expect(result.reason).toContain('tsx entry')
-    expect(result.missing).toEqual(['chrome', 'tsx entry'])
+    expect(result.refusal).toEqual({
+      code: 'missing-prerequisite',
+      missing: ['chrome', 'tsx-entry'],
+    })
     expect(bound.starts()).toBe(0)
   })
 

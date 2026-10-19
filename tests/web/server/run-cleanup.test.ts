@@ -13,11 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { RunLauncher } from '../../../web/server/run-control.js'
-import {
-  createRunCleaner,
-  createRunStarter,
-  ORPHANED_RUN_REASON,
-} from '../../../web/server/run-control.js'
+import { createRunCleaner, createRunStarter } from '../../../web/server/run-control.js'
 import type { RunLogSource } from '../../../web/server/run-log-source.js'
 import { createRunLogSource } from '../../../web/server/run-log-source.js'
 import type { ConsoleService } from '../../../web/server/server.js'
@@ -97,7 +93,7 @@ async function serve(seed: (config: ConsoleConfig) => void = () => {}): Promise<
     // one persistent Browser session, so neither lets a new Run start.
     isRunInFlight: () => source.facts().state !== 'idle',
     missingPrerequisites: () => [],
-    busyReason: () => (source.facts().state === 'orphaned' ? ORPHANED_RUN_REASON : null),
+    refusalCode: () => (source.facts().state === 'orphaned' ? 'orphaned-run' : null),
   })
 
   let sessionCloses = 0
@@ -166,8 +162,7 @@ describe('an Orphaned Run over HTTP', () => {
     expect(response.status).toBe(409)
     const body: unknown = await response.json()
     expect(body).toMatchObject({ started: false })
-    expect(body).toMatchObject({ reason: expect.stringMatching(/Orphaned Run/) })
-    expect(body).toMatchObject({ reason: expect.stringMatching(/clean/i) })
+    expect(body).toMatchObject({ refusal: { code: 'orphaned-run' } })
     expect(harness.starts()).toBe(0)
   })
 
@@ -178,7 +173,7 @@ describe('an Orphaned Run over HTTP', () => {
     const response = await postCleanup(harness)
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ cleaned: true, reason: null })
+    expect(await response.json()).toEqual({ cleaned: true, refusal: null })
     // The leftover Browser session is closed through the CLI, once.
     expect(harness.sessionCloses()).toBe(1)
 
@@ -209,7 +204,7 @@ describe('cleaning up under a Run in flight', () => {
     expect(response.status).toBe(409)
     const body: unknown = await response.json()
     expect(body).toMatchObject({ cleaned: false })
-    expect(body).toMatchObject({ reason: expect.stringMatching(/already in flight/i) })
+    expect(body).toMatchObject({ refusal: { code: 'run-busy' } })
     // A live Run's Browser session is never closed under it.
     expect(harness.sessionCloses()).toBe(0)
     expect(fs.readFileSync(logPath(harness.config)).equals(before)).toBe(true)

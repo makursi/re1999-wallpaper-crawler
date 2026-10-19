@@ -4,7 +4,7 @@
 // `pwc('delete-data')` swallow a failed `playwright-cli` silently, so the Run
 // only fails later at `pwc('open …')`, and a missing `.env` throws a `ZodError`
 // at module load before any record is written. Checking the four here turns each of
-// those into a named message the page can show.
+// those into a stable code the page can name in the reader's language (#47).
 //
 // Notes on the two machine-shaped checks:
 //   - Chrome is looked up through the registry's App Paths entry, because the
@@ -27,8 +27,7 @@ import process from 'node:process'
 import { parse as parseDotenv } from 'dotenv'
 import { z } from 'zod'
 
-/** The names a refusal states; the order is the notes' own list. */
-export type PrerequisiteName = 'playwright-cli' | 'chrome' | '.env' | 'tsx entry'
+import type { PrerequisiteCode } from '../api-types.js'
 
 export interface PrerequisiteChecks {
   /** The globally installed `@playwright/cli`, found on `PATH`. */
@@ -51,11 +50,11 @@ export interface PrerequisiteDeps {
   platform?: NodeJS.Platform
 }
 
-const ORDER: readonly { name: PrerequisiteName; key: keyof PrerequisiteChecks }[] = [
+const ORDER: readonly { name: PrerequisiteCode; key: keyof PrerequisiteChecks }[] = [
   { name: 'playwright-cli', key: 'playwrightCli' },
   { name: 'chrome', key: 'chrome' },
-  { name: '.env', key: 'envFile' },
-  { name: 'tsx entry', key: 'tsxEntry' },
+  { name: 'env-file', key: 'envFile' },
+  { name: 'tsx-entry', key: 'tsxEntry' },
 ]
 
 /** `<root>/node_modules/tsx/dist/cli.mjs` — the Run's argv slot 2. */
@@ -64,11 +63,11 @@ export function tsxEntryPath(projectRoot: string): string {
 }
 
 /**
- * The names of the global prerequisites this machine is missing, in the notes'
+ * The codes of the global prerequisites this machine is missing, in the notes'
  * order. Every check runs, so a start is refused with the whole gap named
  * rather than the first thing found.
  */
-export function missingPrerequisites(deps: PrerequisiteDeps): PrerequisiteName[] {
+export function missingPrerequisites(deps: PrerequisiteDeps): PrerequisiteCode[] {
   const env = deps.env ?? process.env
   const platform = deps.platform ?? process.platform
   const real: PrerequisiteChecks = {

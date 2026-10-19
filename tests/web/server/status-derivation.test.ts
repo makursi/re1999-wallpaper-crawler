@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RunReport } from '../../../core/report/report.js'
 import { assessRun, logRunIdOf, parseRunReport } from '../../../core/report/run-log.js'
-import type { ConsoleStatusPayload } from '../../../web/api-types.js'
+import type { ConsoleExplainedReason, ConsoleStatusPayload } from '../../../web/api-types.js'
 import type { ConsoleRunLogFacts } from '../../../web/server/status.js'
 import { buildStatus, deriveRunFacts } from '../../../web/server/status.js'
 import {
@@ -50,11 +50,15 @@ function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
 }
 
 describe('deriveStatus', () => {
-  it.each<[string, RunReport]>([
-    ['clean', runReport()],
-    ['explained', runReport({ defects: defects({ mirrorGap: { missing: 0, extra: 3 } }) })],
-    ['defect', runReport({ defects: defects({ nonConverged: true }) })],
-  ])('reports a %s Run exactly as assessRun does', (expected, record) => {
+  it.each<[string, RunReport, ConsoleExplainedReason[]]>([
+    ['clean', runReport(), []],
+    [
+      'explained',
+      runReport({ defects: defects({ mirrorGap: { missing: 0, extra: 3 } }) }),
+      [{ kind: 'mirror-gap-extra', count: 3 }],
+    ],
+    ['defect', runReport({ defects: defects({ nonConverged: true }) }), []],
+  ])('reports a %s Run exactly as assessRun does', (expected, record, explained) => {
     const logText = runLog(JSON.stringify(record))
 
     // The independent source of truth: what `check-run` itself would print.
@@ -77,6 +81,9 @@ describe('deriveStatus', () => {
       missingOnDisk: command.missingOnDisk,
       explained: command.explained,
     })
+    // An explained verdict's reason reaches the page as data, not as the
+    // sentence `check-run` prints (#47).
+    expect(status.verdictReasons?.explained).toEqual(explained)
   })
 
   it('reports claimed new files the Mirror does not hold as a defect, with that cause', () => {

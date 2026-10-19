@@ -192,7 +192,7 @@ describe('createRunCleaner', () => {
 
     expect(result.cleaned).toBe(false)
     expect(result.status).toBe(409)
-    expect(result.reason).toMatch(/already in flight/i)
+    expect(result.refusal).toEqual({ code: 'run-busy', missing: [] })
     // Untouched: cleaning under a live Run would close its Browser session.
     expect(closed).toBe(0)
     expect(acknowledged).toBe(0)
@@ -211,7 +211,7 @@ describe('createRunCleaner', () => {
       },
     })
 
-    expect(await clean()).toMatchObject({ cleaned: true, status: 200, reason: null })
+    expect(await clean()).toMatchObject({ cleaned: true, status: 200, refusal: null })
     expect(closed).toBe(1)
     expect(acknowledged).toBe(1)
   })
@@ -225,29 +225,28 @@ describe('createRunStarter, with an Orphaned Run present', () => {
     stop: () => {},
   }
 
-  it('refuses the start with the cleanup named, not the generic busy reason', async () => {
+  it('refuses the start with the orphaned-run code, not the generic busy one', async () => {
     const startRun = createRunStarter({
       launcher: deadLauncher,
       isRunInFlight: () => true,
       missingPrerequisites: () => [],
-      busyReason: () => 'An Orphaned Run is present: clean it up from the page first.',
+      refusalCode: () => 'orphaned-run',
     })
 
     const result = await startRun()
 
     expect(result).toMatchObject({ started: false, status: 409 })
-    expect(result.reason).toMatch(/Orphaned Run/)
-    expect(result.reason).toMatch(/clean/i)
+    expect(result.refusal).toEqual({ code: 'orphaned-run', missing: [] })
   })
 
-  it('keeps the one-at-a-time reason when a Run really is in flight', async () => {
+  it('keeps the one-at-a-time code when a Run really is in flight', async () => {
     const startRun = createRunStarter({
       launcher: deadLauncher,
       isRunInFlight: () => true,
       missingPrerequisites: () => [],
-      busyReason: () => null,
+      refusalCode: () => null,
     })
 
-    expect((await startRun()).reason).toMatch(/already in flight/i)
+    expect((await startRun()).refusal).toEqual({ code: 'run-busy', missing: [] })
   })
 })

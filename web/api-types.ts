@@ -1,15 +1,68 @@
 // ── The Console's API contract, declared once ───────────────────────
 //
-// The page and the service share these payloads and nothing else. The module
-// is type-only by construction — no `const`, no `enum`, no runtime value at
-// all — so the page's `import type` is erased and no service code reaches the
-// browser bundle (spec decision 27).
+// The page and the service share these payloads and nothing else. The module is
+// type-only in everything that describes a payload — no class, no `enum`, no
+// service logic — so the page's `import type` is erased and no service code
+// reaches the browser bundle (spec decision 27). The exception is the code
+// vocabularies: every code the service can emit — refusals, prerequisites,
+// explained reasons, verdicts and gallery row states — is a runtime tuple,
+// because the dictionary test has to enumerate them to prove that each one has
+// copy in both locales (#47). They are data, not behaviour.
 
 /** Which Run the Console is looking at (spec decision 16). */
 export type ConsoleRunState = 'idle' | 'running' | 'orphaned'
 
+// ── The code vocabulary (#47) ───────────────────────────────────────
+//
+// The service stops writing prose and starts emitting stable codes; the page
+// owns every word (docs/adr/0014). A code that exists only as a union member
+// cannot be enumerated, so these are `const` tuples whose element type is the
+// code type — one home for the vocabulary, read by the page, the service and
+// the dictionary test alike.
+
+/** Why a Run start, or an orphan cleanup, was refused. */
+export const REFUSAL_CODES = ['run-busy', 'orphaned-run', 'missing-prerequisite'] as const
+
+/** A refusal's stable code. */
+export type RefusalCode = (typeof REFUSAL_CODES)[number]
+
+/** One global prerequisite a Run needs; the names used to be English prose. */
+export const PREREQUISITE_CODES = ['playwright-cli', 'chrome', 'env-file', 'tsx-entry'] as const
+
+/** A prerequisite's stable code. */
+export type PrerequisiteCode = (typeof PREREQUISITE_CODES)[number]
+
+/** One routine defect class a verdict called `explained`. */
+export const EXPLAINED_REASON_KINDS = ['discovery-leak', 'mirror-gap-extra'] as const
+
+/** An explained reason's stable kind. */
+export type ExplainedReasonKind = (typeof EXPLAINED_REASON_KINDS)[number]
+
+/**
+ * One routine class the verdict explained — structured data, not a sentence
+ * (`core/report/run-log.ts` built `discoveryLeak: …` / `mirrorGap: extra N`
+ * before #47). The page lays it out in the reader's language.
+ *
+ * The layering is why this restates core's `RunExplainedReason`: the page must
+ * not import `core/**`, so the shape is declared here and checked in
+ * `web/server/status.ts`.
+ */
+export type ConsoleExplainedReason =
+  | { kind: 'discovery-leak'; urls: string[] }
+  | { kind: 'mirror-gap-extra'; count: number }
+
+/** A refusal: the code, and the parameters its copy interpolates. */
+export interface ConsoleRefusal {
+  code: RefusalCode
+  /** The prerequisites `missing-prerequisite` names; `[]` for the other codes. */
+  missing: PrerequisiteCode[]
+}
+
 /** The three-state verdict `check-run` prints (core/report/run-log.ts). */
-export type ConsoleVerdict = 'clean' | 'explained' | 'defect'
+export const CONSOLE_VERDICTS = ['clean', 'explained', 'defect'] as const
+
+/** A verdict's stable code. */
+export type ConsoleVerdict = (typeof CONSOLE_VERDICTS)[number]
 
 /**
  * The Run report's defect block, verbatim (`RunReport['defects']`).
@@ -119,19 +172,17 @@ export interface ConsoleRunReport {
   failures: ConsoleFailure[]
 }
 
-/** `POST /api/run` — the start, or the reason it was refused. */
+/** `POST /api/run` — the start, or the refusal it was answered with. */
 export interface ConsoleRunStartPayload {
   started: boolean
   /** Why a start was refused; `null` when one was started. */
-  reason: string | null
-  /** The missing global prerequisites, on the `412` refusal (#34). */
-  missing?: string[]
+  refusal: ConsoleRefusal | null
 }
 
 /**
  * `POST /api/run/cleanup` — the answer to "clean this Orphaned Run up" (#36).
  *
- * `cleaned: false` is a refusal with its reason, and `409` is the only refusal:
+ * `cleaned: false` is a refusal with its code, and `409` is the only refusal:
  * a Run in flight is never cleaned under. `cleaned: true` means the leftover
  * Browser session was asked to close and the log's claim was acknowledged in
  * memory. No Run log is deleted or rewritten by either answer.
@@ -139,7 +190,7 @@ export interface ConsoleRunStartPayload {
 export interface ConsoleRunCleanupPayload {
   cleaned: boolean
   /** Why the cleanup was refused; `null` when it happened. */
-  reason: string | null
+  refusal: ConsoleRefusal | null
 }
 
 /**
@@ -159,8 +210,8 @@ export interface ConsoleVerdictReasons {
   stateMatchesReport: boolean | null
   /** Claimed new files the probe rejected (absent, or zero bytes). */
   missingOnDisk: string[]
-  /** The routine defect classes that were detected, named. */
-  explained: string[]
+  /** The routine defect classes that were detected, as structured reasons (#47). */
+  explained: ConsoleExplainedReason[]
 }
 
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
@@ -207,7 +258,23 @@ export interface ConsoleStatusPayload {
 }
 
 /** How a gallery row stands against the Mirror (spec decision 17). */
-export type ConsoleGalleryRowState = 'on-disk' | 'missing' | 'not-in-gallery'
+export const GALLERY_ROW_STATES = ['on-disk', 'missing', 'not-in-gallery'] as const
+
+/** A gallery row's stable state code. */
+export type ConsoleGalleryRowState = (typeof GALLERY_ROW_STATES)[number]
+
+/**
+ * One Wallpaper's own pixel size (#48).
+ *
+ * The gallery wall is masonry: a tile stands in the shortest column, and a tile
+ * that reports its height *after* it loads re-balances the wall under the
+ * reader's cursor. So the page needs the proportion before the image arrives,
+ * and the service is the only side that can read it off the file.
+ */
+export interface ConsoleImageSize {
+  width: number
+  height: number
+}
 
 /** One row of the gallery: a Gallery list entry, or a Mirror extra. */
 export interface ConsoleGalleryRow {
@@ -238,4 +305,12 @@ export interface ConsoleGalleryPayload {
   mirrorGap: { missing: number; extra: number } | null
   /** Wallpapers in the Mirror: every non-dot entry (web/server/mirror.ts). */
   mirrorCount: number
+  /**
+   * The rows' own pixel sizes, by file name (#48). A name the service could not
+   * measure — a file that is not there, a name that is not an image, a Mirror
+   * the image library cannot read — is absent from this map rather than present
+   * as `0 × 0`: "not measured" is not a size, and the page falls back to a
+   * placeholder proportion for those tiles.
+   */
+  sizes: Record<string, ConsoleImageSize>
 }

@@ -64,7 +64,7 @@ async function serve(
     galleryFacts: async () => galleryFactsOf(await source.get()),
     galleryList: source,
     newSinceLastRun: () => 12,
-    startRun: async () => ({ started: false, reason: 'starting a Run is not implemented yet' }),
+    startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
     token: TOKEN,
     port: 0,
     ...overrides,
@@ -98,7 +98,33 @@ describe('GET /api/gallery', () => {
       mirrorGap: { missing: 1, extra: 2 },
       // Every non-dot Mirror name: the image, the retired file, notes.txt.
       mirrorCount: 3,
+      // No size source was injected here: the wall falls back to placeholder
+      // proportions, and an unmeasured name is absent rather than zero-sized.
+      sizes: {},
     })
+  })
+
+  it('sends each Wallpaper its own pixel size, for the tiles that have a file (#48)', async () => {
+    const measured: string[] = []
+    const { service } = await serve(async () => LIST, {
+      imageSizeSource: async file => {
+        const name = path.basename(file)
+        measured.push(name)
+        // A file that cannot be measured is the collector's ordinary case: a
+        // name that is not an image, or one that vanished since the listing.
+        if (name !== '1012_hash.jpg') throw new Error('not an image')
+        return { width: 1440, height: 2560 }
+      },
+    })
+
+    const { body } = await getJson(`${service.origin}/api/gallery?token=${TOKEN}`)
+
+    expect(body).toMatchObject({
+      sizes: { '1012_hash.jpg': { width: 1440, height: 2560 } },
+    })
+    // `1011_hash.jpg` is a Gallery entry the Mirror does not hold, so it is
+    // never opened; `notes.txt` is not an image name, so it never gets a path.
+    expect(measured.toSorted()).toEqual(['1012_hash.jpg', RETIRED].toSorted())
   })
 
   it('serves the status and the gallery from one read of the list', async () => {
@@ -133,6 +159,7 @@ describe('GET /api/gallery', () => {
       // "Not checked" is never "nothing missing".
       mirrorGap: null,
       mirrorCount: 3,
+      sizes: {},
     })
     // The status view takes the same stance.
     expect(statusPayload.body).toMatchObject({ officialTotal: null, listAvailable: false })
@@ -157,7 +184,7 @@ describe('the gallery route without a list source', () => {
     const service = await startConsoleServer(fixture(), {
       runState: () => IDLE_RUN_FACTS,
       galleryFacts: async () => galleryFactsOf(await source.get()),
-      startRun: async () => ({ started: false, reason: 'not implemented yet' }),
+      startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
       token: TOKEN,
       port: 0,
     })

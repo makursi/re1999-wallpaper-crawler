@@ -16,11 +16,13 @@ import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'node:path'
 
-import { IMAGE_EXTENSIONS } from '../../core/wallpaper-url.js'
+import { IMAGE_EXTENSIONS, isWallpaperFile } from '../../core/wallpaper-url.js'
 import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { buildGalleryView, toGalleryPayload } from './gallery-view.js'
+import type { ImageSizeReader } from './image-sizes.js'
+import { imageSizesOf } from './image-sizes.js'
 import { resolveMirrorFile, MIRROR_REFUSALS } from './mirror-files.js'
 import { countMirrorNames, countMirrorWallpapers, readMirrorNames } from './mirror.js'
 import type { ConsoleGalleryFacts, ConsoleRunFacts } from './status.js'
@@ -107,6 +109,20 @@ export interface ConsoleServerDeps {
    * named 500 — never a crash and never a 404.
    */
   thumbnailSource?: ThumbnailSource
+  /**
+   * The Wallpapers' own pixel sizes, as the Mirror's files hold them (#48).
+   *
+   * The wall is masonry and its columns are balanced against heights, so the
+   * page needs each tile's proportion *before* the lazy thumbnail arrives —
+   * otherwise every image that loads re-balances the wall under the reader's
+   * cursor. `web/server/console.ts` injects the measurement, memoised per file
+   * for the process's life.
+   *
+   * Optional on purpose: a service given none (and #32's status-only shape) has
+   * no sizes, and the wall falls back to placeholder proportions. A missing
+   * measurement is a slightly less exact column, never an error.
+   */
+  imageSizeSource?: ImageSizeReader
 }
 
 export interface ConsoleService {
@@ -161,6 +177,23 @@ function isImageRoute(pathname: string): boolean {
     if (pathname === route || pathname.startsWith(`${route}/`)) return true
   }
   return false
+}
+
+/**
+ * The file a gallery row's name stands for, or `null` when the Mirror would not
+ * serve it (#48).
+ *
+ * The same decisive check the image routes make — exact membership in the
+ * listing the rows were built from, plus an image name — without the URL
+ * decoding those routes need: this name came out of the listing, not out of a
+ * URL, so it is already the file's own name and a `%` in it is a `%`.
+ */
+function mirrorFilePath(
+  imagesDir: string,
+  listed: ReadonlySet<string>,
+  name: string,
+): string | null {
+  return listed.has(name) && isWallpaperFile(name) ? path.join(imagesDir, name) : null
 }
 
 /**
@@ -264,12 +297,18 @@ async function handleRequest(
     return
   }
 
-  // ── GET /api/gallery (#33) ────────────────────────────────────────
+  // ── GET /api/gallery (#33, sizes #48) ─────────────────────────────
   //
   // The Gallery list read against the Mirror: one row per entry, the Mirror's
   // extras after them, the gap as set arithmetic, and the newest Run's
   // `newSinceLastRun`. All the deciding is in the pure `buildGalleryView`; this
-  // block only gathers its three inputs.
+  // block only gathers its inputs.
+  //
+  // The rows' pixel sizes are the masonry's second input (#48): the wall deals
+  // tiles into the shortest column, and the measurement has to be the file's,
+  // because the page would only learn it once the lazy thumbnail arrived. The
+  // measuring runs against the one listing read below, so a name the Mirror no
+  // longer holds is skipped rather than opened.
   if (url.pathname === '/api/gallery') {
     if (req.method !== 'GET') {
       sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
@@ -277,20 +316,28 @@ async function handleRequest(
     }
     const list = deps.galleryList === undefined ? null : await deps.galleryList.get()
     // One read of the Mirror, so the rows and the count cannot describe two
-    // different directories.
+    // different directories — and so the sizes are measured against exactly the
+    // names those rows came from.
     const diskFiles = readMirrorNames(config.imagesDir)
-    sendJson(
-      res,
-      200,
-      toGalleryPayload(
-        buildGalleryView({
-          list,
-          diskFiles,
-          newSinceLastRun: deps.newSinceLastRun?.() ?? null,
-        }),
-        countMirrorNames(diskFiles),
-      ),
-    )
+    const view = buildGalleryView({
+      list,
+      diskFiles,
+      newSinceLastRun: deps.newSinceLastRun?.() ?? null,
+    })
+    const sizeSource = deps.imageSizeSource
+    // The listing as a set: one membership test per row, not one scan per row.
+    const listed = new Set(diskFiles)
+    const sizes =
+      sizeSource === undefined
+        ? {}
+        : await imageSizesOf(
+            // Only a row with a file can be measured: a `missing` row is a
+            // Gallery entry the Mirror does not hold.
+            view.rows.filter(row => row.state !== 'missing').map(row => row.name),
+            name => mirrorFilePath(config.imagesDir, listed, name),
+            sizeSource,
+          )
+    sendJson(res, 200, toGalleryPayload(view, countMirrorNames(diskFiles), sizes))
     return
   }
   // ── end GET /api/gallery ──────────────────────────────────────────
@@ -370,8 +417,7 @@ async function handleRequest(
       return
     }
     const result = await deps.startRun()
-    const payload: ConsoleRunStartPayload = { started: result.started, reason: result.reason }
-    if (result.missing !== undefined) payload.missing = result.missing
+    const payload: ConsoleRunStartPayload = { started: result.started, refusal: result.refusal }
     sendJson(res, result.status ?? (result.started ? 202 : 409), payload)
     return
   }
@@ -398,7 +444,7 @@ async function handleRequest(
     const cleaned = await deps.cleanupRun()
     const payload: ConsoleRunCleanupPayload = {
       cleaned: cleaned.cleaned,
-      reason: cleaned.reason,
+      refusal: cleaned.refusal,
     }
     sendJson(res, cleaned.status ?? (cleaned.cleaned ? 200 : 409), payload)
     return
@@ -416,7 +462,7 @@ async function handleRequest(
   }
 
   if (url.pathname.startsWith(ASSET_PREFIX)) {
-    sendAsset(res, config.distDir, url.pathname)
+    sendAsset(res, config.distDir, url.pathname, deps.token)
     return
   }
 
@@ -436,7 +482,9 @@ async function handleRequest(
  * 3. **Token** has to be the one this start generated. It is the only defence
  *    a `no-cors` GET or a markup subresource leaves, so it is required on
  *    every request, assets included — which is why `sendPage` rewrites the
- *    built page's asset URLs to carry it.
+ *    built page's asset URLs to carry it, and `rewriteStylesheet` does the same
+ *    for the `url()` references inside the built stylesheet, which a browser
+ *    does not resolve with the stylesheet's own query string.
  */
 function isAuthorized(req: http.IncomingMessage, url: URL, port: number, token: string): boolean {
   const host = (req.headers.host ?? '').toLowerCase()
@@ -490,15 +538,87 @@ function sendPage(res: http.ServerResponse, distDir: string, token: string): voi
   const body = html.replace(
     /(src|href)="\.\/(assets\/[^"]+)"/g,
     (_match, attribute: string, assetPath: string) =>
-      `${attribute}="./${assetPath}?token=${encodeURIComponent(token)}"`,
+      `${attribute}="${withToken(`./${assetPath}`, token)}"`,
   )
 
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' })
   res.end(body)
 }
 
+/**
+ * Append this start's token to one relative reference — the one place the
+ * rewrite's two halves (the page's markup and the stylesheet's `url()`) agree on
+ * what "carry the token" means.
+ *
+ * `?` when the reference has no query, `&` when it already has one, and
+ * unchanged when it already carries a `token` parameter — so a second pass over
+ * the same reference cannot produce `?token=…?token=…` or `?v=2?token=…`.
+ *
+ * A `#fragment` stays last: `url(./sprite.svg#icon)` has to become
+ * `./sprite.svg?token=<t>#icon`, because a browser never sends a fragment to the
+ * server and a token placed after the `#` would arrive as nothing at all.
+ */
+function withToken(reference: string, token: string): string {
+  const hash = reference.indexOf('#')
+  const target = hash === -1 ? reference : reference.slice(0, hash)
+  const fragment = hash === -1 ? '' : reference.slice(hash)
+
+  const query = target.indexOf('?')
+  if (query !== -1) {
+    const parameters = new URLSearchParams(target.slice(query + 1))
+    if (parameters.has('token')) return reference
+  }
+  const separator = query === -1 ? '?' : '&'
+  return `${target}${separator}token=${encodeURIComponent(token)}${fragment}`
+}
+
+/**
+ * The `url()` references a stylesheet resolves itself, in either quoting style:
+ * `url(./x.woff2)`, `url("./x.woff2")` and `url('./x.woff2')`.
+ *
+ * Only `./`-relative references are matched. That is exactly what Vite emits
+ * with `base: './'`, and it is what leaves the other three forms a stylesheet
+ * can hold untouched: an absolute `url(https://…)`, an inline `url(data:…)` and
+ * a document fragment `url(#mask)` — none of which a token belongs on.
+ */
+const CSS_URL_REFERENCE = /url\(\s*(?:(["'])\.\/([^"']*)\1|\.\/([^)"'\s]*))\s*\)/g
+
+/**
+ * Serve a stylesheet with the token appended to every relative `url()` it
+ * embeds, for the same reason the page's markup gets one — and one the page's
+ * rewrite cannot reach.
+ *
+ * A browser resolving a relative `url()` inside a stylesheet does **not**
+ * inherit the stylesheet's own query string: it resolves against the
+ * stylesheet's URL with the query dropped. So `index-<hash>.css?token=<t>`
+ * pointing at `url(./font.woff2)` made the browser request
+ * `/assets/font.woff2` with no token, and the guard refused all 16 webfonts
+ * while `document.fonts` reported 110 declared faces and none loaded. The
+ * token has to be written into the reference itself.
+ *
+ * This covers every asset a stylesheet can embed, not just fonts: a
+ * `background-image`, a mask, a cursor — anything `url()` can name.
+ */
+function rewriteStylesheet(css: string, token: string): string {
+  return css.replace(
+    CSS_URL_REFERENCE,
+    (match: string, quote: string, quoted: string, bare: string) => {
+      const reference = quoted === undefined ? bare : quoted
+      const rewritten = withToken(`./${reference}`, token)
+      // Keep the reference's original quoting, so the served stylesheet differs
+      // from the built one only in the token.
+      return quote === undefined ? `url(${rewritten})` : `url(${quote}${rewritten}${quote})`
+    },
+  )
+}
+
 /** Serve one built asset from the page's `assets/`, refusing anything outside it. */
-function sendAsset(res: http.ServerResponse, distDir: string, pathname: string): void {
+function sendAsset(
+  res: http.ServerResponse,
+  distDir: string,
+  pathname: string,
+  token: string,
+): void {
   const assetsDir = path.join(distDir, 'assets')
   let name: string
   try {
@@ -525,13 +645,20 @@ function sendAsset(res: http.ServerResponse, distDir: string, pathname: string):
     return
   }
 
+  const contentType = CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream'
+  // A stylesheet is the one asset that names other assets, and the browser will
+  // not lend it its query string — so its references are handed the token here.
+  const payload = contentType.startsWith('text/css')
+    ? rewriteStylesheet(body.toString('utf8'), token)
+    : body
+
   res.writeHead(200, {
-    'content-type': CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream',
+    'content-type': contentType,
     // Vite's asset names carry a content hash, so a year-long cache is honest.
     'cache-control': 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
   })
-  res.end(body)
+  res.end(payload)
 }
 
 function sendJson(
