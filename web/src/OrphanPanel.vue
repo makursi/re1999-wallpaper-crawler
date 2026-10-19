@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import type { ConsoleRunCleanupPayload, ConsoleStatusPayload } from '../api-types.js'
 import { consoleToken } from './console-token'
+import { t } from './i18n/locale'
 
 /**
  * An Orphaned Run, and the one action the page offers for it (#36).
@@ -20,7 +21,7 @@ const cleaning = ref(false)
 const refusal = ref<string | null>(null)
 
 /** The log name the status carries; the Run's id is all there is without one. */
-const logName = computed(() => props.status.runLogName ?? 'its newest Run log')
+const logName = computed(() => props.status.runLogName ?? t('orphan.newestLog'))
 
 async function cleanUp(): Promise<void> {
   cleaning.value = true
@@ -31,8 +32,9 @@ async function cleanUp(): Promise<void> {
     })
     const body = (await response.json()) as ConsoleRunCleanupPayload
     if (!response.ok || !body.cleaned) {
-      // 409 is the only refusal: a Run in flight is never cleaned under.
-      refusal.value = body.reason ?? `the Console refused the cleanup (HTTP ${response.status})`
+      // 409 is the only refusal: a Run in flight is never cleaned under. Its
+      // reason is the service's prose, verbatim, until ticket #47.
+      refusal.value = body.reason ?? t('orphan.refusedCleanup', { status: response.status })
       return
     }
     // The Run's state is read back rather than assumed, as after a start.
@@ -47,16 +49,10 @@ async function cleanUp(): Promise<void> {
 
 <template>
   <section class="mt-4">
-    <p>
-      Orphaned Run <strong>{{ status.runId }}</strong> — the Run log
-      <code class="break-all">{{ logName }}</code> has no Run report and was written recently.
-    </p>
-    <p class="text-muted text-sm">
-      Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log
-      directory alone cannot tell the two apart. The cleanup closes the leftover Browser session and
-      withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's
-      audit trail.
-    </p>
+    <!-- The state is derived from a log, so the id is there; `?? ''` is only
+         because the payload's type cannot say that. -->
+    <p>{{ t('orphan.line', { runId: status.runId ?? '', logName: logName }) }}</p>
+    <p class="text-muted text-sm">{{ t('orphan.explanation') }}</p>
     <p>
       <button
         type="button"
@@ -64,7 +60,7 @@ async function cleanUp(): Promise<void> {
         :disabled="cleaning"
         @click="cleanUp"
       >
-        <span class="i-ph-broom mr-1" aria-hidden="true" />Clean up
+        <span class="i-ph-broom mr-1" aria-hidden="true" />{{ t('orphan.clean') }}
       </button>
     </p>
     <p v-if="refusal !== null" class="text-danger">{{ refusal }}</p>

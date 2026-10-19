@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import type { ConsoleGalleryPayload, ConsoleGalleryRow } from '../api-types.js'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
+import { t } from './i18n/locale'
+import type { MessageKey } from './i18n/messages'
 
 const gallery = ref<ConsoleGalleryPayload | null>(null)
 const failure = ref<string | null>(null)
@@ -34,11 +36,11 @@ onMounted(() => {
  */
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 
-/** The states as the page reads them. */
-const STATE_LABELS: Record<ConsoleGalleryRow['state'], string> = {
-  'on-disk': 'on disk',
-  missing: 'missing',
-  'not-in-gallery': 'not in the gallery',
+/** The states as the page says them, key for key — a row state with no message is a compile error. */
+const STATE_LABEL_KEYS: Record<ConsoleGalleryRow['state'], MessageKey> = {
+  'on-disk': 'gallery.state.onDisk',
+  missing: 'gallery.state.missing',
+  'not-in-gallery': 'gallery.state.notInGallery',
 }
 
 /**
@@ -51,6 +53,15 @@ const STATE_TONES: Record<ConsoleGalleryRow['state'], string> = {
   missing: 'text-danger',
   'not-in-gallery': 'text-danger',
 }
+
+/** The official total as the reader sees it: a number, or "not read". */
+const officialTotal = computed(() => {
+  const total = gallery.value?.officialTotal
+  return total == null ? t('gallery.notRead') : total
+})
+
+/** The newest-Run clause, or `null` when there is nothing to compare against. */
+const newestRunAdded = computed(() => gallery.value?.newSinceLastRun ?? null)
 
 /** `true` when a file with this name stands a chance of being an image. */
 function isImageName(name: string): boolean {
@@ -80,26 +91,26 @@ function rowKey(row: ConsoleGalleryRow): string {
 
 <template>
   <section class="mt-8">
-    <h2 class="text-xl font-bold">Gallery</h2>
+    <h2 class="text-xl font-bold">{{ t('gallery.heading') }}</h2>
     <p v-if="failure !== null">{{ failure }}</p>
-    <p v-else-if="gallery === null">Reading the Gallery list…</p>
+    <p v-else-if="gallery === null">{{ t('gallery.reading') }}</p>
     <template v-else>
       <p>
-        The Gallery list holds
-        <strong>{{ gallery.officialTotal === null ? 'not read' : gallery.officialTotal }}</strong>
-        entries; the Mirror holds <strong>{{ gallery.mirrorCount }}</strong> files.
-        <template v-if="gallery.newSinceLastRun !== null">
-          The newest Run added <strong>{{ gallery.newSinceLastRun }}</strong
-          >.
-        </template>
+        {{
+          t('gallery.counts', { officialTotal: officialTotal, mirrorCount: gallery.mirrorCount })
+        }}
       </p>
-      <p v-if="!gallery.listAvailable">
-        The Gallery list was not read, so this view shows the Mirror's files alone: nothing can be
-        said about which Wallpapers are missing, and nothing here is a count of them.
+      <p v-if="newestRunAdded !== null">
+        {{ t('gallery.newestRunAdded', { newSinceLastRun: newestRunAdded }) }}
       </p>
+      <p v-if="!gallery.listAvailable">{{ t('gallery.listUnavailable') }}</p>
       <p v-else-if="gallery.mirrorGap !== null">
-        {{ gallery.mirrorGap.missing }} listed Wallpapers are missing from the Mirror;
-        {{ gallery.mirrorGap.extra }} Mirror files are not in the gallery any more.
+        {{
+          t('gallery.mirrorGap', {
+            missing: gallery.mirrorGap.missing,
+            extra: gallery.mirrorGap.extra,
+          })
+        }}
       </p>
       <!-- The wall is a grid of tiles, each a token-styled surface with the
            1px border reserved up front, so hovering swaps its colour without
@@ -111,7 +122,7 @@ function rowKey(row: ConsoleGalleryRow): string {
             type="button"
             class="grid h-[10rem] w-full cursor-pointer place-items-center overflow-hidden rounded-sm border border-border bg-surface p-0 transition-colors duration-hover ease-standard hover:border-accent"
             @click="opened = row"
-            :aria-label="`Show ${row.name} at full size`"
+            :aria-label="t('gallery.tileShow', { name: row.name })"
           >
             <img
               class="max-h-full max-w-full object-contain"
@@ -127,13 +138,13 @@ function rowKey(row: ConsoleGalleryRow): string {
             v-else
             class="grid h-[10rem] w-full place-items-center overflow-hidden rounded-sm border border-dashed border-border bg-surface p-0 text-[0.8rem] text-muted"
             role="img"
-            :aria-label="`${row.name} is not on disk`"
+            :aria-label="t('gallery.tileNotOnDisk', { name: row.name })"
           >
-            <span>not on disk</span>
+            <span>{{ t('gallery.notOnDisk') }}</span>
           </div>
           <p class="mt-1 flex justify-between gap-2 text-[0.8rem]">
             <strong>{{ row.id ?? '—' }}</strong>
-            <span :class="STATE_TONES[row.state]">{{ STATE_LABELS[row.state] }}</span>
+            <span :class="STATE_TONES[row.state]">{{ t(STATE_LABEL_KEYS[row.state]) }}</span>
           </p>
           <code class="text-xs break-all">{{ row.name }}</code>
         </li>

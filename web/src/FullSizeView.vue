@@ -22,6 +22,7 @@ import {
 import { ref } from 'vue'
 
 import { consoleToken } from './console-token'
+import { t } from './i18n/locale'
 
 const props = defineProps<{
   /** The gallery's own id; `null` for a Mirror file the list no longer holds. */
@@ -68,7 +69,7 @@ function onOpenChange(open: boolean): void {
                announces, so both are hidden. -->
           <VisuallyHidden>
             <DialogTitle>{{ name }}</DialogTitle>
-            <DialogDescription>Gallery id {{ id ?? '—' }}</DialogDescription>
+            <DialogDescription>{{ t('viewer.galleryId', { id: id ?? '—' }) }}</DialogDescription>
           </VisuallyHidden>
           <img
             class="max-h-[80vh] max-w-full object-contain"
@@ -77,9 +78,7 @@ function onOpenChange(open: boolean): void {
             @error="failure = true"
           />
           <figcaption class="flex items-baseline gap-3 text-sm text-primary">
-            <span
-              >Gallery id <strong>{{ id ?? '—' }}</strong></span
-            >
+            <span>{{ t('viewer.galleryId', { id: id ?? '—' }) }}</span>
             <code class="min-w-0 flex-1 truncate text-secondary">{{ name }}</code>
             <DialogClose as-child>
               <!-- The small-control weight: a regular Phosphor stroke, never
@@ -88,11 +87,11 @@ function onOpenChange(open: boolean): void {
                 type="button"
                 class="flex-none cursor-pointer rounded-sm border border-border bg-surface-raised px-[0.6rem] py-[0.3rem] transition-colors duration-hover ease-standard hover:border-accent"
               >
-                <span class="i-ph-x mr-1" aria-hidden="true" />Close (Esc)
+                <span class="i-ph-x mr-1" aria-hidden="true" />{{ t('viewer.close') }}
               </button>
             </DialogClose>
           </figcaption>
-          <p v-if="failure" class="text-sm text-danger">That file is no longer in the Mirror.</p>
+          <p v-if="failure" class="text-sm text-danger">{{ t('viewer.missingFile') }}</p>
         </figure>
       </DialogContent>
     </DialogPortal>
