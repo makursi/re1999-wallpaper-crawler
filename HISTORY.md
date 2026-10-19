@@ -1,6 +1,6 @@
 # HISTORY — 项目沿革与决策记录
 
-> **读法**（也写进 AGENTS.md）：改动任何管线之前，先扫一遍对应迭代的条目，避免重走已被否决的方案。本文只记**为什么现在长这样**；现状事实（命令、架构、陷阱、词表）以 AGENTS.md / `src/` / CONTEXT.md / `docs/adr/` 为准，不在此重复。
+> **读法**（也写进 AGENTS.md）：改动任何管线之前，先扫一遍对应迭代的条目，避免重走已被否决的方案。本文只记**为什么现在长这样**；现状事实（命令、架构、陷阱、词表）以 AGENTS.md / 两个层的源码（`core/`、`web/`）/ CONTEXT.md 为准，不在此重复。`docs/adr/` 与更早的条目是**当日**的决策记录，里面引的路径按那天的树写，不随搬家回改。
 > **约定**：每条 = 触因 → 决策（含被否决项）→ 验证 → 教训。
 
 ---
@@ -448,6 +448,7 @@
 - 文档同步：AGENTS.md 的架构块改成「两层、两目录」（它在此之前甚至没提过 Console）、测试树按 `tests/core/**` 重画、CONTEXT-MAP 的所有权清单与「Where things live」表、docs/agents/domain.md 的树、runbook 的命令（`tsx core/check-run.ts`）。
 - **就地改了 run-code 载荷里的一句注释**（`src/wallpaper-url.ts` → `core/wallpaper-url.ts`）。这是对 AGENTS.md「改这个载荷要用真跑验证」的**有意识例外**：改的是注释字节，载荷仍是裸 `async (page) => {…}` 表达式，于是验证方式是**协议同构的解析**（把文件按 `(\n<内容>\n)` 包进 `new Function`，与 playwright-cli 的包装一致），不是跑一轮爬虫 —— 本轮**没有跑抓取 Run**（票面明写），所以这条例外的边界留在这里。
 - 否决「本轮一并搬 `scripts/`」与「在仓根引入第三棵共享目录」：前者是三种静默失败换名字好看，后者是给一个读者做共享层（Console 是 Run 产物的读者，不是第二个库消费者）。`scripts/` 的去留写成开放问题。
+- **日期记录不回改**：`docs/adr/**` 与更早的 HISTORY 条目里引的旧路径（`src/**`、`tests/console/**`、根 `dist/`）保持原样 —— 它们是**那天的树**，spec 明令不重写日期记录。现状由 AGENTS.md 与两层的源码给出，两处「读法」句（HISTORY 开头、AGENTS.md 的 Project history 段）都改成这么说的，免得读者把 ADR 里引的路径当成现行权威。本轮另修掉三处**不是日期记录**的旧路径：CI 注释里的 `src/config.ts`、两条测试注释里的 `tests/console/**` 与 `tests/report/**`。
 
 **验证**：
 - 四件套 + 打包全绿：`pnpm typecheck` 0；`pnpm lint` 0 warning 0 error；`pnpm fmt:check` clean；`pnpm test` **25 files / 268 tests passed**（与搬 `web/` 那轮逐数相同 —— 只搬家，测试一行没改语义）；`pnpm build:web` → `web/dist/`。
@@ -455,6 +456,7 @@
 - **Console 冒烟在最终树上重跑**：`pnpm console --no-open` 自己构建页面 → 页面 200 且 2 条资源 URL 带 token、改写后的资源 200、`/api/status?token` 200 真实数据（`runId 2026-10-18T01-03-31`、`mirrorCount 1013`、`officialTotal 1010`）、无 token 403、未知路由 404、缩略图 200 且缓存落在 `web/.console-cache/thumbnails/`、杀进程后端口释放。
 - 协议载荷：`node --check scripts/run-discovery.js` 通过；按包装方式 `(\n<内容>\n)` 做 `new Function` 解析通过（若被格式化插了前导 `;`，这里就是 `SyntaxError`）。
 - 没跑抓取 Run：爬虫的路径假设未变（`core/config.ts` 仍是一层深，`PROJECT_ROOT` 仍解析到仓根），跑一轮证明不了这次改动；PR 里写明。
+- **双轴自审**（standards / spec 两个独立子 agent，提交后跑）确认「读起来就是一次搬家」（10 个爬虫文件逐字节相同、57 个 rename、零新增/删除），并报出已全部处理的问题：三处非日期记录的旧路径、AGENTS.md 的 `core/` 树漏了 `core/run-log-file.ts`（测试树里却列了它的测试）、`tsconfig.json` 的 `exclude` 还写着根 `dist`、夹具的 `distDir` 不像生产（少了 `web/` 一层）、`realThumbnailSource(webRoot)` 的参数已无区分作用（去掉，直接用模块级 `WEB_ROOT`）；**载荷那条规则本身也改了**：AGENTS.md 现在写的是「按载荷被消费的方式验证」（包装后解析），并保留「改到表达式本身就要真跑」的强要求 —— 上一轮版本把「任何改动都要真跑」写成铁律，而它拦不住注释这类改动，于是规则与实际做法不一致。
 
 **教训**：
 - **不会失败的那一处才要特意验**：`mainEntry` 指错时没有任何门会红（页面照报「已开始」），所以它需要一次显式的存在性检查，而不是指望四个门兜底。

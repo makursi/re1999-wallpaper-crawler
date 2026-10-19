@@ -5,8 +5,11 @@ import { defineConfig } from 'vite'
 
 // The page's build config, at the web layer's root: `here` is the layer root,
 // because this file is where a standard Vite project keeps it. The built page
-// lands beside the config (`web/dist`) and the Console's service reads it there
-// (`web/server/console-config.ts` › `DIST_DIR_NAME`).
+// lands beside the config (`web/dist`), which is where the Console looks for it:
+// the service's `distDir` is `<web layer root>/dist` as well, and the two names
+// are the same directory — `DIST_DIR_NAME` in `web/server/console-config.ts` and
+// the literal below. Nothing links them at compile time, so the smoke run is what
+// proves they agree: the Console builds the page here and then serves it.
 const here = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({

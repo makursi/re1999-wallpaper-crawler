@@ -1,8 +1,8 @@
 // ── Run fixtures, built as data ─────────────────────────────────────
 //
 // A Run report record, a Gallery state, and the log lines around them — the
-// shapes `tests/report/run-log.test.ts` uses, shared by the Console's tests so
-// every one of them is talking about the same Run. Nothing here invents a
+// shapes `tests/core/report/run-log.test.ts` uses, shared by the Console's tests
+// so every one of them is talking about the same Run. Nothing here invents a
 // field the Run report contract does not have.
 //
 // The Console's HTTP tests also share the three things every one of them needs:
@@ -144,7 +144,10 @@ export function consoleConfigIn(projectRoot: string): ConsoleConfig {
     imagesDir,
     logDir: path.join(projectRoot, 'logs'),
     galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    distDir: path.join(projectRoot, 'dist'),
+    // The built page lives under the web layer's root, beside its config —
+    // `web/dist` in the real repository. Mirrored here so a fixture's layout is
+    // the production one, one level deeper than the fixture project root.
+    distDir: path.join(projectRoot, 'web', 'dist'),
     galleryListEndpoint: 'https://gallery.test/query',
   }
 }

@@ -1,6 +1,6 @@
 // ── The Run state as a lifetime (#36) ───────────────────────────────
 //
-// tests/console/run-state.test.ts pins #34's table. This file pins what #36
+// tests/web/server/run-state.test.ts pins #34's table. This file pins what #36
 // adds on top of it, and re-walks the whole table so the two tickets' facts are
 // read together: conventions §6a is one rule in one function, never a second
 // state rule somewhere else.

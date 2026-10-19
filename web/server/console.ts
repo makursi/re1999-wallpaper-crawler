@@ -95,8 +95,8 @@ function consoleConfig(): ConsoleConfig {
  * broken or absent native addon arrives as a rejected `await import('sharp')` — a
  * named 500 at the request site, never a crashed process and never a failed Run.
  */
-function realThumbnailSource(webRoot: string): ThumbnailSource {
-  const cacheDir = path.join(webRoot, THUMBNAIL_CACHE_DIR_NAME)
+function realThumbnailSource(): ThumbnailSource {
+  const cacheDir = path.join(WEB_ROOT, THUMBNAIL_CACHE_DIR_NAME)
   return {
     thumbnail: async (name, sourceFile) => {
       const file = await ensureThumbnail(name, {
@@ -317,7 +317,7 @@ async function main(options: ConsoleOptions): Promise<void> {
     // The image library's one call site (#35). Its import is dynamic and lives
     // inside `web/server/thumbnails.ts`, so a broken native binary is a 500 on
     // one tile — never a crash, and never a failed Run.
-    thumbnailSource: realThumbnailSource(WEB_ROOT),
+    thumbnailSource: realThumbnailSource(),
     startRun,
     cleanupRun,
     token: randomBytes(16).toString('hex'),

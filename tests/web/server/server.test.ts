@@ -51,7 +51,7 @@ function fixture(): ConsoleConfig {
   fs.writeFileSync(path.join(config.imagesDir, '1013_8dee54e8bf644722981751524fb54356.png'), 'a')
   fs.writeFileSync(path.join(config.imagesDir, '1014_11a9938e23a347ca8580098ddfd5a190.jpg'), 'b')
   // A non-image name and a dotfile: the Mirror count has to include the first
-  // and skip the second (see tests/console/mirror.test.ts).
+  // and skip the second (see tests/web/server/mirror.test.ts).
   fs.writeFileSync(path.join(config.imagesDir, 'notes.txt'), 'c')
   fs.writeFileSync(config.galleryStateFile, '{}')
 

@@ -26,5 +26,7 @@
     "web/server/**/*",
     "web/api-types.ts"
   ],
-  "exclude": ["node_modules", "dist"]
+  // The page's build output lives under the layer that produces it; `dist` at
+  // the repository root belongs to nobody now (the crawler stays build-free).
+  "exclude": ["node_modules", "web/dist"]
 }
