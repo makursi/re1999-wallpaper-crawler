@@ -464,6 +464,34 @@
 
 ---
 
+### 2026-10-19 — 中文优先的本地壁纸图鉴:改名、双语、设计系统、字体(spec #43 / 票 #44–#49)
+
+**触因**:仓库有两个受众、两个入口。agent 那一半(两条命令 + runbook + 日志契约)英文、有文档、有测试;人那一半——一个命令起本地页面看 Mirror——**53 条可见文案全是英文、0 条中文**,入口叫 `console`(与浏览器 devtools 撞名)且 README 从头到尾没提过它;页面没有设计系统(4 个 scoped style、`system-ui`、无配色、无图标),守着 1013 张美术作品,却长得像默认 HTML。
+
+**决策**(spec #43 的实现决定 + 六张票各自的验收标准):
+- **命名**:`console` → **`webui`**,终端 banner 改 `WebUI: <url>`,一切指路的地方(AGENTS.md 命令表、CONTEXT-MAP、README 新增的一节)同一改到位;**领域词 Console 与内部文件名不动**——ADR 0012 取代 ADR 0008 的命名条款,0008 作为当天的记录不回改。
+- **语言边界**:页面文案、`document.title`、`<html lang>`、`webui` 的终端输出用中文;标识符、注释、commit message、`run_report` 字段名与日志契约保持英文;文档正文保持英文,只有**词表变双语条目**(Wallpaper 壁纸 / Mirror 镜像 / Run 运行 / Run log 运行日志 / Gallery list 官方清单 / Site asset 站点资源 / Orphaned Run 孤儿运行 / Coverage 覆盖率 / Mirror gap 镜像缺口 / Console 本地控制台)。
+- **i18n**:自建**类型化字典**(52 key × 2 语言;`satisfies Record<MessageKey, string>` 让漏翻与多翻都成为编译错误),默认 `zh-CN`,切换存 `localStorage`,不用 `?lang=`;服务端**只出 code + 参数**(`run-busy`/`orphaned-run`/`missing-prerequisite`、四个前置条件 code、结构化 verdict 原因)——服务端英文散文归零,文案只有一个来源。
+- **设计系统**:UnoCSS + `presetWind4` + 语义 token(**暗色唯一**)+ `reka-ui` 只给行为 + Phosphor 构建期内联;取 high-end 的视觉语言、**拒其落地页教条**(宏观留白、全页 scroll reveal)。ADR 0013 记录了对 **Onu UI** 的实测否决(npm 停在 1.1.5 / 2024-11-10;preset 锁 `@unocss/preset-mini ^0.64`,与 unocss 66 装出第二份 core;wind4 重写只在未发布的 main;文档域名 DNS 不解析;无 i18n 层)。
+- **视觉与信息架构**:浮起玻璃药丸导航(blur 只出现在固定层)、**5 列 masonry 当主角**、Run 与孤儿面板进侧栏抽屉、全屏 80% 黑取景器 + 圆角控制药丸、氛围由 CSS 复刻(琥珀辉光 + 3% 噪点,**不搬任何素材**)、动效走自定义曲线且 `prefers-reduced-motion` 在一处坍缩。
+- **字体**:三个 OFL 角色(思源宋体标题/导航、Playfair 拉丁展示、Geist 数字 tabular)+ 系统黑体正文;`@fontsource` 进 `node_modules`、产物落 gitignore 的 `web/dist`,**仓库零字体字节**;MiSans / HarmonyOS Sans / 阿里巴巴普惠体 / 商业展示体 / 官网自己的字体文件全部排除(ADR 0015)。
+- **砌墙必须有真纵横比**:masonry 要知道每张图的像素尺寸,而"等图片加载后再排"会让整面墙在读者光标下重排——于是服务端新增 `web/server/image-sizes.ts`(注入式读数 + 进程内记忆 + 并发 8;实测 1013 张顺序读 5.0s、并发 1.2s),前端 `web/src/masonry.ts` 只做"进最矮一列"这一个决策,并因此可单测。
+
+**验证**(真跑,不是构建产物):
+- 五门:`pnpm fmt:check` **87 文件**、`pnpm lint` 76 文件 / 218 规则 **0 warning 0 error**、`tsc` + `vue-tsc` 0、`pnpm test` **28 文件 / 301 tests**(基线 268)、`pnpm build:web` 成功。
+- 浏览器(真服务 + 真镜像 1013 个文件):默认中文;切 English 后 `title=Wallpaper Gallery`、`lang=en`、`localStorage.webui.locale=en` 且刷新仍在;**5 列 masonry**、tile 按真实纵横比且 1013 张全渲染;取景器 `role=dialog` + **`aria-modal=true`** + 焦点进浮层,**Esc 关闭后焦点回到被点的那一张**(`activeIndex=40`、`sameTile=true`);抽屉里 run id、结论、已解释原因、官方/下载数字、缺陷行、开始运行全在。
+- **CSS 内嵌资源 403(本轮唯一"只有真跑能看见"的缺陷)**:五个门全绿、测试全绿、**截图看着也对**(Windows 的衬线回退链让真字体与假字体肉眼几乎一样),但请求日志 **16 条 woff2 全是 403**、`document.fonts` 已加载面数 **0**。根因:`sendPage` 只改写 HTML 里的资源 URL,而 CSS 里的 `url()` 不继承样式表自己的查询串。修复让样式表在出口处也被改写——顺带发现 fragment 必须排最后(`#tile?token=…` 会被浏览器整个丢掉)。修后:woff2 全 200、已加载面数 6–7、中文衬线 `check()` 为 true。
+- **两个"报了但没做到"的缺陷同样只有浏览器抓得到**:焦点不返回触发元素、`aria-modal` 缺失;修法是把 tile 变成真正的 `DialogTrigger`,并在内容上明写 `aria-modal`(reka-ui 不写)。另有一个纯视觉缺陷:100% 缩放下,被 `transform` 提升为堆叠上下文的图片会压住控制药丸,加 `z-10` 解决。
+
+**教训**:
+- **构建绿 ≠ 页面对**。本轮最贵的缺陷穿过了五个门、穿过了 301 个测试、还穿过了截图——因为回退链让眼睛也判不出来。凡涉及"资源地址 × 访问守卫"的组合,证据必须是**请求日志与运行时状态**,不是产物与截图。
+- **"看着对"是最危险的证据**。同一次比对里,衬线回退与真字体在截图上几乎一致;分得开它们的是 `document.fonts` 与网络列表。
+- **环境会改形状,但不能改标准**。本轮前半程在一个 `pnpm`/`tsx`/`oxfmt` 全被拒的沙箱里,量出的替代命令(直连 `node_modules\.bin`、`vite/vitest` 加 `--configLoader native`、`--pool=threads`)让 implementer 仍然跑得完 TDD 与四件套;而"确实没跑过的门"写进了 PR 与提交信息,不假装跑过。沙箱放开后立刻用真 `pnpm` 复跑一遍,结果一致——这一步不是形式。
+- **派出去的 agent 会中断、会失败、会把没做到的事写成做到**。本轮一次被中断、一次 failed、一处"焦点返回"报成已实现而实测不成立。**能验收的只有流程里的实测证据,不是 agent 的结语**;接手前先量现场(那次 16 个未提交改动其实已经是全绿的),比重派一次便宜得多。
+- **没有截图能证明的那部分,要抽成纯函数**。masonry 排错列在任何截图里都不显形(每列看上去都正常),所以那个决策被单独抽出来并单测;而焦点返回与 `aria-modal` 只能靠浏览器 `eval` 断言。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
