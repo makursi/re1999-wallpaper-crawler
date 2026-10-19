@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
-import type { ConsoleRunStartPayload, ConsoleStatusPayload } from '../../src/console/api-types.js'
+import type { ConsoleRunStartPayload, ConsoleStatusPayload } from '../api-types.js'
 import { consoleToken } from './console-token'
 import OrphanPanel from './OrphanPanel.vue'
 
@@ -107,7 +107,7 @@ async function readStatus(): Promise<void> {
     const response = await fetch(`/api/status?token=${encodeURIComponent(consoleToken())}`)
     if (!response.ok) return
     // The service's own payload; its shape is declared once, in
-    // src/console/api-types.ts, and imported here as a type only.
+    // web/api-types.ts, and imported here as a type only.
     const payload = (await response.json()) as ConsoleStatusPayload
     status.value = payload
     if (payload.state === 'running') startPolling()

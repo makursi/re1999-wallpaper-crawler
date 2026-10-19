@@ -1,6 +1,6 @@
 # HISTORY — 项目沿革与决策记录
 
-> **读法**（也写进 AGENTS.md）：改动任何管线之前，先扫一遍对应迭代的条目，避免重走已被否决的方案。本文只记**为什么现在长这样**；现状事实（命令、架构、陷阱、词表）以 AGENTS.md / `src/` / CONTEXT.md / `docs/adr/` 为准，不在此重复。
+> **读法**（也写进 AGENTS.md）：改动任何管线之前，先扫一遍对应迭代的条目，避免重走已被否决的方案。本文只记**为什么现在长这样**；现状事实（命令、架构、陷阱、词表）以 AGENTS.md / 两个层的源码（`core/`、`web/`）/ CONTEXT.md 为准，不在此重复。`docs/adr/` 与更早的条目是**当日**的决策记录，里面引的路径按那天的树写，不随搬家回改。
 > **约定**：每条 = 触因 → 决策（含被否决项）→ 验证 → 教训。
 
 ---
@@ -413,6 +413,57 @@
 
 ---
 
+### 2026-10-19 — Console 独立成层：web/（spec #39 / 票 #40）
+
+**触因**：仓库是两个程序挤在一棵树里：爬虫产出 Mirror，Console 供人看。Console 的服务散在爬虫的 `src/` 里，页面却另有 `web/`，于是「同一个程序的两半」隔两棵树；页面的构建配置、类型检查程序和构建产物又和爬虫的挤在仓根。代价每次访问都付：任何「这个文件属于哪个程序」的问题都只能读 import 回答，不能靠看。
+
+**决策**（spec #39 的实现决定 1–14；本轮只做 Console 那一半，`core/` 在下一票）：
+- **边界**：Console 独占 `web/` 一棵树 —— `web/server/`（服务 + 唯一入口 `console.ts`）、`web/api-types.ts`（页面与服务共享的类型契约，提到层根，因为把它留在服务目录里等于宣称它是服务的私事）、`web/src/`（页面）、`web/index.html`，以及只有页面需要的工具：`web/vite.config.ts`、`web/tsconfig.web.json`。
+- **两个锚点，互不推导**：仓根锚点仍是 `PROJECT_ROOT`（Run 的 cwd，`.env`/`node_modules`/`images/`/`logs/` 的家），入点模块深度不变所以它仍解析到仓根；web 层锚点由 `web/server/console.ts` 自己推（`path.resolve(import.meta.dirname, '..')` = `web/`），只有它知道层根，且**不**从 `PROJECT_ROOT` 反推（spec 决定 7）。层的产物随层：`web/dist/`（构建页面）、`web/.console-cache/`（缩略图缓存，仍在 Mirror 之外，ADR 0010）；一个 Run 写的数据（`images/`、`logs/`）留仓根，因为两层都读。
+- **命名**：拒 `crawler/` / `scraper/` —— 词表明确回避这两个词（本程序不跟随链接），与领域模型矛盾的目录名会误导此后每一次 grep。
+- **`scripts/` 原地不动**：run-code 载荷的排除在两个工具配置里按字面路径钉死，目录名又被 discovery-loader 指名，三种静默失败换不来本轮任何收益 —— 记为开放问题，不是本轮解决。
+- **类型程序按目录列**：Node 程序 `tsconfig.json` 显式含 `web/server/**/*` 与 `web/api-types.ts`（没有任何测试 import 的入口因此不会悄悄掉出检查），页面程序 `web/tsconfig.web.json` 只含 `web/src/**` + `api-types.ts`；`typecheck` 变成 `tsc --noEmit && vue-tsc -p web/tsconfig.web.json`。
+- **构建指向层配置**：`vite.config.ts` 移到 `web/`（`root` = 层根，`outDir` = `web/dist`），启动命令、`build:web`、`dev:web` 三者一致地写 `--config web/vite.config.ts`；CI 的 bundle gate 仍构建页面。
+- **测试镜像源**：`tests/console/**` → `tests/web/server/**`，两个不是测试的 helper（`run-fixtures.ts`、`test-image.ts`）随所服务的测试一起搬；`vitest.config.ts` 的收集模式不用改。
+
+**验证**：
+- 四件套 + 打包全绿（改动后实测）：`pnpm typecheck` 0；`pnpm lint` 65 files / 218 rules，0 warning 0 error；`pnpm fmt:check` 76 files clean；`pnpm test` **25 files / 268 tests passed**（与基线逐数相同 —— 这是「只搬家」的直接证据）；`pnpm build:web` → `web/dist/index.html` + hashed assets。
+- **Console 冒烟（真跑，跑前删掉 `web/dist` 以逼出进程内构建）**：`pnpm console --no-open` → 自己构建页面 → `Console: http://127.0.0.1:8791/?token=…`；`GET /?token` **200** 且页面里 2 条资源 URL 被改写成带 token，改写后的资源 **200**；`GET /api/status?token` **200** 真实数据（`runId 2026-10-18T01-03-31`、`state idle`、`mirrorCount 1013`、`officialTotal 1010`、`verdict explained` —— 活的清单接口答了 1010）；`GET /api/status`（无 token）**403**；`GET /api/nope?token` **404**；`GET /api/thumbnail/<真文件名>` **200** 且缓存落在 `web/.console-cache/thumbnails/`，仓根同名路径**不存在**；杀进程后端口释放。
+- 没跑抓取 Run：本轮不改爬虫任何路径假设，跑一轮证明不了这次改动（spec 的 Testing Decisions 明写如此，PR 里也要写明）。也没有新测试缝 —— 这轮没有行为可断言，四个门 + 一次真冒烟就是全部证据。
+
+**教训**：
+- **「纯搬家」也需要一个会响的证据**：单测、lint、typecheck 都拦不住路径写错（`web/.console-cache` 与 `.console-cache` 的差别没有任何断言覆盖），只有真发一次缩略图请求能拦。
+- **锚点的价值在于它只有一个来源**：web 层根从入点模块深度推出，所以入口搬到哪层、层根就跟到哪；若改成从仓根 `join` 出来，布局一变就静默指错地方 —— 这正是 spec 把「两个锚点互不推导」写成决定的原因。
+
+---
+
+### 2026-10-19 — 爬虫收进 core/，布局落定（spec #39 / 票 #41）
+
+**触因**：上一票把 Console 挪出去之后，原来那棵树里剩下的就是爬虫自己 —— 但它仍叫 `src/`，也就是「不是 Console 的地方」；仓根答不出「哪个目录是爬虫」。
+
+**决策**：
+- `src/` → `core/`，子目录名与内容一字不动；仓根恰好两个源目录（`core/`、`web/`），第三个 `scripts/` 只是协议载荷 + 提交护栏，不是层。
+- 一切指路的地方同一改到位：Console 的 import（`../../core/**`）、三个命令（`tsx core/main.ts`、`tsx core/check-run.ts`、`tsx web/server/console.ts`）、Node 类型程序（`core/**/*`、`web/server/**/*`、`web/api-types.ts`、`web/vite.config.ts` 按目录列，入口没有测试 import 也不会掉出去）、测试树（`tests/core/**`、`tests/web/server/**`）及其 import。
+- **入口点是这条改动里唯一不会自己喊出来的路径**：Console 的启动器把 `mainEntry` 指到 `path.join(projectRoot, 'core', 'main.ts')` —— 这个文件不存在时，四个门一个都不会红（子进程起不来时页面照样报「已开始」）。所以本轮**实测该文件存在**，不靠推断。
+- 文档同步：AGENTS.md 的架构块改成「两层、两目录」（它在此之前甚至没提过 Console）、测试树按 `tests/core/**` 重画、CONTEXT-MAP 的所有权清单与「Where things live」表、docs/agents/domain.md 的树、runbook 的命令（`tsx core/check-run.ts`）。
+- **就地改了 run-code 载荷里的一句注释**（`src/wallpaper-url.ts` → `core/wallpaper-url.ts`）。这是对 AGENTS.md「改这个载荷要用真跑验证」的**有意识例外**：改的是注释字节，载荷仍是裸 `async (page) => {…}` 表达式，于是验证方式是**协议同构的解析**（把文件按 `(\n<内容>\n)` 包进 `new Function`，与 playwright-cli 的包装一致），不是跑一轮爬虫 —— 本轮**没有跑抓取 Run**（票面明写），所以这条例外的边界留在这里。
+- 否决「本轮一并搬 `scripts/`」与「在仓根引入第三棵共享目录」：前者是三种静默失败换名字好看，后者是给一个读者做共享层（Console 是 Run 产物的读者，不是第二个库消费者）。`scripts/` 的去留写成开放问题。
+- **日期记录不回改**：`docs/adr/**` 与更早的 HISTORY 条目里引的旧路径（`src/**`、`tests/console/**`、根 `dist/`）保持原样 —— 它们是**那天的树**，spec 明令不重写日期记录。现状由 AGENTS.md 与两层的源码给出，两处「读法」句（HISTORY 开头、AGENTS.md 的 Project history 段）都改成这么说的，免得读者把 ADR 里引的路径当成现行权威。本轮另修掉三处**不是日期记录**的旧路径：CI 注释里的 `src/config.ts`、两条测试注释里的 `tests/console/**` 与 `tests/report/**`。
+
+**验证**：
+- 四件套 + 打包全绿：`pnpm typecheck` 0；`pnpm lint` 0 warning 0 error；`pnpm fmt:check` clean；`pnpm test` **25 files / 268 tests passed**（与搬 `web/` 那轮逐数相同 —— 只搬家，测试一行没改语义）；`pnpm build:web` → `web/dist/`。
+- **入口点实测存在**：`core/main.ts` 在 `mainEntry` 指的那个路径上（实测 `True`），Console 的启动器因此不会静默指向一个不存在的文件。
+- **Console 冒烟在最终树上重跑**：`pnpm console --no-open` 自己构建页面 → 页面 200 且 2 条资源 URL 带 token、改写后的资源 200、`/api/status?token` 200 真实数据（`runId 2026-10-18T01-03-31`、`mirrorCount 1013`、`officialTotal 1010`）、无 token 403、未知路由 404、缩略图 200 且缓存落在 `web/.console-cache/thumbnails/`、杀进程后端口释放。
+- 协议载荷：`node --check scripts/run-discovery.js` 通过；按包装方式 `(\n<内容>\n)` 做 `new Function` 解析通过（若被格式化插了前导 `;`，这里就是 `SyntaxError`）。
+- 没跑抓取 Run：爬虫的路径假设未变（`core/config.ts` 仍是一层深，`PROJECT_ROOT` 仍解析到仓根），跑一轮证明不了这次改动；PR 里写明。
+- **双轴自审**（standards / spec 两个独立子 agent，提交后跑）确认「读起来就是一次搬家」（10 个爬虫文件逐字节相同、57 个 rename、零新增/删除），并报出已全部处理的问题：三处非日期记录的旧路径、AGENTS.md 的 `core/` 树漏了 `core/run-log-file.ts`（测试树里却列了它的测试）、`tsconfig.json` 的 `exclude` 还写着根 `dist`、夹具的 `distDir` 不像生产（少了 `web/` 一层）、`realThumbnailSource(webRoot)` 的参数已无区分作用（去掉，直接用模块级 `WEB_ROOT`）；**载荷那条规则本身也改了**：AGENTS.md 现在写的是「按载荷被消费的方式验证」（包装后解析），并保留「改到表达式本身就要真跑」的强要求 —— 上一轮版本把「任何改动都要真跑」写成铁律，而它拦不住注释这类改动，于是规则与实际做法不一致。
+
+**教训**：
+- **不会失败的那一处才要特意验**：`mainEntry` 指错时没有任何门会红（页面照报「已开始」），所以它需要一次显式的存在性检查，而不是指望四个门兜底。
+- 违反一条写在文档里的规则（「改载荷要真跑」）时，唯一站得住的做法是把**替代证据和它的适用边界**一起写进记录，而不是悄悄绕过或假装没违规。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -442,6 +493,9 @@
 | 把 Run log 的文件 target 留在 pino transport（worker 线程），只补 `logger.flush()` + error handler | `2026-09-15T09-36-50` 那轮 worker 停摆后主线程静默续跑、退 0 且丢光 `run_report`；`flush()` 只能缩窗，已死的 worker 无从 flush | ADR 0007 |
 | 用 Node 原生类型擦除（`node src/main.ts`）替代 tsx | 源码以 `.js` 后缀 import 兄弟模块，Node 不改写为 `.ts`，模块解析直接失败（Node 24.18 实测 `ERR_MODULE_NOT_FOUND`） | 2026-10-18 |
 | 换启动器（如 `node node_modules/tsx/dist/cli.mjs`）规避受限沙箱的命名管道限制 | 需要管道的是管线自己的子进程（`playwright-cli` + esbuild service），换启动方式绕不开；且属明令禁止的「retry another way」 | 2026-10-18 |
+| 把爬虫目录命名为 `crawler/` / `scraper/` | 词表明确回避这两个词（本程序不跟随链接），与领域模型矛盾的目录名会误导此后每一次 grep | 2026-10-19 |
+| 本轮一并搬 `scripts/`（或重新钉它的载荷排除方式） | run-code 载荷的排除在两个工具配置里按**字面路径**钉死、目录名又被 discovery-loader 指名——三种静默失败换一个好看点的名字 | 2026-10-19 |
+| 在仓根给两层引入第三棵「共享」目录 | Console 是 Run 产物的读者，不是第二个库消费者；给一个读者做共享层是白买的抽象 | 2026-10-19 |
 
 ## 验证规范（所有迭代通用）
 
@@ -451,6 +505,8 @@
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题
+
+- **`scripts/` 该不该属于某一层（2026-10-19 记录）**：布局收成两层后，`scripts/` 是仓根剩下的第三棵树 —— run-code 协议载荷（`run-discovery.js`）与提交护栏（`check-branch.mjs`）。本轮**明确不解决**：载荷的排除按字面路径钉在两个工具配置里、目录名又被 `core/discovery/discovery-loader.ts` 指名，搬它要么连带改这两处排除方式，要么冒静默失联的风险，而收益只是名字好看。留给将来单独一轮（连同载荷排除方式一起重新钉），或就承认它是「协议载荷与工具」的第三棵树。
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - ~~**过滤逻辑分两道**~~ **已解决（2026-09-15 晚）**：`scripts/run-discovery.js` 的 `shouldKeep` 只剩 `data:`/`blob:`（它们不是可抓取的 URL），23 个 UI 图标文件名与 SVG 判定归入 `src/wallpaper-url.ts`（新增 `filenameIn` 规则）。`combinedCount` 因此真的是原始捕获——真跑实测 172 → 484，多出来的就是以前被静默丢掉的图标 URL，它们现在出现在 `siteAssets`（7 → 34）。

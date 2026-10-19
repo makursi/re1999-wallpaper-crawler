@@ -34,7 +34,7 @@ jobs:
           require-lockfile: true
 
       # No `.env` is needed: the unit tests cover pure logic (report, gallery,
-      # wallpaper URL set, Console service) and never import `src/config.ts`.
+      # wallpaper URL set, Console service) and never import `core/config.ts`.
 
       - name: Lint
         run: pnpm lint

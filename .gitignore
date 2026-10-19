@@ -1,10 +1,15 @@
 node_modules/
+# A Run's data: the Mirror and the Run logs. They stay at the repository root,
+# because both programs read them.
 images/
+logs/
 .playwright/
 .playwright-cli/
-dist/
-.console-cache/
-logs/
+# The Console's own artifacts, under its layer directory: the built page and the
+# thumbnail cache. Named by path rather than as a bare `dist/`, because the layer
+# owns them now and a stray root-level `dist/` would belong to nobody.
+web/dist/
+web/.console-cache/
 *.log
 .env
 .env.local

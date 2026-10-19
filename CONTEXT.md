@@ -78,7 +78,7 @@ _Avoid_: convergence, idle detection
 A resource the page or the CDN serves alongside the gallery that is not a
 Wallpaper: the page's own HTML document, analytics pixels, and the site's UI
 art (page background, music-player covers, icons). Marked by the rules in
-`src/wallpaper-url.ts` and never downloaded.
+`core/wallpaper-url.ts` and never downloaded.
 _Avoid_: junk, noise, non-image (a Site asset can be an image)
 
 **Site asset filter**:
@@ -249,7 +249,7 @@ which unmounts off-screen images and makes DOM counting unreliable.
 5. Merge network captures with DOM `img[src]` URLs — dropping only
    `data:`/`blob:` payloads, which are not URLs — and publish the result as the
    raw capture.
-6. Partition that capture with the Site asset filter (`src/wallpaper-url.ts`)
+6. Partition that capture with the Site asset filter (`core/wallpaper-url.ts`)
    — analytics pixels, site UI art, the page's own HTML — hand only Wallpapers
    to Download, and check the drops against the Gallery list. That list is
    fetched once, here, and reused for the Gallery state at the end of the Run.
@@ -269,7 +269,7 @@ which unmounts off-screen images and makes DOM counting unreliable.
 - **Windows / cmd.exe**: the Discovery script must be passed via `--filename`
   (temp file), never inline — cmd.exe mangles multi-line strings and `#`.
 - **`.env` `#` is a comment char**: `PAGE_HASH=#wallpaper` is hardcoded in
-  `src/config.ts`, not read from `.env`.
+  `core/config.ts`, not read from `.env`.
 - **Viewport matters**: the site renders a mobile layout for small viewports;
   `viewport: null` + window size forces the desktop version.
 - **run-code runs in Node.js, not the browser**: `window`/`document` only

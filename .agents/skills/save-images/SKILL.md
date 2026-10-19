@@ -19,7 +19,7 @@ A scrape is three steps; each ends on a state you can check.
 **Preflight — machinery, access, and the user's hands.** Confirm
 playwright-cli itself is installed: `npx playwright-cli --version` returns a
 version. Do **not** probe an existing Browser session first — the pipeline
-owns it (`src/main.ts` clears and reopens its own session: close-all +
+owns it (`core/main.ts` clears and reopens its own session: close-all +
 delete-data + open --persistent), so `Browser 'bluepoch' is not open` from an
 `eval` probe is the **expected** pre-run state, not a blocker. Login state
 rides in the persistent profile, but it is not what makes the site readable:
@@ -31,7 +31,7 @@ fast.
 A Run requires **full sandbox access on its first call**, and that is
 structural, not environmental — ask for it up front instead of discovering it
 by failing. Confined sandbox modes forbid named pipes, and two things in this
-pipeline need one: every `playwright-cli` invocation in `src/main.ts` is
+pipeline need one: every `playwright-cli` invocation in `core/main.ts` is
 captured through piped stdio, and so is the esbuild service tsx starts, so
 both die with `spawn EPERM`. pnpm may also need its store operation lock at
 `%LOCALAPPDATA%\pnpm-store-operation-locks\all-stores.lock` — outside the
@@ -49,7 +49,7 @@ answer a denial with a "retry another way", which the harness rules forbid
 outright (the 2026-10-18 session lost five calls to exactly that): another
 launcher cannot avoid the pipes, because it is the pipeline's *own* children
 that need them; `node node_modules/tsx/dist/cli.mjs` is the same tsx; and
-`node src/main.ts` under Node's native type stripping dies at module
+`node core/main.ts` under Node's native type stripping dies at module
 resolution, because the source imports siblings with `.js` specifiers Node
 does not rewrite to `.ts` — which is why ESM with tsx stands (ADR 0003). The
 measurements are in HISTORY.md.
@@ -65,7 +65,7 @@ machine alone until the Run exits, and the sandbox-access request for the
 Run's first call is ready to send._
 
 **Run — one command, launched as a background job.** `pnpm save-wallpapers`
-(tsx runs `src/main.ts`). Hash injection, the Stability loop's rounds, the Site
+(tsx runs `core/main.ts`). Hash injection, the Stability loop's rounds, the Site
 assets it filters and the download batches stream into
 `logs/save-wallpapers-<ts>.jsonl` — in the log, since a background job has no
 terminal to watch. The wrapper may **never report exit** —
@@ -105,7 +105,7 @@ routine classes from the rest:
   the check rejects, and every not-checked reading.
 
 Gate on the exit code when you only need the verdict; read the output when you
-need the numbers. It is `tsx src/check-run.ts` underneath, so it needs the same
+need the numbers. It is `tsx core/check-run.ts` underneath, so it needs the same
 sandbox access as the Run. When the output is not enough, read the log by hand:
 each Run writes one JSONL file in `logs/` (`save-wallpapers-<runId>.jsonl`); read
 the newest. Grep `"type":"run_report"` — one structured record with all metrics

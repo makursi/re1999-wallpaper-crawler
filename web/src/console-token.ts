@@ -1,6 +1,6 @@
 /**
  * The token this page was opened with; the service wants it on every request
- * (`src/console/server.ts` › `isAuthorized`), assets included.
+ * (`web/server/server.ts` › `isAuthorized`), assets included.
  *
  * Read from the page's own URL, never persisted: the Console opens
  * `http://127.0.0.1:<port>/?token=<t>`, the service rewrites the built page's

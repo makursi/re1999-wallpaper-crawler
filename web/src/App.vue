@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import type { ConsoleStatusPayload } from '../../src/console/api-types.js'
+import type { ConsoleStatusPayload } from '../api-types.js'
 import { consoleToken } from './console-token'
 import GalleryView from './GalleryView.vue'
 import RunPanel from './RunPanel.vue'
@@ -14,7 +14,7 @@ async function loadStatus(): Promise<void> {
     const response = await fetch(`/api/status?token=${encodeURIComponent(consoleToken())}`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     // The service's own payload; its shape is declared once, in
-    // src/console/api-types.ts, and imported here as a type only.
+    // web/api-types.ts, and imported here as a type only.
     status.value = (await response.json()) as ConsoleStatusPayload
   } catch (error) {
     failure.value = error instanceof Error ? error.message : String(error)
