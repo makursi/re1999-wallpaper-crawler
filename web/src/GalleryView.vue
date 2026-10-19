@@ -41,6 +41,17 @@ const STATE_LABELS: Record<ConsoleGalleryRow['state'], string> = {
   'not-in-gallery': 'not in the gallery',
 }
 
+/**
+ * The tone each state reads in. The two absent states are the danger token; a
+ * file that is simply there takes the page's own text level, which is why its
+ * entry is empty rather than a class.
+ */
+const STATE_TONES: Record<ConsoleGalleryRow['state'], string> = {
+  'on-disk': '',
+  missing: 'text-danger',
+  'not-in-gallery': 'text-danger',
+}
+
 /** `true` when a file with this name stands a chance of being an image. */
 function isImageName(name: string): boolean {
   const dot = name.lastIndexOf('.')
@@ -68,8 +79,8 @@ function rowKey(row: ConsoleGalleryRow): string {
 </script>
 
 <template>
-  <section>
-    <h2>Gallery</h2>
+  <section class="mt-8">
+    <h2 class="text-xl font-bold">Gallery</h2>
     <p v-if="failure !== null">{{ failure }}</p>
     <p v-else-if="gallery === null">Reading the Gallery list…</p>
     <template v-else>
@@ -90,33 +101,41 @@ function rowKey(row: ConsoleGalleryRow): string {
         {{ gallery.mirrorGap.missing }} listed Wallpapers are missing from the Mirror;
         {{ gallery.mirrorGap.extra }} Mirror files are not in the gallery any more.
       </p>
-      <ul class="grid">
+      <!-- The wall is a grid of tiles, each a token-styled surface with the
+           1px border reserved up front, so hovering swaps its colour without
+           moving anything. -->
+      <ul class="mt-4 grid list-none grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3 p-0">
         <li v-for="row in gallery.rows" :key="rowKey(row)">
           <button
             v-if="isViewable(row)"
             type="button"
-            class="tile"
+            class="grid h-[10rem] w-full cursor-pointer place-items-center overflow-hidden rounded-sm border border-border bg-surface p-0 transition-colors duration-hover ease-standard hover:border-accent"
             @click="opened = row"
             :aria-label="`Show ${row.name} at full size`"
           >
-            <img :src="thumbnailUrl(row.name)" :alt="row.name" loading="lazy" />
+            <img
+              class="max-h-full max-w-full object-contain"
+              :src="thumbnailUrl(row.name)"
+              :alt="row.name"
+              loading="lazy"
+            />
           </button>
           <!-- A Wallpaper with no local file is a state, not a fault: a local
                placeholder, never a broken image and never a fetch to the CDN
                (spec decision 25; #35 AC 5). -->
           <div
             v-else
-            class="tile placeholder"
+            class="grid h-[10rem] w-full place-items-center overflow-hidden rounded-sm border border-dashed border-border bg-surface p-0 text-[0.8rem] text-muted"
             role="img"
             :aria-label="`${row.name} is not on disk`"
           >
             <span>not on disk</span>
           </div>
-          <p class="meta">
+          <p class="mt-1 flex justify-between gap-2 text-[0.8rem]">
             <strong>{{ row.id ?? '—' }}</strong>
-            <span :class="row.state">{{ STATE_LABELS[row.state] }}</span>
+            <span :class="STATE_TONES[row.state]">{{ STATE_LABELS[row.state] }}</span>
           </p>
-          <code>{{ row.name }}</code>
+          <code class="text-xs break-all">{{ row.name }}</code>
         </li>
       </ul>
     </template>
@@ -128,70 +147,3 @@ function rowKey(row: ConsoleGalleryRow): string {
     />
   </section>
 </template>
-
-<style scoped>
-section {
-  margin-top: 2rem;
-}
-
-h2 {
-  font-size: 1.25rem;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-  gap: 0.75rem;
-  margin: 1rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.grid li {
-  margin: 0;
-}
-
-.tile {
-  display: grid;
-  width: 100%;
-  height: 10rem;
-  place-items: center;
-  padding: 0;
-  border: 1px solid #ddd;
-  border-radius: 0.3rem;
-  background: #f6f7f9;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.tile img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.placeholder {
-  border-style: dashed;
-  color: #777;
-  cursor: default;
-  font-size: 0.8rem;
-}
-
-.meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin: 0.3rem 0 0;
-  font-size: 0.8rem;
-}
-
-.meta .missing,
-.meta .not-in-gallery {
-  color: #a33;
-}
-
-code {
-  font-size: 0.75rem;
-  word-break: break-all;
-}
-</style>

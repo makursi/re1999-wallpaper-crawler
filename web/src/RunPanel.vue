@@ -149,8 +149,8 @@ onUnmounted(stopPolling)
 </script>
 
 <template>
-  <section class="run">
-    <h2>Run</h2>
+  <section class="mt-8">
+    <h2 class="text-[1.1rem] font-bold">Run</h2>
 
     <p v-if="status === null">Reading the Run log…</p>
 
@@ -167,59 +167,38 @@ onUnmounted(stopPolling)
         <!-- The causes the report's `defects` block cannot carry: a `defect`
              whose defect block reads clean still has one of these to show
              (#34 story 11). -->
-        <p v-if="defectCauses.length > 0" class="verdict-reasons">
+        <p v-if="defectCauses.length > 0" class="text-muted text-sm">
           Why: {{ defectCauses.join('; ') }}
         </p>
         <template v-if="explainedCauses.length > 0">
-          <p class="verdict-reasons">Explained (routine, recorded rather than failed):</p>
-          <ul class="verdict-reasons">
+          <p class="text-muted text-sm">Explained (routine, recorded rather than failed):</p>
+          <ul class="list-disc pl-4 text-muted text-sm">
             <li v-for="cause in explainedCauses" :key="cause">{{ cause }}</li>
           </ul>
         </template>
-        <p v-if="status.report === null" class="refusal">{{ missingReport }}</p>
+        <p v-if="status.report === null" class="text-danger">{{ missingReport }}</p>
         <template v-else>
           <p>Gallery: {{ galleryLine }}</p>
           <p>Download: {{ downloadLine }}</p>
           <p>
-            Defects: <code>{{ defects }}</code>
+            Defects: <code class="break-all">{{ defects }}</code>
           </p>
         </template>
       </template>
     </template>
 
     <p>
-      <button type="button" :disabled="starting || status?.state === 'running'" @click="startRun">
-        Start a Run
+      <button
+        type="button"
+        class="cursor-pointer rounded-sm border border-border bg-surface px-[0.9rem] py-[0.4rem] transition-colors duration-hover ease-standard hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="starting || status?.state === 'running'"
+        @click="startRun"
+      >
+        <!-- An action control: the regular Phosphor weight, never the light
+             weight reserved for large marks and navigation. -->
+        <span class="i-ph-play mr-1" aria-hidden="true" />Start a Run
       </button>
     </p>
-    <p v-if="refusal !== null" class="refusal">{{ refusal }}</p>
+    <p v-if="refusal !== null" class="text-danger">{{ refusal }}</p>
   </section>
 </template>
-
-<style scoped>
-.run {
-  margin-top: 2rem;
-}
-
-h2 {
-  font-size: 1.1rem;
-}
-
-button {
-  font: inherit;
-  padding: 0.4rem 0.9rem;
-}
-
-code {
-  word-break: break-all;
-}
-
-.refusal {
-  color: #a33;
-}
-
-.verdict-reasons {
-  color: #555;
-  font-size: 0.9rem;
-}
-</style>

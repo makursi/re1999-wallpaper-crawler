@@ -27,28 +27,20 @@ onMounted(() => {
 </script>
 
 <template>
-  <main>
-    <h1>壁纸图鉴</h1>
-    <p v-if="failure !== null">{{ failure }}</p>
-    <p v-else-if="status === null">Reading the Mirror…</p>
-    <p v-else>{{ status.mirrorCount }} Wallpapers in the Mirror</p>
+  <!-- Every class below is a semantic token or an UnoCSS atomic class; there is
+       no `<style>` block left, and no colour or spacing literal either. The
+       mark is a Phosphor icon in its light weight (the heading is the page's
+       one large mark); its strokes stay finer than the dense data's regular
+       weight, which is the rule this page follows for icons. -->
+  <main class="mx-auto my-8 max-w-[40rem] font-sans">
+    <h1 class="text-xl font-bold">
+      <span class="i-ph-image-light mr-1" aria-hidden="true" />
+      壁纸图鉴
+    </h1>
+    <p v-if="failure !== null" class="text-2xl">{{ failure }}</p>
+    <p v-else-if="status === null" class="text-2xl">Reading the Mirror…</p>
+    <p v-else class="text-2xl">{{ status.mirrorCount }} Wallpapers in the Mirror</p>
     <RunPanel />
     <GalleryView />
   </main>
 </template>
-
-<style scoped>
-main {
-  margin: 2rem auto;
-  max-width: 40rem;
-  font-family: system-ui, sans-serif;
-}
-
-h1 {
-  font-size: 1.25rem;
-}
-
-p {
-  font-size: 1.5rem;
-}
-</style>

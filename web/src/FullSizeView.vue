@@ -4,10 +4,22 @@
 // overlay is the only place the gallery's own id and the file name are shown
 // together, so a page can be read against a Run report.
 //
-// Escape dismisses, the backdrop closes, and the button is focusable: the
-// dialog opens from a tile and must be reachable from the keyboard alone.
+// The dialog behaviour is reka-ui's, not this file's (#45): Escape, the focus
+// trap, the outside-click dismissal, the `role="dialog"` and `aria-modal`
+// wiring, and the focus return to the tile that opened it are all the
+// primitive's. What is left here is the markup, the copy and the classes.
 
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+  VisuallyHidden,
+} from 'reka-ui'
+import { ref } from 'vue'
 
 import { consoleToken } from './console-token'
 
@@ -27,96 +39,62 @@ function imageUrl(): string {
 // turned into a broken image.
 const failure = ref(false)
 
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') emit('close')
+/**
+ * The primitive closes on Escape, on an outside click and on the close button;
+ * every one of those arrives here as `open` turning false, and the page's own
+ * state is what actually unmounts the view.
+ */
+function onOpenChange(open: boolean): void {
+  if (!open) emit('close')
 }
-
-onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-})
 </script>
 
 <template>
-  <div class="backdrop" role="presentation" @click.self="emit('close')">
-    <figure role="dialog" aria-modal="true" :aria-label="name">
-      <img :src="imageUrl()" :alt="name" @error="failure = true" />
-      <figcaption>
-        <span
-          >Gallery id <strong>{{ id ?? '—' }}</strong></span
-        >
-        <code>{{ name }}</code>
-        <button type="button" @click="emit('close')">Close (Esc)</button>
-      </figcaption>
-      <p v-if="failure">That file is no longer in the Mirror.</p>
-    </figure>
-  </div>
+  <DialogRoot :open="true" @update:open="onOpenChange">
+    <DialogPortal>
+      <!-- The fixed scrim. No blur filter is used here: none is allowed on
+           scrolling content and this overlay is not restyled until #48, so
+           today's look has none. -->
+      <DialogOverlay class="fixed inset-0 z-10 bg-scrim" />
+      <!-- `as-child` keeps the figure: the primitive's props and listeners merge
+           onto it, so the dialog element is the same element it always was. -->
+      <DialogContent
+        as-child
+        class="fixed left-1/2 top-1/2 z-10 m-0 flex max-h-[calc(100vh-3rem)] w-[calc(100vw-3rem)] max-w-[70rem] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-md bg-surface p-3"
+      >
+        <figure>
+          <!-- The dialog's accessible name and description. The caption below
+               says the same thing visually; this pair is what a screen reader
+               announces, so both are hidden. -->
+          <VisuallyHidden>
+            <DialogTitle>{{ name }}</DialogTitle>
+            <DialogDescription>Gallery id {{ id ?? '—' }}</DialogDescription>
+          </VisuallyHidden>
+          <img
+            class="max-h-[80vh] max-w-full object-contain"
+            :src="imageUrl()"
+            :alt="name"
+            @error="failure = true"
+          />
+          <figcaption class="flex items-baseline gap-3 text-sm text-primary">
+            <span
+              >Gallery id <strong>{{ id ?? '—' }}</strong></span
+            >
+            <code class="min-w-0 flex-1 truncate text-secondary">{{ name }}</code>
+            <DialogClose as-child>
+              <!-- The small-control weight: a regular Phosphor stroke, never
+                   the light weight the page's heading mark uses. -->
+              <button
+                type="button"
+                class="flex-none cursor-pointer rounded-sm border border-border bg-surface-raised px-[0.6rem] py-[0.3rem] transition-colors duration-hover ease-standard hover:border-accent"
+              >
+                <span class="i-ph-x mr-1" aria-hidden="true" />Close (Esc)
+              </button>
+            </DialogClose>
+          </figcaption>
+          <p v-if="failure" class="text-sm text-danger">That file is no longer in the Mirror.</p>
+        </figure>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
-
-<style scoped>
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background: rgb(0 0 0 / 72%);
-}
-
-figure {
-  display: flex;
-  max-width: min(100%, 70rem);
-  max-height: 100%;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0.75rem;
-  border-radius: 0.4rem;
-  background: #16181d;
-}
-
-img {
-  max-width: 100%;
-  max-height: 80vh;
-  object-fit: contain;
-}
-
-figcaption {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  color: #e6e8ec;
-  font-family: system-ui, sans-serif;
-  font-size: 0.9rem;
-}
-
-figcaption code {
-  overflow: hidden;
-  flex: 1;
-  color: #9aa3b2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-button {
-  flex: none;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid #414652;
-  border-radius: 0.3rem;
-  background: #23262e;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-
-p {
-  margin: 0;
-  color: #e6a5a5;
-  font-family: system-ui, sans-serif;
-  font-size: 0.9rem;
-}
-</style>

@@ -10,5 +10,8 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "api-types.ts"]
+  // `uno.config.ts` is page code — it is where the design system lives — so the
+  // page's own program checks it (the UnoCSS plugin loads it through its path,
+  // not through an import, which is why it is named here rather than reached).
+  "include": ["src/**/*.ts", "src/**/*.vue", "api-types.ts", "uno.config.ts"]
 }

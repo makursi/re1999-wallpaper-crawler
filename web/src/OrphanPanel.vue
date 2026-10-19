@@ -46,44 +46,27 @@ async function cleanUp(): Promise<void> {
 </script>
 
 <template>
-  <section class="orphan">
+  <section class="mt-4">
     <p>
-      Orphaned Run <strong>{{ status.runId }}</strong> — the Run log <code>{{ logName }}</code> has
-      no Run report and was written recently.
+      Orphaned Run <strong>{{ status.runId }}</strong> — the Run log
+      <code class="break-all">{{ logName }}</code> has no Run report and was written recently.
     </p>
-    <p class="caveat">
+    <p class="text-muted text-sm">
       Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log
       directory alone cannot tell the two apart. The cleanup closes the leftover Browser session and
       withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's
       audit trail.
     </p>
     <p>
-      <button type="button" :disabled="cleaning" @click="cleanUp">Clean up</button>
+      <button
+        type="button"
+        class="cursor-pointer rounded-sm border border-border bg-surface px-[0.9rem] py-[0.4rem] transition-colors duration-hover ease-standard hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="cleaning"
+        @click="cleanUp"
+      >
+        <span class="i-ph-broom mr-1" aria-hidden="true" />Clean up
+      </button>
     </p>
-    <p v-if="refusal !== null" class="refusal">{{ refusal }}</p>
+    <p v-if="refusal !== null" class="text-danger">{{ refusal }}</p>
   </section>
 </template>
-
-<style scoped>
-.orphan {
-  margin-top: 1rem;
-}
-
-.caveat {
-  color: #555;
-  font-size: 0.9rem;
-}
-
-code {
-  word-break: break-all;
-}
-
-button {
-  font: inherit;
-  padding: 0.4rem 0.9rem;
-}
-
-.refusal {
-  color: #a33;
-}
-</style>
