@@ -123,10 +123,10 @@ the browser's cookies and retrying once with full browser headers when the CDN
 answers 403.
 
 Every Run also asks the site's own Gallery list (one POST, no login) for every
-entry it holds. That list is the authority behind the Gallery total, the
-new-since-last-Run delta and the Mirror check — and it is what proves the filter
-kept the right things: a dropped URL the list calls a Wallpaper is reported, not
-silently lost.
+entry it holds. That list is the authority behind the Gallery total, the count of
+entries new since the last Run and the Mirror check — and it is what proves the
+filter kept the right things: a dropped URL the list calls a Wallpaper is
+reported, not silently lost.
 
 Don't click around in the Chrome window a Run opened — a stray click disturbs
 discovery. Re-running is safe: files already on disk are skipped, so only new

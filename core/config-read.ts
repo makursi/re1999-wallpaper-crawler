@@ -1,21 +1,30 @@
-// ── The configuration schema, and the two ways to read it ──────────
+// ── The configuration schema, and the ways to read it ──────────────
 //
-// One schema, two reads, and one deliberate split from `core/config.ts`:
+// One schema, three reads, and one deliberate split from `core/config.ts`:
 //
 //   - `parseConfig` is the strict read. `core/config.ts` calls it at module load
 //     and re-exports the values as the eager constants the pipeline imports, so
 //     an absent or invalid `.env` still throws before a Run starts.
-//   - `readConfig` is the Console's non-throwing read: the validated values, or
-//     `null` for "no usable configuration". The Console has to reach its page
-//     with no `.env` at all, and importing `core/config.ts` *is* the parse — so
-//     the Console imports this module instead (#57).
+//   - `readConfig` is the tolerant read of an environment object: the validated
+//     values, or `null` for "no usable configuration".
+//   - `readProjectConfig` is the file-reading read: `<projectRoot>/.env` parsed
+//     with dotenv's own parser, the process environment merged over it and the
+//     whole schema applied. It is the one answer to "is `.env` usable now",
+//     shared by the start's `env-file` refusal and the page's setup notice.
+//
+// The Console has to reach its page with no `.env` at all, and importing
+// `core/config.ts` *is* the parse — so the Console imports this module instead
+// (#57).
 //
 // The schema lives here and only here. So do the tree-relative defaults
 // (`siteConfig`), because a Console booting without `.env` still has to read the
 // same Mirror and Run log directory a Run would.
 
+import * as fs from 'node:fs'
 import * as path from 'node:path'
+import process from 'node:process'
 
+import { parse as parseDotenv } from 'dotenv'
 import { z } from 'zod'
 
 // ── the tree ──────────────────────────────────────────────────────
@@ -59,13 +68,39 @@ export function parseConfig(env: NodeJS.ProcessEnv): ConfigValues {
 }
 
 /**
- * The Console's read: the validated values, or `null` for "no usable
- * configuration". Never throws, and never returns a half-filled configuration —
- * a missing or malformed key is the same outcome as an absent `.env`.
+ * The tolerant read of an environment object: the validated values, or `null`
+ * for "no usable configuration". Never throws, and never returns a half-filled
+ * configuration — a missing or malformed key is the same outcome as an absent
+ * `.env`.
  */
 export function readConfig(env: NodeJS.ProcessEnv): ConfigValues | null {
   const result = configSchema.safeParse(env)
   return result.success ? result.data : null
+}
+
+/**
+ * The project's `.env` read through the whole schema: the validated values, or
+ * `null` when the file is missing, unreadable or does not satisfy the schema.
+ *
+ * This is the one answer to "is `.env` usable now". The process environment is
+ * merged over the file's values — shell env wins, exactly the precedence
+ * `dotenv/config` gives a Run — and every key is validated, defaulted ones
+ * included, so a file that passes here cannot then throw in the Run's own parse.
+ *
+ * The file is only parsed here, never loaded into `process.env`: a Console that
+ * pre-loaded it once at boot could not see a correction without a restart (#60).
+ */
+export function readProjectConfig(
+  projectRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): ConfigValues | null {
+  let text: string
+  try {
+    text = fs.readFileSync(path.join(projectRoot, '.env'), 'utf8')
+  } catch {
+    return null
+  }
+  return readConfig({ ...parseDotenv(text), ...env })
 }
 
 // ── the tree-relative values ──────────────────────────────────────
@@ -108,7 +143,7 @@ export function siteConfig(projectRoot: string, values: ConfigValues | null): Si
 
 /**
  * The site's own Gallery list endpoint, derived from the origin so the two
- * cannot drift (docs/adr/0006). `readConfig`'s `null` is what makes the
+ * cannot drift (docs/adr/0006). `readProjectConfig`'s `null` is what makes the
  * Console's endpoint absent — there is no URL to build without an origin.
  */
 export function galleryListUrlOf(baseOrigin: string): string {

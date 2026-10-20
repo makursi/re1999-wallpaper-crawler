@@ -1,7 +1,7 @@
 // ── The Console's configuration value ───────────────────────────────
 //
 // The service never reads the environment. `web/server/console.ts` reads the
-// project's `.env` through `core/config-read.ts` — the non-throwing half of the
+// project's `.env` through `core/config-read.ts`'s file-reading predicate — the
 // same schema `core/config.ts` parses eagerly for the pipeline — and injects one
 // of these, which is what keeps `tests/**` running with no `.env` (spec decision
 // 29) and what lets the Console boot without one (#57).

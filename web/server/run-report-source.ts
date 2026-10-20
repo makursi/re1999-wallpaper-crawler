@@ -4,9 +4,9 @@
 // Run's `gallery.newSinceLastRun`. It is read here, from the Run log directory
 // alone (spec decision 7), with the same two facts `check-run` uses — the same
 // file (`newestRunLogName` in `core/run-log-file.ts`: the directory filtered by
-// the one name predicate (`isRunLogName` / `logRunIdOf` in
-// `core/report/run-log.ts`, so `run-*.jsonl` and legacy `save-wallpapers-*.jsonl`
-// both count) and ordered by runId, **never** by the whole name or by mtime —
+// the one name predicate, `logRunIdOf` in `core/report/run-log.ts`, so
+// `run-*.jsonl` and legacy `save-wallpapers-*.jsonl` both count, and the
+// survivors ordered by runId — **never** by the whole name or by mtime, which is
 // the same function `check-run` calls) and the same parser (`parseRunReport`,
 // never a hand-rolled `JSON.parse`, so the report schema's `null`-coherence
 // refine still applies).
