@@ -13,7 +13,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import type { Hono } from 'hono'
+import type { Context, Hono } from 'hono'
 
 import { ASSET_PREFIX, assetResponse } from '../http/assets.js'
 import type { ServiceRuntime } from '../http/deps.js'
@@ -21,16 +21,31 @@ import { json, page } from '../http/respond.js'
 import { rewritePageMarkup } from '../http/token-rewrite.js'
 
 export function registerStaticRoutes(app: Hono, runtime: ServiceRuntime): void {
-  const servePage = (): Response => pageResponse(runtime)
+  const servePage = onlyGet(() => pageResponse(runtime))
 
   app.get('/', servePage)
   app.get('/index.html', servePage)
 
-  app.get(`${ASSET_PREFIX}*`, c =>
-    // The path is normalized the way the surface always normalized it; the
-    // containment check inside `assetResponse` is what refuses the rest.
-    assetResponse(runtime.config.distDir, new URL(c.req.raw.url).pathname, runtime.deps.token),
+  app.get(
+    `${ASSET_PREFIX}*`,
+    onlyGet(c =>
+      // The path is normalized the way the surface always normalized it; the
+      // containment check inside `assetResponse` is what refuses the rest.
+      assetResponse(runtime.config.distDir, new URL(c.req.raw.url).pathname, runtime.deps.token),
+    ),
   )
+}
+
+/**
+ * The page and its assets answer GET and nothing else.
+ *
+ * A router dispatches HEAD to a GET handler, and this surface has always
+ * answered a non-GET page request with the same 404 an unknown path gets — the
+ * page is a document, not a resource with methods. Checking the method here
+ * keeps that behaviour instead of gaining a third, router-shaped answer.
+ */
+function onlyGet(handler: (c: Context) => Response): (c: Context) => Response {
+  return c => (c.req.method === 'GET' ? handler(c) : json(404, { error: 'not found' }))
 }
 
 /**

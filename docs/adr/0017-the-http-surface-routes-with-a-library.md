@@ -31,12 +31,15 @@ Dispatch and URL parsing are now a library's job: hono 4 behind
   exactly as before.
 
 The dependency contract moved to its own module and is re-exported from the
-entry the tests already import, so the six service test files are unchanged and
-green: the refactor had to produce the same answers with a different shape. The
-route modules gather inputs and hand them to the module that decides —
-`status.ts`, `gallery-view.ts`, `run-control.ts`. No route decides a status code
-from a domain state, which is what makes "the transport does not judge"
-auditable by reading one directory.
+entry the tests already import, so the swap itself touched none of the five test
+files that drive the bound service, and they stayed green: the refactor had to
+produce the same answers with a different shape. (The contract gained a field in
+an earlier ticket of the same iteration, which is why two bodies in one of those
+files name it — that change is the contract's, not this swap's.) The route
+modules gather inputs and hand them to the module that decides — `status.ts`,
+`gallery-view.ts`, `run-control.ts`. No route invents a status for a domain
+state, which is what makes "the transport does not judge" auditable by reading
+one directory.
 
 ## Considered options
 
@@ -61,9 +64,9 @@ auditable by reading one directory.
 
 - Two runtime dependencies in a repository that otherwise ships almost none; both
   are confined to `web/server/http/` and `web/server/server.ts`.
-- A framework upgrade must keep the six service tests green. That is the point of
-  leaving those tests untouched: they are the contract, not an implementation
-  detail.
+- A framework upgrade must keep the tests that drive the bound service green.
+  That is the point of leaving them untouched: they are the contract, not an
+  implementation detail.
 - The published documentation already describes the router's next major while the
   installed release is the previous one. The installed version is the reference;
   a page read on the website may describe APIs this code does not have.

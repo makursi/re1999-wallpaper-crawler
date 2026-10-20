@@ -554,17 +554,18 @@
 - **页面三桶，一条规则**：有响应式状态或生命周期 → `composables/`；无状态纯函数 → `lib/`；只出标记 → `components/`。**不按特性分层**——一面墙 + 一个抽屉，`features/gallery`、`features/run` 的目录数会超过它组织的代码。命名扁平加前缀（`Wall*`、`Run*`、`Console*`），不进子目录。
 - **一个状态源**：`useConsoleStatus()` 是模块级单例——挂载读一次、只在 Run 进行中 5 秒轮询、一个失败值。导航与 Run 面板从此同源，**具名行为变化 1：导航的 Mirror 计数开始跟随轮询**（此前冻结在挂载那一刻），在 PR 描述里写明。
 - **契约拥有「能不能显示」**：每个 gallery 行多一个由服务算出的 `viewable`（在盘 + 文件名属于 Wallpaper URL 集），页面不再声明任何扩展名。**具名行为变化 2**：非图片的 Mirror 额外文件不再产生注定 400 的请求。判定跨契约、服务、页面三层，跟着 `buildGalleryView` 的既有单测走。
-- **框架只做分派**：hono `4.13.13` + `@hono/node-server` `2.1.5` 接管 method+path 分派与 URL 解析；守卫、四种响应形状、样式表 `url()` 改写、端口回退**仍是我们的**。响应头由 `http/respond.ts` 手写——框架默认序列化写的是它自己的变体（`c.json` 连 charset 都不写），而页面测试断言的是逐字节字符串。传输契约移到 `http/deps.ts`，但由 `server.ts` 原样转出，**六个服务测试文件逐字节未改**，这是这次重构最强的完成信号。
+- **框架只做分派**：hono `4.13.13` + `@hono/node-server` `2.1.5` 接管 method+path 分派与 URL 解析；守卫、四种响应形状、样式表 `url()` 改写、端口回退**仍是我们的**。响应头由 `http/respond.ts` 手写——框架默认序列化写的是它自己的变体（`c.json` 连 charset 都不写），而页面测试断言的是逐字节字符串。传输契约移到 `http/deps.ts`，但由 `server.ts` 原样转出，**换骨架自己的提交没有改动任何一个经 socket 驱动服务的测试文件**——这是这次重构最强的完成信号。
 - **405 要用 `app.all` 注册，不是 `app.get`**：路由器按方法匹配，`app.get` 注册的路由收到 POST 会落到 notFound 的 404，`expectMethod` 永远不执行。改成 `app.all(path, expectMethod(...), handler)` 后 405 + `allow` 头恢复。
 - **ADR 0017 + 文档同轮**：框架进入 Console 的边界、被否决的四个替代（express / fastify / srvx / 只加静态帮手），以及一句把 `HISTORY` 里 2026-06-15 那条「否决 HTTP 框架」限定回去——那条针对的是无路由/无 API/无 DB 的爬虫命令行，不是这个表面。
 
 **验证**（integration 分支，五门）：
 - `oxfmt --check` clean；`oxlint --type-aware .` **0 warning 0 error**；`tsc --noEmit` 与 `vue-tsc --noEmit -p web/tsconfig.web.json` 0；`vitest run` **32 文件 / 344 tests 通过**（基线 335，新增 `poll` 4 条、`withToken` 4 条，契约与路由测试改期望值）；`vite build` 成功。
-- **六个服务测试文件 0 改动**（`git diff` 为空），却覆盖了守卫、403/404/405、逐字节响应头、页面与样式表改写、缩略图 500、端口回退——换骨架的全部证明都在这里面。
+- **经 socket 驱动服务的五个测试文件**（`server`、`gallery-route`、`run-api`、`run-cleanup`、`thumbnail-route`）在换骨架的提交里 **0 改动**，却覆盖了守卫、403/404/405、逐字节响应头、页面与样式表改写、缩略图 500、端口回退——换骨架的全部证明都在这里面。**#70 的契约变更改过其中一个**（`gallery-route.test.ts` 的整包体断言加上了 `viewable`）：那是契约变更该付的代价，不属于换骨架这一步。两件事在同一条票链上，但不是同一个改动——文档里把两者写成一句「六个文件 0 改动」是错的，这条是复核时抓出来的。
 - **真服务冒烟**（端口 8897）：页面 200 且两条资源 URL 带 token；JS `200 text/javascript; charset=utf-8` + `immutable` + `nosniff`；CSS 里 **109 个 `url()` 引用全部带 token**，字体 `200 font/woff2`、无 token 时 `403`；`/api/status` 200（idle，mirror 1013）；`/api/gallery` 200（1055 行，1013 可显示）；无 token 403；未知路由 404；错方法 405 + `allow: GET`；`/assets/%2e%2e%2f…` 404；`/api/thumbnail/..` 404（URL 归一化后不再属于该路由）；`%2e%2e%2fpackage.json` 400；真缩略图 200 `image/jpeg` 22 940 字节；原图 200。端口占用时第二个实例报「端口 8897 被占用,改用 3785」并正常应答。
+- **方法行为的保真**（端口 8893，复核后补测）：`HEAD /` 与 `HEAD /assets/*` 仍是 **404**、`POST /` 与 `POST /assets/*` 仍是 **404**、`HEAD /api/status` 仍是 **405 + allow: GET**——路由器默认把 HEAD 当 GET 派发，若不显式判方法，页面这条会悄悄从 404 变成 200，那就成了第三处未命名的行为变化。
 
 **教训**：
-- **「测试是契约」在重构里是真的有牙**。把六个测试文件设成不能改，等于把「同样的答案、不同的形状」变成可执行的判据；六次门禁里只要有一个需要动测试，就说明行为变了，而不是说明测试过时。
+- **「测试是契约」在重构里是真的有牙**。把驱动服务的测试设成「换骨架时不能改」，等于把「同样的答案、不同的形状」变成可执行的判据；这类门禁里只要有一个需要动测试，就说明形状变了，而不是说明测试过时。
 - **框架的默认值不是中立的**。选型阶段查过 `c.json` 不写 charset，实测才发现还有 405 与路由方法匹配这一层：`app.get` 注册让错误方法静默变成 404。响应头与状态码必须自己产出，这一条在文档里被写成规矩，而不是被当成实现细节。
 - **共享 `node_modules` 的 worktree 会被包管理器反复重装**（`verify-deps-before-run` + junction），install 时还会把 `.bin` 弄丢；并行 worktree 的成本不在 git，在这棵树。
 - **文档漂移要写进文档**：官方站点已经在讲 hono v5，而钉住的是 4.x；`hostname` 选项只存在于类型声明里。两条都写进 ADR 0017 的 Consequences，免得下一个人拿网站当准绳。

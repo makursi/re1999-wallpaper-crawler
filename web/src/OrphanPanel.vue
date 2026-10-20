@@ -2,11 +2,11 @@
 import { computed, ref } from 'vue'
 
 import type { ConsoleRunCleanupPayload, ConsoleStatusPayload } from '../api-types.js'
-import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
 import type { RefusalView } from './i18n/refusal'
 import { refusalFromError, refusalOf, refusalTextOf } from './i18n/refusal'
+import { postJson } from './lib/console-api'
 
 /**
  * An Orphaned Run, and the one action the page offers for it (#36).
@@ -33,14 +33,13 @@ async function cleanUp(): Promise<void> {
   cleaning.value = true
   refusal.value = null
   try {
-    const response = await fetch(`/api/run/cleanup?token=${encodeURIComponent(consoleToken())}`, {
-      method: 'POST',
-    })
-    const body = (await response.json()) as ConsoleRunCleanupPayload
-    if (!response.ok || !body.cleaned) {
+    // The client module owns the token and the error shape; this panel owns only
+    // the words for a refusal (#47).
+    const reply = await postJson<ConsoleRunCleanupPayload>('/api/run/cleanup')
+    if (!reply.ok || !reply.body.cleaned) {
       // 409 is the only refusal: a Run in flight is never cleaned under. The
       // service says so with a code; the dictionary says it in words (#47).
-      refusal.value = refusalOf(response.status, body.refusal)
+      refusal.value = refusalOf(reply.status, reply.body.refusal)
       return
     }
     // The Run's state is read back rather than assumed, as after a start.
