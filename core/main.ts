@@ -59,7 +59,7 @@ function pwc(args: string, timeoutSec = 300): string {
 
 // ── helpers ────────────────────────────────────────────────────────
 
-function newRunMeta(): {
+function newRunMeta(discoveryScriptSha: string): {
   meta: RunMeta
   config: Record<string, string | number | boolean | undefined>
 } {
@@ -68,6 +68,10 @@ function newRunMeta(): {
   return {
     meta: { runId, startedAt, config: {} },
     config: {
+      // Which payload this Run executed: the generated copy has a fixed name, so
+      // the identity lives here instead of in the filename (issue #51). Twelve
+      // hex characters tell two payloads apart and still fit on one line.
+      DISCOVERY_SCRIPT_SHA: discoveryScriptSha.slice(0, 12),
       BASE_ORIGIN,
       PAGE_PATH,
       PAGE_HASH,
@@ -349,10 +353,16 @@ async function main() {
   // and nothing is ever left at the repository root (issue #51).
   const discoveryScript = materializeDiscoveryScript()
 
-  const { meta, config } = newRunMeta()
+  const { meta, config } = newRunMeta(discoveryScript.sha256)
   logger.info(
     { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
     'run started',
+  )
+  // A separate record because this is an event, not configuration: the Run's
+  // `run_meta` says *which* payload ran, this says whether it had to be written.
+  logger.info(
+    { type: 'discovery_script', path: discoveryScript.path, written: discoveryScript.written },
+    discoveryScript.written ? 'discovery script copy written' : 'discovery script copy reused',
   )
 
   // 0. Clean slate
