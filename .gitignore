@@ -5,6 +5,11 @@ images/
 logs/
 .playwright/
 .playwright-cli/
+# The Discovery script copy a Run materializes for `run-code --filename`: written
+# only when its content changes, never deleted, and read by nothing but the
+# crawler. This line is the only place the exclusion is stated — both tool walkers
+# honour `.gitignore`, so the formatter and linter configs stay silent about it.
+.run-cache/
 # The Console's own artifacts, under its layer directory: the built page and the
 # thumbnail cache. Named by path rather than as a bare `dist/`, because the layer
 # owns them now and a stray root-level `dist/` would belong to nobody.

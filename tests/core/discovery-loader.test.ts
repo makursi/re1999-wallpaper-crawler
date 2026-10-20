@@ -1,0 +1,129 @@
+// ── The Discovery script copy, materialized once (issue #51) ────────
+//
+// `run-code --filename` can only be handed a real file, so a Run materializes
+// one. What these pin is the decision the spec bought: the copy is written only
+// when its content differs, it is never deleted, and both its directory and its
+// payload are injected so a test never touches the repository's own cache.
+
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { materializeDiscoveryScript } from '../../core/discovery/discovery-loader.js'
+
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+})
+
+function scratch(prefix: string): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  roots.push(root)
+  return root
+}
+
+// The payload's real shape: a bare arrow expression whose one placeholder is
+// substituted before it reaches `run-code`.
+const PAYLOAD = '\nasync (page) => {\n  return "__PAGE_HASH__"\n}\n'
+const SUBSTITUTED = '\nasync (page) => {\n  return "#wallpaper"\n}\n'
+
+function payloadFile(root: string, text = PAYLOAD): string {
+  const file = path.join(root, 'run-discovery.js')
+  fs.writeFileSync(file, text, 'utf8')
+  return file
+}
+
+describe('materializeDiscoveryScript', () => {
+  it('writes the payload into the target directory and reports the write', () => {
+    const dir = scratch('discovery-copy-')
+    const source = payloadFile(dir)
+
+    const copy = materializeDiscoveryScript({
+      dir: path.join(dir, 'cache'),
+      source,
+      hash: '#wallpaper',
+    })
+
+    expect(copy.written).toBe(true)
+    expect(path.isAbsolute(copy.path)).toBe(true)
+    expect(fs.readFileSync(copy.path, 'utf8')).toBe(SUBSTITUTED)
+  })
+
+  // The reason the copy exists at all: a Run that changes nothing must not write.
+  // The modification time is moved into the past first, so "unchanged" is proved
+  // by a stamp a write could not have left behind, not by bytes alone.
+  it('reuses the copy when the payload is unchanged, without touching the file', () => {
+    const dir = scratch('discovery-copy-')
+    const source = payloadFile(dir)
+    const target = path.join(dir, 'cache')
+    const stamp = new Date('2020-01-01T00:00:00.000Z')
+
+    const first = materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+    fs.utimesSync(first.path, stamp, stamp)
+
+    const second = materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+
+    expect(second.written).toBe(false)
+    expect(second.path).toBe(first.path)
+    expect(fs.statSync(second.path).mtimeMs).toBe(stamp.getTime())
+    expect(fs.readFileSync(second.path, 'utf8')).toBe(SUBSTITUTED)
+  })
+
+  it('rewrites the copy when the payload changes', () => {
+    const dir = scratch('discovery-copy-')
+    const source = payloadFile(dir)
+    const target = path.join(dir, 'cache')
+
+    materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+    fs.writeFileSync(
+      source,
+      PAYLOAD.replace('return', 'await page.evaluate(() => {})\n  return'),
+      'utf8',
+    )
+
+    const copy = materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+
+    expect(copy.written).toBe(true)
+    expect(fs.readFileSync(copy.path, 'utf8')).toContain('page.evaluate')
+  })
+
+  // Content is compared rather than trusted, so an external hand that reformats
+  // or truncates the copy (a formatter, a stray edit) cannot survive a Run.
+  it('repairs a copy that something else corrupted', () => {
+    const dir = scratch('discovery-copy-')
+    const source = payloadFile(dir)
+    const target = path.join(dir, 'cache')
+
+    const first = materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+    fs.writeFileSync(first.path, ';async (page) => {}', 'utf8')
+
+    const repaired = materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+
+    expect(repaired.written).toBe(true)
+    expect(fs.readFileSync(repaired.path, 'utf8')).toBe(SUBSTITUTED)
+  })
+
+  it('creates the target directory when it does not exist yet', () => {
+    const dir = scratch('discovery-copy-')
+    const source = payloadFile(dir)
+    const target = path.join(dir, 'not', 'there', 'yet')
+
+    const copy = materializeDiscoveryScript({ dir: target, source, hash: '#wallpaper' })
+
+    expect(fs.existsSync(copy.path)).toBe(true)
+  })
+
+  // A literal, worked out outside the test: the hash is what a Run log quotes to
+  // say which payload ran, so it has to be the hash of these exact bytes.
+  it('reports the hash of the content it materialized', () => {
+    const dir = scratch('discovery-copy-')
+    const source = payloadFile(dir)
+
+    const copy = materializeDiscoveryScript({ dir, source, hash: '#wallpaper' })
+
+    expect(copy.sha256).toBe('9148ba7003b0ef181fa5a055a0d1caeb4c7a4be7f99533feef967b748c8792e2')
+  })
+})

@@ -18,7 +18,7 @@ import {
   SESSION,
   USER_AGENT,
 } from './config.js'
-import { buildRunCodeScript } from './discovery/discovery-loader.js'
+import { materializeDiscoveryScript } from './discovery/discovery-loader.js'
 import { downloadBatch, extractCookies } from './download/download.js'
 import type { GalleryList } from './gallery/gallery-source.js'
 import { falsePositivesAmong, fetchGalleryList, officialNamesOf } from './gallery/gallery-source.js'
@@ -341,6 +341,14 @@ function finishRun(
 
 async function main() {
   const logger = createLogger(LOG_DIR)
+
+  // The Discovery script copy is materialized before anything touches the
+  // browser: a payload that cannot be handed to `run-code` must fail in
+  // milliseconds, not after Chrome has started and navigated. Its content is
+  // compared rather than trusted, so a Run that changes nothing writes nothing,
+  // and nothing is ever left at the repository root (issue #51).
+  const discoveryScript = materializeDiscoveryScript()
+
   const { meta, config } = newRunMeta()
   logger.info(
     { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
@@ -373,14 +381,10 @@ async function main() {
   logger.info('2. Running image discovery (scroll + thumbnails)...')
   logger.info('   (this may take several minutes)')
 
-  // Write run-code script to temp file, load via --filename.
-  // This avoids Windows cmd.exe escaping issues with multi-line strings and # hashes.
-  const runScript = buildRunCodeScript()
-  const scriptFile = path.resolve(PROJECT_ROOT, '__run_script.js')
-  fs.writeFileSync(scriptFile, runScript, 'utf8')
-
+  // The payload goes in by file, never inline: cmd.exe mangles multi-line code
+  // with # and quotes (AGENTS.md › "Windows: run-code uses --filename").
   try {
-    execSync(`npx playwright-cli -s=${SESSION} run-code --filename="${scriptFile}"`, {
+    execSync(`npx playwright-cli -s=${SESSION} run-code --filename="${discoveryScript.path}"`, {
       encoding: 'utf8',
       stdio: 'pipe',
       timeout: 900_000, // slow networks: discovery can take >10min (425s observed)
@@ -389,9 +393,6 @@ async function main() {
   } catch (err: unknown) {
     logger.error({ err: errorMessage(err) }, 'run-code execution failed')
   }
-  try {
-    fs.unlinkSync(scriptFile)
-  } catch {}
 
   // 3. Extract URLs from browser (merged network + DOM from run-code)
   logger.info('3. Extracting image URLs from browser...')
