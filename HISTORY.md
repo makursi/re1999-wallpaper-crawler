@@ -546,6 +546,29 @@
 - **日志名跟着领域词走，不跟着命令走**。`save-wallpapers` 被删的那一刻，旧日志名就成了对一个不存在命令的引用；`run-` 只承载 Run，命令以后再改也拖不动日志名。
 - **兼容要写成「历史事实」而不是「过渡期」**。两个前缀永久可读，于是没有人需要决定旧日志何时过期，也没有人需要给它们改名——过期日期本身才是将来要维护的东西。
 
+### 2026-10-20 — Web 层模块化：页面三桶 + 一个状态源，Console 的 HTTP 表面交给路由器（spec #68 / 票 #69–#73）
+
+**触因**：两层都在靠累积长大。页面是平的：五个单文件组件、一个 masonry 函数和一个 token 辅助并排，文件名是唯一能说明「这是哪一类文件」的东西，而三个不同的东西混在同一批文件里——只出标记的、带响应式状态与生命周期的（状态读取、轮询 timer、查看器开关）、无状态纯函数。更实的两处：`/api/status` 被读了两遍（导航读 `mirrorCount`、抽屉自己再读一份并轮询），同一个事实在屏幕上有两个副本，提示与判定可能互相矛盾；页面还手抄了一份 crawler 的图片扩展名清单，漂移的症状是每个 tile 一次注定 400 的缩略图请求。服务侧则是 748 行手写传输：路由、token/Host/Origin 守卫、四种响应、页面与样式表的 token 改写、端口回退全在一个文件里，加一条路由要改一段很长的 handler 链，而每条路由都重写一遍自己的 method 判断、响应头与 404/405 文案。
+
+**决策**：
+- **页面三桶，一条规则**：有响应式状态或生命周期 → `composables/`；无状态纯函数 → `lib/`；只出标记 → `components/`。**不按特性分层**——一面墙 + 一个抽屉，`features/gallery`、`features/run` 的目录数会超过它组织的代码。命名扁平加前缀（`Wall*`、`Run*`、`Console*`），不进子目录。
+- **一个状态源**：`useConsoleStatus()` 是模块级单例——挂载读一次、只在 Run 进行中 5 秒轮询、一个失败值。导航与 Run 面板从此同源，**具名行为变化 1：导航的 Mirror 计数开始跟随轮询**（此前冻结在挂载那一刻），在 PR 描述里写明。
+- **契约拥有「能不能显示」**：每个 gallery 行多一个由服务算出的 `viewable`（在盘 + 文件名属于 Wallpaper URL 集），页面不再声明任何扩展名。**具名行为变化 2**：非图片的 Mirror 额外文件不再产生注定 400 的请求。判定跨契约、服务、页面三层，跟着 `buildGalleryView` 的既有单测走。
+- **框架只做分派**：hono `4.13.13` + `@hono/node-server` `2.1.5` 接管 method+path 分派与 URL 解析；守卫、四种响应形状、样式表 `url()` 改写、端口回退**仍是我们的**。响应头由 `http/respond.ts` 手写——框架默认序列化写的是它自己的变体（`c.json` 连 charset 都不写），而页面测试断言的是逐字节字符串。传输契约移到 `http/deps.ts`，但由 `server.ts` 原样转出，**六个服务测试文件逐字节未改**，这是这次重构最强的完成信号。
+- **405 要用 `app.all` 注册，不是 `app.get`**：路由器按方法匹配，`app.get` 注册的路由收到 POST 会落到 notFound 的 404，`expectMethod` 永远不执行。改成 `app.all(path, expectMethod(...), handler)` 后 405 + `allow` 头恢复。
+- **ADR 0017 + 文档同轮**：框架进入 Console 的边界、被否决的四个替代（express / fastify / srvx / 只加静态帮手），以及一句把 `HISTORY` 里 2026-06-15 那条「否决 HTTP 框架」限定回去——那条针对的是无路由/无 API/无 DB 的爬虫命令行，不是这个表面。
+
+**验证**（integration 分支，五门）：
+- `oxfmt --check` clean；`oxlint --type-aware .` **0 warning 0 error**；`tsc --noEmit` 与 `vue-tsc --noEmit -p web/tsconfig.web.json` 0；`vitest run` **32 文件 / 344 tests 通过**（基线 335，新增 `poll` 4 条、`withToken` 4 条，契约与路由测试改期望值）；`vite build` 成功。
+- **六个服务测试文件 0 改动**（`git diff` 为空），却覆盖了守卫、403/404/405、逐字节响应头、页面与样式表改写、缩略图 500、端口回退——换骨架的全部证明都在这里面。
+- **真服务冒烟**（端口 8897）：页面 200 且两条资源 URL 带 token；JS `200 text/javascript; charset=utf-8` + `immutable` + `nosniff`；CSS 里 **109 个 `url()` 引用全部带 token**，字体 `200 font/woff2`、无 token 时 `403`；`/api/status` 200（idle，mirror 1013）；`/api/gallery` 200（1055 行，1013 可显示）；无 token 403；未知路由 404；错方法 405 + `allow: GET`；`/assets/%2e%2e%2f…` 404；`/api/thumbnail/..` 404（URL 归一化后不再属于该路由）；`%2e%2e%2fpackage.json` 400；真缩略图 200 `image/jpeg` 22 940 字节；原图 200。端口占用时第二个实例报「端口 8897 被占用,改用 3785」并正常应答。
+
+**教训**：
+- **「测试是契约」在重构里是真的有牙**。把六个测试文件设成不能改，等于把「同样的答案、不同的形状」变成可执行的判据；六次门禁里只要有一个需要动测试，就说明行为变了，而不是说明测试过时。
+- **框架的默认值不是中立的**。选型阶段查过 `c.json` 不写 charset，实测才发现还有 405 与路由方法匹配这一层：`app.get` 注册让错误方法静默变成 404。响应头与状态码必须自己产出，这一条在文档里被写成规矩，而不是被当成实现细节。
+- **共享 `node_modules` 的 worktree 会被包管理器反复重装**（`verify-deps-before-run` + junction），install 时还会把 `.bin` 弄丢；并行 worktree 的成本不在 git，在这棵树。
+- **文档漂移要写进文档**：官方站点已经在讲 hono v5，而钉住的是 4.x；`hostname` 选项只存在于类型声明里。两条都写进 ADR 0017 的 Consequences，免得下一个人拿网站当准绳。
+
 ---
 
 ## 已否决方案速查（改动前先看这里）
@@ -600,6 +623,12 @@
 | 让 Run log 的名字跟着命令走（`save-wallpapers-…` 或 `core-run-…`） | 命令会改名，日志名不该绑在一个会变的命令上；`run-` 只承载 Run，旧前缀永久可读 | 2026-10-20 / #59 / ADR 0016 |
 | 每次 status 请求重推 Gallery list 端点（让新建 `.env` 免重启生效） | 端点属于注入的配置，list source 只构建一次并带自己的读取缓存；每请求重推等于每请求重建数据源，status 与 gallery 行还可能读成两份。代价已写进 README：新建 `.env` 后要重启 WebUI 才读站点清单 | 2026-10-20 / #57 / #62 |
 | 把 `runConfigAvailable` 当 boot fact 只读一次 | 页面开着时创建 `.env`，提示永不清除；改为每 status 读一次文件（无 PATH 扫描、无注册表查询），且与 start 的拒绝同谓词 | 2026-10-20 / #60 / ADR 0016 |
+| 让路由器默认序列化产出响应（`c.json`、默认 404/405 文案） | 默认头与页面测试断言的逐字节字符串不同（`application/json` 无 charset），404/405 文案与 `allow` 头也会跟着变 | 2026-10-20 / #72 / ADR 0017 |
+| 用 `serveStatic` 一类静态帮手产静态资源 | 只做路径→字节流，不能把 token 写进 CSS 的 `url()`；实测 16 个 webfont 会全部 403 | 2026-10-20 / #72 / ADR 0017 |
+| 用 express 5 / fastify 5 / srvx | express 的 `res.send` 模型诱导把领域判断塞进 handler；fastify 的 schema/插件体系大于需求；srvx 1.0 太新 | 2026-10-20 / #72 / ADR 0017 |
+| 页面按特性分目录（`features/gallery`、`features/run`） | 一面墙 + 一个抽屉，目录数会超过它组织的代码 | 2026-10-20 / #69 |
+| 让页面继续自己判断 tile 能不能显示 | 与 `core/wallpaper-url.ts` 的扩展名清单是手抄副本，漂移的症状是每个 tile 一次注定 400 的请求 | 2026-10-20 / #70 |
+| 引入 vue-query / swrv / @vueuse/core 做页面数据层 | 两个 GET + 一个 5 秒轮询，库带来缓存键/重试/invalidate 语义却换不掉那 30 行；页面不为两个函数背一个包 | 2026-10-20 / #69 |
 
 ## 验证规范（所有迭代通用）
 
