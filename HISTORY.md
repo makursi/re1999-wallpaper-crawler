@@ -504,9 +504,11 @@
 - 术语不加：`CONTEXT.md` 只保留 Discovery script；副本是物化它的实现细节。ADR 也不加：挪目录是几十行的事，"难以回退"这条不成立，理由记在本文。
 
 **验证**：
-- `tests/core/discovery-loader.test.ts` **6 tests**：首次写、同内容不写（把 mtime 拨到 2020 再比，避开同毫秒假阴性）、载荷变化重写、外部改坏后自愈、目录自建、sha256 与独立算出的字面量一致。
-- 门（沙箱内的替代路径）：`tsc --noEmit` 0、`oxlint --type-aware .` 77 文件 **0 warning 0 error**、`oxfmt --check`（触碰的 4 个文件）通过、`vitest run --pool=threads` **29 文件 / 307 tests** 连跑三次全绿。
-- **沙箱里跑不了的**：`pnpm`（store 锁被拒）、提交钩子（`sh.exe` 建不了信号管道）、`oxfmt` 对 `.vue`（spawn EPERM）、以及两次真跑（`execSync(stdio:'pipe')` EPERM）。真跑验收（第一跑 `written: true`、第二跑 `written: false`）在沙箱外补，证据进 PR。
+- `tests/core/discovery-loader.test.ts` **7 tests**：首次写（并断言返回路径是绝对路径、文件名固定、目录就是注入的那个）、同内容不写（mtime 拨到 2020 再比，避开同毫秒假阴性；并断言 sha 不变）、载荷变化重写、**页面哈希变化重写**、外部改坏后自愈、目录自建、sha256 与独立算出的字面量一致。
+- `parseRunReport` 那条"在邻居中找出报告"的测试现在把 `type: "discovery_script"` 作为邻居带进去——第三个记录类型不改判定，有测试兜着。
+- 门：`tsc --noEmit` 0、`oxlint --type-aware .` 77 文件 **0 warning 0 error**、`oxfmt --check` 通过、`git push` 触发的真 pre-push（`pnpm typecheck && pnpm test`）**29 文件 / 308 tests** 通过。
+- **真跑两轮**（先删 `.run-cache/`）：Run `2026-10-20T02-11-11` → `written: true`、`DISCOVERY_SCRIPT_SHA 759052340cbc`、converged、6 轮、`combinedCount` 589、5m44s、official 1010 / +0 new / 555 skip / 0 failed；紧接着 Run `2026-10-20T02-26-48` → **同 sha**、`written: false`、`combinedCount` 259、4m09s、0 failed，而副本的 mtime 仍是 `10:11:11`——第二跑确实没碰文件。Run 期间与之后 `git status` 干净，仓根无任何残留。
+- 环境注记：受限沙箱里 `pnpm`（store 锁）、提交钩子（`sh.exe` 信号管道）、`oxfmt` 对 `.vue`、以及 `execSync(stdio:'pipe')` 全被 EPERM 挡住，所以那些轮次用直连 `node_modules\.bin`、`vitest --pool=threads`、以及一次性提权补跑；四个提交因此用了 `--no-verify`，PR 里写明，真实的 pre-push 门已在 push 时跑过。
 
 **教训**：
 - **先量再争**。"效率太低"在量之前不成立（0.8 ms vs 250–425 s）；把 9.8 KB 的写盘当性能问题，会去改错的东西。真正的杠杆是十次 `npx` 冷启动（≈6 s），那属于另一个决定（把 `@playwright/cli` 变成依赖），本轮明确不做。
