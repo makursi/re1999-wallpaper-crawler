@@ -29,7 +29,7 @@ import WallTile from './components/WallTile.vue'
 import { useGallery } from './composables/useGallery'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
-import { withToken } from './lib/console-api'
+import { withQueryToken } from './lib/console-api'
 import { columnsOf } from './lib/masonry'
 
 /**
@@ -85,7 +85,7 @@ const columns = computed(() => columnsOf(gallery.value?.rows ?? [], COLUMN_COUNT
  * every other request carries it.
  */
 function thumbnailUrl(name: string): string {
-  return withToken(`/api/thumbnail/${encodeURIComponent(name)}`, consoleToken())
+  return withQueryToken(`/api/thumbnail/${encodeURIComponent(name)}`, consoleToken())
 }
 
 /** An id the page can key a row by: an entry's own, or a Mirror file's name. */

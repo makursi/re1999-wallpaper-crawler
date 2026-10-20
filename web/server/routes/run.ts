@@ -24,6 +24,7 @@ import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from '../../api
 import type { ServiceRuntime } from '../http/deps.js'
 import { expectMethod } from '../http/method.js'
 import { json } from '../http/respond.js'
+import { cleanupStatusOf, startStatusOf } from '../run-control.js'
 
 export function registerRunRoutes(app: Hono, runtime: ServiceRuntime): void {
   const { deps } = runtime
@@ -31,7 +32,9 @@ export function registerRunRoutes(app: Hono, runtime: ServiceRuntime): void {
   app.all('/api/run', expectMethod('POST'), async () => {
     const result = await deps.startRun()
     const payload: ConsoleRunStartPayload = { started: result.started, refusal: result.refusal }
-    return json(result.status ?? (result.started ? 202 : 409), payload)
+    // The status comes from the module that owns the one-at-a-time rule; this
+    // route does not decide what a refusal deserves.
+    return json(startStatusOf(result), payload)
   })
 
   app.all('/api/run/cleanup', expectMethod('POST'), async () => {
@@ -44,6 +47,6 @@ export function registerRunRoutes(app: Hono, runtime: ServiceRuntime): void {
       cleaned: cleaned.cleaned,
       refusal: cleaned.refusal,
     }
-    return json(cleaned.status ?? (cleaned.cleaned ? 200 : 409), payload)
+    return json(cleanupStatusOf(cleaned), payload)
   })
 }

@@ -178,7 +178,9 @@ test of whether a change belongs there: it *identifies* the caller (token,
 `Host`, `Origin`), *gathers inputs* (the injected readers) and *speaks HTTP*
 (status codes, headers, bytes). Every judgement — one Run at a time, an
 Orphaned Run's cleanup, the Mirror-against-Gallery gap, the verdict — stays in
-the module that owns it, so no route answers a status code it decided itself.
+the module that owns it, so a route never invents a status for a domain state;
+translating a request-level refusal (a malformed name, a missing file) is the
+route's, because that is the HTTP vocabulary itself.
 See docs/adr/0008, docs/adr/0016 and docs/adr/0017.
 _Avoid_: GUI, dashboard, admin panel, web app
 

@@ -7,9 +7,10 @@
 // which handler runs; it does not get to decide what the page is told.
 //
 // The four shapes are exactly the four the surface has: JSON, image bytes, the
-// built page, and one built asset. Nothing here decides a status code from a
-// domain state — that is the route's job, and the route is where the judgement
-// lives.
+// built page, and one built asset. Which status a response carries is decided by
+// the module that owns the state behind it (`status.ts`, `gallery-view.ts`,
+// `run-control.ts`, `mirror-files.ts`); these builders only say how a body and
+// its headers are written.
 
 /** The service's JSON answer: no-store, and the charset the page expects. */
 export function json(

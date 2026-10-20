@@ -32,15 +32,21 @@ export interface ConsoleReply<T> {
  * `?` when the path has no query, `&` when it already has one, and no query at
  * all when there is no token — an empty token is refused by the guard either
  * way, and `?token=` would only make a failed request look deliberate.
+ *
+ * Named for the query, not for the token: the service has its own `withToken`
+ * (`web/server/http/token-rewrite.ts`) that also carries a `#fragment` past the
+ * token and skips a reference that already carries one. That one rewrites what
+ * it serves to a browser; this one builds a request path, and a path the page
+ * writes has neither a fragment nor a token of its own.
  */
-export function withToken(path: string, token: string): string {
+export function withQueryToken(path: string, token: string): string {
   if (token === '') return path
   const separator = path.includes('?') ? '&' : '?'
   return `${path}${separator}token=${encodeURIComponent(token)}`
 }
 
 async function requestJson<T>(method: 'GET' | 'POST', path: string): Promise<ConsoleReply<T>> {
-  const response = await fetch(withToken(path, consoleToken()), { method })
+  const response = await fetch(withQueryToken(path, consoleToken()), { method })
   // The body is the service's own contract (`web/api-types.ts`), so it is
   // asserted rather than validated: both sides of this request are this
   // repository's code, and a validator here would be a second statement of the

@@ -13,45 +13,12 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import { IMAGE_EXTENSIONS } from '../../../core/wallpaper-url.js'
+import { contentTypeOf } from './content-types.js'
 import { asset, json } from './respond.js'
 import { rewriteStylesheet } from './token-rewrite.js'
 
 /** Where the built page's hashed assets live, relative to the page's origin. */
 export const ASSET_PREFIX = '/assets/'
-
-/** What a served file's extension means over HTTP. */
-export const CONTENT_TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-}
-
-/**
- * The image routes' answer, for exactly the extensions a Wallpaper can have
- * (`IMAGE_EXTENSIONS`, core/wallpaper-url.ts): derived from `CONTENT_TYPES` so
- * the two tables cannot disagree about what a `.jpg` is, and from the Wallpaper
- * URL set's own list so the routes serve what the pipeline downloads.
- */
-export const IMAGE_CONTENT_TYPES: Record<string, string> = Object.fromEntries(
-  IMAGE_EXTENSIONS.map(extension => [extension, CONTENT_TYPES[extension]]),
-)
-
-/** The type one built asset is served as; anything unknown is opaque bytes. */
-export function contentTypeOf(name: string): string {
-  return CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream'
-}
 
 /**
  * Serve one built asset from the page's `assets/`, refusing anything outside it.

@@ -16,7 +16,7 @@ import * as path from 'node:path'
 
 import type { Context, Hono } from 'hono'
 
-import { IMAGE_CONTENT_TYPES } from '../http/assets.js'
+import { imageContentTypeOf } from '../http/content-types.js'
 import type { ServiceRuntime } from '../http/deps.js'
 import { expectMethod } from '../http/method.js'
 import { image, json } from '../http/respond.js'
@@ -68,8 +68,7 @@ async function serveImage(
       : json(400, { error: 'invalid name' })
   }
 
-  const extension = path.extname(resolved.path).toLowerCase()
-  const contentType = IMAGE_CONTENT_TYPES[extension] ?? 'application/octet-stream'
+  const contentType = imageContentTypeOf(resolved.path)
   if (!isThumbnail) return image(fs.readFileSync(resolved.path), contentType)
 
   if (deps.thumbnailSource === undefined) {
