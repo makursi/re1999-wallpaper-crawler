@@ -1,23 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import type {
   ConsoleDefects,
   ConsoleExplainedReason,
   ConsoleRunStartPayload,
-  ConsoleStatusPayload,
   ConsoleVerdict,
 } from '../api-types.js'
-import { consoleToken } from './console-token'
+import { useConsoleStatus } from './composables/useConsoleStatus'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
 import { EXPLAINED_REASON_MESSAGE_KEYS, VERDICT_MESSAGE_KEYS } from './i18n/messages'
 import type { MessageKey, MessageParams } from './i18n/messages'
 import type { RefusalView } from './i18n/refusal'
 import { refusalFromError, refusalOf, refusalTextOf } from './i18n/refusal'
+import { postJson } from './lib/console-api'
 import OrphanPanel from './OrphanPanel.vue'
 
-const status = ref<ConsoleStatusPayload | null>(null)
+// The page's one status (`composables/useConsoleStatus.ts`): the panel shows the
+// same snapshot the navigation's Mirror count is drawn from, and it no longer
+// owns a poll of its own.
+const { status, refresh } = useConsoleStatus()
 /** The last refusal, in the three shapes the page can meet one (#47). */
 const refusal = ref<RefusalView | null>(null)
 const starting = ref(false)
@@ -186,57 +189,20 @@ function explainedRow(reason: ConsoleExplainedReason): MessageRow {
     : { key, params: { count: reason.count } }
 }
 
-/** The status poll's handle; `null` when the page is not polling. */
-let timer: ReturnType<typeof setInterval> | null = null
-
-/**
- * Poll only while a Run is in flight. An idle Console's page asks nothing, so a
- * tab left open for hours costs nothing; there are no websockets and no second
- * channel to keep in sync with the Run log.
- */
-function stopPolling(): void {
-  if (timer === null) return
-  clearInterval(timer)
-  timer = null
-}
-
-function startPolling(): void {
-  if (timer !== null) return
-  timer = setInterval(() => void readStatus(), 5000)
-}
-
-async function readStatus(): Promise<void> {
-  try {
-    const response = await fetch(`/api/status?token=${encodeURIComponent(consoleToken())}`)
-    if (!response.ok) return
-    // The service's own payload; its shape is declared once, in
-    // web/api-types.ts, and imported here as a type only.
-    const payload = (await response.json()) as ConsoleStatusPayload
-    status.value = payload
-    if (payload.state === 'running') startPolling()
-    else stopPolling()
-  } catch {
-    // A failed read leaves the last known view in place rather than blanking it.
-  }
-}
-
 async function startRun(): Promise<void> {
   starting.value = true
   refusal.value = null
   try {
-    const response = await fetch(`/api/run?token=${encodeURIComponent(consoleToken())}`, {
-      method: 'POST',
-    })
-    const body = (await response.json()) as ConsoleRunStartPayload
-    if (!response.ok || !body.started) {
+    const reply = await postJson<ConsoleRunStartPayload>('/api/run')
+    if (!reply.ok || !reply.body.started) {
       // The service sends a code and its parameters; the sentence is the
       // dictionary's, in the reader's language (#47). A body without one is an
       // HTTP refusal (the guard's 403), named by its status instead.
-      refusal.value = refusalOf(response.status, body.refusal)
+      refusal.value = refusalOf(reply.status, reply.body.refusal)
       return
     }
     // The Run's identity is its log, so it is read back rather than assumed.
-    await readStatus()
+    await refresh()
   } catch (error) {
     // A transport failure is a runtime message, not copy (docs/adr/0014).
     refusal.value = refusalFromError(error)
@@ -245,13 +211,9 @@ async function startRun(): Promise<void> {
   }
 }
 
-onMounted(() => {
-  void readStatus()
-})
-
 // Closing the page never stops a Run: nothing here owns a Run, and there is no
-// stop control to add (ADR 0009). Only this page's own polling is released.
-onUnmounted(stopPolling)
+// stop control to add (ADR 0009). The first status read belongs to the store,
+// and so does the poll it keeps while a Run is in flight.
 </script>
 
 <template>
@@ -296,7 +258,7 @@ onUnmounted(stopPolling)
       </p>
       <!-- An Orphaned Run has its own component: it is the one state with an
            action, and the action is a POST the page must not get wrong. -->
-      <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="readStatus" />
+      <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="refresh" />
       <p v-else-if="status.runId === null">{{ t('run.noLog') }}</p>
       <template v-else>
         <p>

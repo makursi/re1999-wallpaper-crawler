@@ -129,9 +129,12 @@ web/                         — the Console, whole
 ├── uno.config.ts            — the design system: UnoCSS presets, semantic tokens, preflight (ADR 0013)
 ├── vite.config.ts           — the page's bundler config (root = this directory, output web/dist/)
 ├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts + uno.config.ts)
-├── src/                     — the page (Vue 3): App.vue, the panels, the built-in token
+├── src/                     — the page (Vue 3), three buckets, one rule: reactive state or a lifecycle → `composables/`; a stateless pure function → `lib/`; markup only → `components/`
+│   ├── components/          — markup only; flat, prefixed names (`Wall*`, `Run*`); no feature subdirectories
+│   ├── composables/         — the page's shared state: `useConsoleStatus` (one status read, the Run poll), `useGallery` (the wall's one read)
+│   ├── lib/                 — stateless: `console-api.ts` (the only place a request carries the token), `masonry.ts` (the wall's columns — unit-tested), `poll.ts` (whether to read again)
 │   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
-│   └── masonry.ts           — the wall's five-column distribution, a pure function (unit-tested)
+│   └── console-token.ts     — the token the page was opened with, read from its own URL
 └── server/                  — the service, and the one command that starts it
     ├── console.ts           — the entry point: build the page if absent, bind loopback, open it
     ├── server.ts            — loopback HTTP, token/Host/Origin guard, page + asset send
@@ -154,7 +157,10 @@ tests/                       — mirrors the sources it tests
 └── web/                     — the Console's tests
     ├── server/              — the service's tests (and their two helpers)
     └── src/                 — the page's tests
-        ├── masonry.test.ts
+        ├── lib/
+        │   ├── masonry.test.ts
+        │   ├── poll.test.ts
+        │   └── console-api.test.ts
         └── i18n/
             └── messages.test.ts
 .run-cache/                  — the Discovery script copy a Run materializes for `run-code --filename` (gitignored; written only when its content changed, never deleted)
@@ -165,7 +171,7 @@ scripts/
 
 A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010). `.run-cache/` is the one root directory only the crawler reads: `run-code --filename` can only be handed a file, so a Run materializes the Discovery script copy there — written only when its content differs from what is on disk, and never deleted.
 
-Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/masonry.ts` → `tests/web/src/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
+Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
 
 **Network-first design**: image URLs are captured via `page.on("response")` listening for `content-type: image/*`, _not_ from DOM scanning. DOM is only used to drive scrolling/clicking to trigger lazy loads.
 

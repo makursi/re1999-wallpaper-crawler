@@ -8,6 +8,17 @@
  * it makes. One home for it because every component that fetches needs exactly
  * this, and a second copy would be a second place the mechanism could drift.
  */
+/**
+ * The one DOM this module touches, declared locally.
+ *
+ * The page's pure modules (`lib/console-api.ts`) import this file, and those are
+ * typechecked by the repository's root type program, which deliberately has no
+ * DOM library. Declaring the single member the module reads keeps the file
+ * honest in both programs — the page's own program has the real `Window`, and
+ * this module never reaches for anything else.
+ */
+declare const window: { location: { search: string } }
+
 export function consoleToken(): string {
   return new URLSearchParams(window.location.search).get('token') ?? ''
 }
