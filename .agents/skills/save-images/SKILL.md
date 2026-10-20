@@ -64,11 +64,13 @@ _Done when playwright-cli answers, the user has been asked to leave the
 machine alone until the Run exits, and the sandbox-access request for the
 Run's first call is ready to send._
 
-**Run — one command, launched as a background job.** `pnpm save-wallpapers`
-(tsx runs `core/main.ts`). Hash injection, the Stability loop's rounds, the Site
-assets it filters and the download batches stream into
-`logs/save-wallpapers-<ts>.jsonl` — in the log, since a background job has no
-terminal to watch. The wrapper may **never report exit** —
+**Run — one command, launched as a background job.** `pnpm core:run`
+(tsx runs `core/main.ts`). This is internal tooling: the human path is the
+WebUI (`pnpm webui`), which starts and watches the same pipeline from the
+page, so send a user there rather than to this command. Hash injection, the
+Stability loop's rounds, the Site assets it filters and the download batches
+stream into `logs/save-wallpapers-<ts>.jsonl` — in the log, since a background
+job has no terminal to watch. The wrapper may **never report exit** —
 the persistent browser child inherits the stdout pipe and outlives the scraper,
 so the job sits at `running` long after the Run is over. Do not read a
 still-`running` wrapper as work in progress, and do not wait on it: cancel the

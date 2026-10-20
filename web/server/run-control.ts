@@ -38,7 +38,7 @@ export interface RunLauncherDeps {
   nodePath: string
   /** `<root>/node_modules/tsx/dist/cli.mjs` — the tsx CLI entry, not `npx`. */
   tsxEntry: string
-  /** `<root>/core/main.ts` — the same entry `pnpm save-wallpapers` runs. */
+  /** `<root>/core/main.ts` — the same entry `pnpm core:run` runs. */
   mainEntry: string
   /** The repository root: the Run's cwd, and where `.env` and `logs/` live. */
   projectRoot: string
