@@ -294,6 +294,17 @@ export interface ConsoleGalleryRow {
   /** The Wallpaper's file name (the secondary label). */
   name: string
   state: ConsoleGalleryRowState
+  /**
+   * Whether the page can show this row at all: the file is in the Mirror *and*
+   * its name is one the Wallpaper URL set accepts.
+   *
+   * Computed by the service, not the page. The two answers it needs — the row's
+   * state and the Wallpaper URL set's vocabulary — are the service's already,
+   * and the page used to keep a hand-copied extension list to reach the second
+   * one. A copy drifts: when the crawler's list grows, the page's lags silently,
+   * and the symptom is one guaranteed-400 thumbnail request per tile.
+   */
+  viewable: boolean
 }
 
 /**

@@ -27,8 +27,8 @@ describe('buildGalleryView', () => {
     ])
 
     expect(view.rows).toEqual([
-      { id: 1012, name: '1012_hash.jpg', state: 'on-disk' },
-      { id: 1011, name: '1011_hash.jpg', state: 'missing' },
+      { id: 1012, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
+      { id: 1011, name: '1011_hash.jpg', state: 'missing', viewable: false },
     ])
     expect(view.officialTotal).toBe(2)
     expect(view.listAvailable).toBe(true)
@@ -48,12 +48,28 @@ describe('buildGalleryView', () => {
     ])
 
     expect(view.rows).toEqual([
-      { id: 1012, name: '1012_hash.jpg', state: 'on-disk' },
-      { id: 1011, name: '1011_hash.jpg', state: 'on-disk' },
-      { id: null, name: retired, state: 'not-in-gallery' },
-      { id: null, name: 'notes.txt', state: 'not-in-gallery' },
+      { id: 1012, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
+      { id: 1011, name: '1011_hash.jpg', state: 'on-disk', viewable: true },
+      { id: null, name: retired, state: 'not-in-gallery', viewable: true },
+      { id: null, name: 'notes.txt', state: 'not-in-gallery', viewable: false },
     ])
     expect(view.mirrorGap).toEqual({ missing: 0, extra: 2 })
+  })
+
+  it('says whether a row can be shown: on disk and a Wallpaper, both required', () => {
+    // Three answers in one view — an entry the Mirror holds, an entry it does
+    // not, and a Mirror extra that is not an image at all. The page asks for a
+    // thumbnail only for the first, so `notes.txt` costs no request at all.
+    const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg']), [
+      '1012_hash.jpg',
+      'notes.txt',
+    ])
+
+    expect(view.rows.map(row => [row.name, row.viewable])).toEqual([
+      ['1012_hash.jpg', true],
+      ['1011_hash.jpg', false],
+      ['notes.txt', false],
+    ])
   })
 
   it('reports both directions of the gap: names the list has and the Mirror does not', () => {
@@ -130,8 +146,18 @@ describe('buildGalleryView', () => {
     const view = viewOf(list, ['312 2436x1125_5e70d8a50d9a477a8c0918174bd56db4.jpg'])
 
     expect(view.rows).toEqual([
-      { id: 317, name: '312 2436x1125_5e70d8a50d9a477a8c0918174bd56db4.jpg', state: 'on-disk' },
-      { id: 620, name: '620 1440×2560 _66312babc4e64ec38d5d498b8aebd265.jpg', state: 'missing' },
+      {
+        id: 317,
+        name: '312 2436x1125_5e70d8a50d9a477a8c0918174bd56db4.jpg',
+        state: 'on-disk',
+        viewable: true,
+      },
+      {
+        id: 620,
+        name: '620 1440×2560 _66312babc4e64ec38d5d498b8aebd265.jpg',
+        state: 'missing',
+        viewable: false,
+      },
     ])
   })
 
@@ -170,6 +196,10 @@ describe('buildGalleryView', () => {
     )
     expect(view.rows.every(row => row.id === null && row.state === 'on-disk')).toBe(true)
     expect(view.rows.some(row => row.state === 'not-in-gallery')).toBe(false)
+    // With no list, "can it be shown" still has one answer the service owns:
+    // whether the name is a Wallpaper at all. `notes.txt` is not.
+    expect(view.rows.find(row => row.name === 'notes.txt')?.viewable).toBe(false)
+    expect(view.rows.find(row => row.name === 'a_hash.jpg')?.viewable).toBe(true)
     // A fact about a Run, not about the list: still reported.
     expect(view.newSinceLastRun).toBe(12)
   })

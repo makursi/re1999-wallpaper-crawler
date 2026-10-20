@@ -57,14 +57,6 @@ const shown = ref<ConsoleGalleryRow | null>(null)
 const viewerOpen = ref(false)
 
 /**
- * The image extensions the service serves (`IMAGE_EXTENSIONS`,
- * core/wallpaper-url.ts). A `not-in-gallery` file can be any non-dot name the
- * Mirror holds, so the tile asks for a thumbnail only when the name could be
- * an image at all — otherwise the request is a guaranteed 400 per tile.
- */
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-
-/**
  * The tone a state that has no image reads in. `missing` is the fault — the
  * official list names a Wallpaper the Mirror does not hold — while
  * `not-in-gallery` is the list having moved on; the two are different
@@ -84,18 +76,6 @@ const officialTotal = computed(() => {
 
 /** The newest-Run clause, or nothing when there is nothing to compare against. */
 const newestRunAdded = computed(() => gallery.value?.newSinceLastRun ?? undefined)
-
-/** `true` when a file with this name stands a chance of being an image. */
-function isImageName(name: string): boolean {
-  const dot = name.lastIndexOf('.')
-  return dot > 0 && IMAGE_EXTENSIONS.includes(name.slice(dot).toLowerCase())
-}
-
-/** `true` when the tile can show a thumbnail at all. */
-function isViewable(row: ConsoleGalleryRow): boolean {
-  if (row.state === 'missing') return false
-  return isImageName(row.name)
-}
 
 /** The Mirror's measured size for a row, or `null` when there is not one. */
 function measuredSize(row: ConsoleGalleryRow): ConsoleImageSize | null {
@@ -207,7 +187,7 @@ function onViewerOpenChange(open: boolean): void {
             <!-- A tile is square-cornered, shadowless and carries its 1px border
                  from the start — transparent until hover, so the rust hairline
                  costs no layout at all. -->
-            <DialogTrigger v-if="isViewable(row)" as-child>
+            <DialogTrigger v-if="row.viewable" as-child>
               <button
                 type="button"
                 class="block w-full cursor-pointer overflow-hidden border border-transparent bg-surface p-0 transition-colors duration-hover ease-standard hover:border-accent focus-visible:border-accent focus-visible:outline-none"
