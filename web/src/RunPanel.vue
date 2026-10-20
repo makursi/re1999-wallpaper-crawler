@@ -1,17 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type {
-  ConsoleDefects,
-  ConsoleExplainedReason,
-  ConsoleRunStartPayload,
-  ConsoleVerdict,
-} from '../api-types.js'
+import type { ConsoleRunStartPayload } from '../api-types.js'
+import RunReportBlock from './components/RunReportBlock.vue'
+import RunSetupNotice from './components/RunSetupNotice.vue'
+import RunVerdict from './components/RunVerdict.vue'
 import { useConsoleStatus } from './composables/useConsoleStatus'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
-import { EXPLAINED_REASON_MESSAGE_KEYS, VERDICT_MESSAGE_KEYS } from './i18n/messages'
-import type { MessageKey, MessageParams } from './i18n/messages'
 import type { RefusalView } from './i18n/refusal'
 import { refusalFromError, refusalOf, refusalTextOf } from './i18n/refusal'
 import { postJson } from './lib/console-api'
@@ -25,24 +21,8 @@ const { status, refresh } = useConsoleStatus()
 const refusal = ref<RefusalView | null>(null)
 const starting = ref(false)
 
-/** One dictionary row: a message key and the values it interpolates. */
-interface MessageRow {
-  key: MessageKey
-  params?: MessageParams
-}
-
 /** The refusal as one sentence; `null` when there is none to show. */
 const refusalText = computed(() => refusalTextOf(refusal.value, 'run.refusedStart'))
-
-/**
- * The verdict as the page says it: `check-run` prints the `clean|explained|defect`
- * code and the service ships it untouched, while the reader's word for it is the
- * page's — the mapping is in the dictionary, not in the service (docs/adr/0014).
- * The empty string means there is no verdict to show.
- */
-function verdictLabel(code: ConsoleVerdict | null): string {
-  return code === null ? '' : t(VERDICT_MESSAGE_KEYS[code])
-}
 
 /**
  * Progress, in this project's own vocabulary: Wallpapers in the Mirror against
@@ -59,135 +39,6 @@ const progress = computed(() => {
 
 /** The in-flight line's one parameter: the Mirror-against-total progress phrase. */
 const inFlightParams = computed(() => ({ progress: progress.value }))
-
-/** The Run report's Gallery numbers, in the panel's words. */
-const galleryLine = computed(() => {
-  const gallery = status.value?.report?.gallery
-  if (gallery === undefined) return ''
-  return t('run.galleryReport', {
-    officialTotal: gallery.officialTotal ?? t('run.unknown'),
-    newSinceLastRun: gallery.newSinceLastRun ?? t('run.unknown'),
-    newFiles: gallery.newFiles.length,
-  })
-})
-
-/** The Run report's Download numbers, in the panel's words. */
-const downloadLine = computed(() => {
-  const download = status.value?.report?.download
-  if (download === undefined) return ''
-  return t('run.downloadReport', {
-    ok: download.ok,
-    skipped: download.skipped,
-    failed: download.failed,
-    successRate: download.successRate,
-  })
-})
-
-/**
- * The detected defects, as rows the page words itself (#47). The report's
- * `defects` record is structured data already; what used to be printed as one
- * JSON blob is named here class by class, in the reader's language.
- */
-const defectRows = computed<MessageRow[]>(() => {
-  const report = status.value?.report
-  return report === null || report === undefined ? [] : rowsOfDefects(report.defects)
-})
-
-/**
- * One row per defect class the record actually reports. A `null` Mirror gap or
- * Site asset check is "not checked" — never folded into "clean" — and gets its
- * own row.
- */
-function rowsOfDefects(defects: ConsoleDefects): MessageRow[] {
-  const rows: MessageRow[] = []
-  if (defects.discoveryLeak.count > 0) {
-    rows.push({ key: 'defect.discoveryLeak', params: { count: defects.discoveryLeak.count } })
-  }
-  if (defects.nonConverged) rows.push({ key: 'defect.nonConverged' })
-  if (defects.emptyResult) rows.push({ key: 'defect.emptyResult' })
-  if (defects.persistentFailures > 0) {
-    rows.push({ key: 'defect.persistentFailures', params: { count: defects.persistentFailures } })
-  }
-  if (defects.emptyFiles.length > 0) {
-    rows.push({ key: 'defect.emptyFiles', params: { files: defects.emptyFiles.join(', ') } })
-  }
-  if (defects.siteAssetFalsePositive === null) {
-    rows.push({ key: 'defect.siteAssetNotChecked' })
-  } else if (defects.siteAssetFalsePositive.count > 0) {
-    rows.push({
-      key: 'defect.siteAssetFalsePositive',
-      params: { count: defects.siteAssetFalsePositive.count },
-    })
-  }
-  if (defects.gallerySourceUnavailable) rows.push({ key: 'defect.gallerySourceUnavailable' })
-  if (defects.mirrorGap === null) {
-    rows.push({ key: 'defect.mirrorGapNotChecked' })
-  } else if (defects.mirrorGap.missing > 0) {
-    rows.push({ key: 'defect.mirrorGapMissing', params: { count: defects.mirrorGap.missing } })
-  }
-  if (defects.mirrorGap !== null && defects.mirrorGap.extra > 0) {
-    rows.push({ key: 'defect.mirrorGapExtra', params: { count: defects.mirrorGap.extra } })
-  }
-  return rows
-}
-
-/**
- * Why there is no verdict to show. A missing Run report is a defect in the log
- * — never "the Run failed" — and a report this Console cannot read is a
- * different statement, so the two are not merged.
- */
-const missingReport = computed(() =>
-  status.value?.reportPresent === true ? t('run.reportUnreadable') : t('run.reportMissing'),
-)
-
-/**
- * Why the verdict is `defect`, in the verdict's own terms: the two facts the
- * report's `defects` record does not carry — a Gallery state that names another
- * Run (or could not be read), and claimed new files the probe rejected. The
- * third kind of cause, a defect class the runbook does not call routine, is in
- * that `defects` record, which the page shows beside this.
- */
-const defectCauses = computed(() => {
-  const payload = status.value
-  const reasons = payload?.verdictReasons ?? null
-  if (payload?.verdict !== 'defect' || reasons === null) return []
-  const causes: string[] = []
-  if (reasons.stateMatchesReport === false) {
-    causes.push(t('run.cause.stateNamesAnotherRun'))
-  } else if (reasons.stateMatchesReport === null) {
-    causes.push(t('run.cause.stateUnreadable'))
-  }
-  if (reasons.missingOnDisk.length > 0) {
-    causes.push(t('run.cause.missingOnDisk', { files: reasons.missingOnDisk.join(', ') }))
-  }
-  return causes
-})
-
-/** The causes as one sentence; empty when there are none to show. */
-const why = computed(() =>
-  defectCauses.value.length === 0
-    ? ''
-    : t('run.why', { causes: defectCauses.value.join(t('run.causeSeparator')) }),
-)
-
-/**
- * The routine classes an `explained` verdict was made of, as dictionary rows.
- * The verdict carries them as structured reasons (#47) with English field names;
- * the page says each kind in the reader's language.
- */
-const explainedCauses = computed<MessageRow[]>(() => {
-  const payload = status.value
-  if (payload?.verdict !== 'explained') return []
-  return (payload.verdictReasons?.explained ?? []).map(explainedRow)
-})
-
-/** One explained reason, as the message that words it. */
-function explainedRow(reason: ConsoleExplainedReason): MessageRow {
-  const key = EXPLAINED_REASON_MESSAGE_KEYS[reason.kind]
-  return reason.kind === 'discovery-leak'
-    ? { key, params: { urls: reason.urls.join(', ') } }
-    : { key, params: { count: reason.count } }
-}
 
 async function startRun(): Promise<void> {
   starting.value = true
@@ -228,27 +79,7 @@ async function startRun(): Promise<void> {
          stay in the body face. -->
     <h2 class="font-serif text-[1.1rem] font-bold">{{ t('run.heading') }}</h2>
 
-    <!-- The setup notice (#60). With no usable `.env` the start control would be
-         refused, so the panel says what to create before any click: the file at
-         the repository root (a data cell, hence `Message.vue`) and the two site
-         constants it needs, which are the same two lines README.md gives. It is
-         guidance, not an error: the danger role belongs to the refusal the click
-         returns, which names the same `env-file` prerequisite. The Console never
-         writes the file — the reader does. -->
-    <aside
-      v-if="status !== null && !status.runConfigAvailable"
-      class="mt-3 rounded-sm border border-border bg-surface-raised p-3"
-    >
-      <h3 class="font-serif font-bold">{{ t('run.setup.heading') }}</h3>
-      <p class="mt-1 text-sm">{{ t('run.setup.body') }}</p>
-      <p class="mt-2 text-sm">
-        <Message message="run.setup.file" :params="{ file: '.env' }" />
-      </p>
-      <pre
-        class="numeric mt-2 overflow-x-auto rounded-sm border border-border bg-base p-2 text-xs leading-relaxed"
-        >{{ t('run.setup.lines') }}</pre>
-      <p class="mt-2 text-muted text-sm">{{ t('run.setup.note') }}</p>
-    </aside>
+    <RunSetupNotice />
 
     <p v-if="status === null">{{ t('run.readingLog') }}</p>
 
@@ -261,39 +92,8 @@ async function startRun(): Promise<void> {
       <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="refresh" />
       <p v-else-if="status.runId === null">{{ t('run.noLog') }}</p>
       <template v-else>
-        <p>
-          <Message
-            message="run.line"
-            :params="{ runId: status.runId ?? '', verdict: verdictLabel(status.verdict) }"
-          />
-        </p>
-        <!-- The causes the report's `defects` record cannot carry: a `defect`
-             whose record reads clean still has one of these to show
-             (#34 story 11). -->
-        <p v-if="why !== ''" class="text-muted text-sm">{{ why }}</p>
-        <!-- The routine classes the verdict explained, each a dictionary
-             message: the service sends structured reasons, never a sentence. -->
-        <template v-if="explainedCauses.length > 0">
-          <p class="text-muted text-sm">{{ t('run.explained') }}</p>
-          <ul class="list-disc pl-4 text-muted text-sm">
-            <li v-for="cause in explainedCauses" :key="cause.key">
-              <Message :message="cause.key" :params="cause.params" />
-            </li>
-          </ul>
-        </template>
-        <p v-if="status.report === null" class="text-danger">{{ missingReport }}</p>
-        <template v-else>
-          <p><Message message="run.gallery" :params="{ line: galleryLine }" /></p>
-          <p><Message message="run.download" :params="{ line: downloadLine }" /></p>
-          <!-- The defect block as rows the page words, not the raw record. -->
-          <p>{{ t('run.defects') }}</p>
-          <ul v-if="defectRows.length > 0" class="list-disc pl-4 text-muted text-sm">
-            <li v-for="row in defectRows" :key="row.key">
-              <Message :message="row.key" :params="row.params" />
-            </li>
-          </ul>
-          <p v-else class="text-muted text-sm">{{ t('defect.none') }}</p>
-        </template>
+        <RunVerdict />
+        <RunReportBlock />
       </template>
     </template>
 

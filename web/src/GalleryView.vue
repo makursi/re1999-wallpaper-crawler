@@ -20,16 +20,15 @@
 // `DialogTrigger`, which is what gives reka-ui a trigger to hand focus back to
 // when the viewer closes (#48's first verified defect).
 
-import { DialogRoot, DialogTrigger } from 'reka-ui'
+import { DialogRoot } from 'reka-ui'
 import { computed, ref } from 'vue'
 
 import type { ConsoleGalleryRow, ConsoleImageSize } from '../api-types.js'
+import WallHeader from './components/WallHeader.vue'
+import WallTile from './components/WallTile.vue'
 import { useGallery } from './composables/useGallery'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
-import { t } from './i18n/locale'
-import Message from './i18n/Message.vue'
-import { GALLERY_ROW_STATE_MESSAGE_KEYS } from './i18n/messages'
 import { withToken } from './lib/console-api'
 import { columnsOf } from './lib/masonry'
 
@@ -55,27 +54,6 @@ const { gallery, failure } = useGallery()
 const shown = ref<ConsoleGalleryRow | null>(null)
 /** Whether the viewer is open; `shown` deliberately outlives it (see above). */
 const viewerOpen = ref(false)
-
-/**
- * The tone a state that has no image reads in. `missing` is the fault — the
- * official list names a Wallpaper the Mirror does not hold — while
- * `not-in-gallery` is the list having moved on; the two are different
- * statements, so they are not the same colour.
- */
-const STATE_TONES: Record<ConsoleGalleryRow['state'], string> = {
-  'on-disk': 'text-secondary',
-  missing: 'text-danger',
-  'not-in-gallery': 'text-warning',
-}
-
-/** The official total as the reader sees it: a number, or "not read". */
-const officialTotal = computed(() => {
-  const total = gallery.value?.officialTotal
-  return total == null ? t('gallery.notRead') : total
-})
-
-/** The newest-Run clause, or nothing when there is nothing to compare against. */
-const newestRunAdded = computed(() => gallery.value?.newSinceLastRun ?? undefined)
 
 /** The Mirror's measured size for a row, or `null` when there is not one. */
 function measuredSize(row: ConsoleGalleryRow): ConsoleImageSize | null {
@@ -133,47 +111,7 @@ function onViewerOpenChange(open: boolean): void {
 
 <template>
   <section class="pb-24">
-    <!-- The wall's head: the caption is the reading of the wall, not a panel,
-         and above it sits the position the site fills with a WALLPAPER type
-         image — filled here with real text and no image at all (ADR 0015,
-         story 20). The eyebrow tag carries the Chinese name of the view, so the
-         display mark leads and the reader still knows what this is. -->
-    <div class="mb-10 flex flex-col gap-4">
-      <h2
-        class="flex items-center gap-3 font-serif text-xs font-bold text-muted uppercase tracking-[0.35em]"
-      >
-        <span class="h-px w-10 bg-border" aria-hidden="true" />
-        {{ t('gallery.heading') }}
-      </h2>
-      <!-- The display mark: Playfair Display at display scale, in the site's
-           own logotype ink. A logotype is the same word in both locales, so it
-           is a dictionary key with one value rather than a translation. -->
-      <p class="font-serif text-7xl leading-none tracking-[0.12em] text-logotype">
-        {{ t('wall.mark') }}
-      </p>
-      <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-        <p v-if="gallery !== null" class="text-secondary text-sm">
-          <Message
-            message="gallery.counts"
-            :params="{ officialTotal, mirrorCount: gallery.mirrorCount }"
-          />
-        </p>
-        <p v-if="newestRunAdded !== undefined" class="text-secondary text-sm">
-          <Message message="gallery.newestRunAdded" :params="{ newSinceLastRun: newestRunAdded }" />
-        </p>
-      </div>
-      <p v-if="failure !== null" class="text-danger text-sm">{{ failure }}</p>
-      <p v-else-if="gallery === null" class="text-muted text-sm">{{ t('gallery.reading') }}</p>
-      <p v-else-if="!gallery.listAvailable" class="max-w-[52rem] text-muted text-sm">
-        {{ t('gallery.listUnavailable') }}
-      </p>
-      <p v-else-if="gallery.mirrorGap !== null" class="max-w-[52rem] text-muted text-sm">
-        <Message
-          message="gallery.mirrorGap"
-          :params="{ missing: gallery.mirrorGap.missing, extra: gallery.mirrorGap.extra }"
-        />
-      </p>
-    </div>
+    <WallHeader :gallery="gallery" :failure="failure" />
 
     <!-- One `DialogRoot` for the wall, so each tile can be the trigger. -->
     <DialogRoot :open="viewerOpen" @update:open="onViewerOpenChange">
@@ -184,44 +122,12 @@ function onViewerOpenChange(open: boolean): void {
           class="flex min-w-0 flex-1 flex-col gap-gutter"
         >
           <template v-for="row in column" :key="rowKey(row)">
-            <!-- A tile is square-cornered, shadowless and carries its 1px border
-                 from the start — transparent until hover, so the rust hairline
-                 costs no layout at all. -->
-            <DialogTrigger v-if="row.viewable" as-child>
-              <button
-                type="button"
-                class="block w-full cursor-pointer overflow-hidden border border-transparent bg-surface p-0 transition-colors duration-hover ease-standard hover:border-accent focus-visible:border-accent focus-visible:outline-none"
-                :style="{ aspectRatio: boxOf(row) }"
-                :aria-label="t('gallery.tileShow', { name: row.name })"
-                @click="openViewer(row)"
-              >
-                <img
-                  class="block h-full w-full object-contain"
-                  :src="thumbnailUrl(row.name)"
-                  :alt="row.name"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </button>
-            </DialogTrigger>
-            <!-- A Wallpaper with no local file is a state, not a fault: a local
-                 placeholder, never a broken image and never a fetch to the CDN
-                 (spec decision 25; #35 AC 5). It keeps the row's own name, so
-                 the identifier stays readable for a tile that cannot be
-                 opened. -->
-            <div
-              v-else
-              class="grid w-full place-content-center gap-1 overflow-hidden border border-dashed border-border bg-surface p-2 text-center text-xs"
-              role="img"
-              :style="{ aspectRatio: boxOf(row) }"
-              :aria-label="t('gallery.tileNotOnDisk', { name: row.name })"
-            >
-              <span class="i-ph-image-light mx-auto text-xl text-muted" aria-hidden="true" />
-              <span :class="STATE_TONES[row.state]">{{
-                t(GALLERY_ROW_STATE_MESSAGE_KEYS[row.state])
-              }}</span>
-              <code class="break-all text-[0.7rem] text-muted">{{ row.name }}</code>
-            </div>
+            <WallTile
+              :row="row"
+              :box="boxOf(row)"
+              :thumbnail-url="thumbnailUrl(row.name)"
+              @open="openViewer"
+            />
           </template>
         </div>
       </div>
