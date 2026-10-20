@@ -237,6 +237,13 @@ export interface ConsoleStatusPayload {
   /** `false` when the Gallery list could not be read — never "nothing missing". */
   listAvailable: boolean
   /**
+   * Whether a Run's configuration is available: `true` only when `.env` was read
+   * and validated. It is a boot fact, computed once from the injected
+   * configuration value — never a per-request probe — so the page can show the
+   * setup notice while the status endpoint keeps answering (#57).
+   */
+  runConfigAvailable: boolean
+  /**
    * The newest Run report, verbatim (#34): the Gallery numbers, Download
    * numbers and detected defects the owner judges together. `null` while a Run
    * is in flight and when no readable report was found.

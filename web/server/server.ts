@@ -292,6 +292,11 @@ async function handleRequest(
         run: deps.runState(),
         mirrorCount: countMirrorWallpapers(config.imagesDir),
         gallery: await deps.galleryFacts(),
+        // #57: a boot fact, read off the configuration value the entry point
+        // injected. The Gallery list endpoint is absent exactly when there is no
+        // usable `.env`, so this costs no file read, no `PATH` scan and no
+        // registry lookup on a polling route.
+        runConfigAvailable: config.galleryListEndpoint !== null,
       }),
     )
     return
