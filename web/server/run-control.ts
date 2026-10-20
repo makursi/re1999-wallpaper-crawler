@@ -214,6 +214,27 @@ export function createRunStarter(deps: RunStarterDeps): RunStarter {
   }
 }
 
+/**
+ * The HTTP status a start's answer carries (spec decision 9).
+ *
+ * Here, next to the rule that decides the answer, and not in the route: which
+ * code a refusal deserves is a judgement about the Console's state, and the
+ * transport only relays it. Every real answer already names its own `status`;
+ * this is the answer for a caller that supplies none — an unstaged start is a
+ * refusal (409), never an acceptance.
+ */
+export function startStatusOf(answer: { started: boolean; status?: number }): number {
+  return answer.status ?? (answer.started ? 202 : 409)
+}
+
+/**
+ * The HTTP status a cleanup's answer carries. Same reasoning as
+ * `startStatusOf`: a cleanup that did not clean was refused (409).
+ */
+export function cleanupStatusOf(answer: { cleaned: boolean; status?: number }): number {
+  return answer.status ?? (answer.cleaned ? 200 : 409)
+}
+
 export type StopDecision = 'stop-now' | 'confirm'
 
 /**

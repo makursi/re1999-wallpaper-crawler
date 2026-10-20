@@ -18,10 +18,12 @@
 - **Console** — the human entry point: a local service started by one command
   that serves a page reading the Run log directory, the Gallery list and the
   Mirror.
-  Owns: `web/` — `web/server/` (the service and its entry point),
-  `web/api-types.ts` (the API contract the service and the page share: the
-  payload types plus the code vocabularies the dictionary test enumerates,
-  ADR 0014), `web/src/` (the page), and the page's tooling
+  Owns: `web/` — `web/server/` (the service and its entry point, with the
+  transport's own parts under `web/server/http/` and one file per route group
+  under `web/server/routes/`), `web/api-types.ts` (the API contract the service
+  and the page share: the payload types plus the code vocabularies the
+  dictionary test enumerates, ADR 0014), `web/src/` (the page, in three buckets:
+  `components/`, `composables/`, `lib/`), and the page's tooling
   (`web/vite.config.ts`, `web/uno.config.ts`, `web/tsconfig.web.json`, and the
   artifacts they produce: `web/dist/`, the thumbnail cache under
   `web/.console-cache/`); started by the `webui` script.

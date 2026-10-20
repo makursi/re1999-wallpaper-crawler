@@ -129,12 +129,17 @@ web/                         — the Console, whole
 ├── uno.config.ts            — the design system: UnoCSS presets, semantic tokens, preflight (ADR 0013)
 ├── vite.config.ts           — the page's bundler config (root = this directory, output web/dist/)
 ├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts + uno.config.ts)
-├── src/                     — the page (Vue 3): App.vue, the panels, the built-in token
+├── src/                     — the page (Vue 3). The entry and its views stay at this level — `App.vue`, `GalleryView.vue`, `RunPanel.vue`, `OrphanPanel.vue`, `FullSizeView.vue` — because they are what the page is; everything they compose lives in three buckets, one rule: reactive state or a lifecycle → `composables/`; a stateless pure function → `lib/`; markup only → `components/`
+│   ├── components/          — markup only; flat, prefixed names; no feature subdirectories: `ConsoleNav` + `LocaleSwitch` + `ConsoleDrawer` (the shell), `WallHeader` + `WallTile` (the wall), `RunSetupNotice` + `RunVerdict` + `RunReportBlock` + `RunDefectList` (the Run panel)
+│   ├── composables/         — the page's shared state: `useConsoleStatus` (one status read, the Run poll), `useGallery` (the wall's one read)
+│   ├── lib/                 — stateless: `console-api.ts` (the only place a request carries the token), `masonry.ts` (the wall's columns — unit-tested), `poll.ts` (whether to read again)
 │   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
-│   └── masonry.ts           — the wall's five-column distribution, a pure function (unit-tested)
+│   └── console-token.ts     — the token the page was opened with, read from its own URL
 └── server/                  — the service, and the one command that starts it
     ├── console.ts           — the entry point: build the page if absent, bind loopback, open it
-    ├── server.ts            — loopback HTTP, token/Host/Origin guard, page + asset send
+    ├── server.ts            — the app: the guard, the routes, the port fallback; re-exports the dependency contract from `http/deps.ts` so the contract keeps its import address
+    ├── http/                — the transport's own parts: `deps.ts` (the injected contract), `guard.ts` (token/Host/Origin), `respond.ts` (the four response shapes and their exact headers), `method.ts` (405 + `allow`), `content-types.ts` (the extension→type table both the assets and the image routes read), `token-rewrite.ts` (the page and stylesheet rewrites), `assets.ts` (containment + serving one built asset)
+    ├── routes/              — one file per route group (status, gallery, images, run, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
     ├── run-control.ts       — the Run launcher, the one-at-a-time rule, the stop decision
     ├── image-sizes.ts       — the Wallpapers' own pixel sizes, read for the masonry (unit-tested)
     └── …                    — the readers (Run log, Gallery list, Mirror, thumbnails)
@@ -154,7 +159,10 @@ tests/                       — mirrors the sources it tests
 └── web/                     — the Console's tests
     ├── server/              — the service's tests (and their two helpers)
     └── src/                 — the page's tests
-        ├── masonry.test.ts
+        ├── lib/
+        │   ├── masonry.test.ts
+        │   ├── poll.test.ts
+        │   └── console-api.test.ts
         └── i18n/
             └── messages.test.ts
 .run-cache/                  — the Discovery script copy a Run materializes for `run-code --filename` (gitignored; written only when its content changed, never deleted)
@@ -165,7 +173,7 @@ scripts/
 
 A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010). `.run-cache/` is the one root directory only the crawler reads: `run-code --filename` can only be handed a file, so a Run materializes the Discovery script copy there — written only when its content differs from what is on disk, and never deleted.
 
-Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/masonry.ts` → `tests/web/src/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
+Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the six files at `tests/web/server/`, which drive the bound service over a real socket.
 
 **Network-first design**: image URLs are captured via `page.on("response")` listening for `content-type: image/*`, _not_ from DOM scanning. DOM is only used to drive scrolling/clicking to trigger lazy loads.
 
@@ -314,6 +322,25 @@ commit on `main`: it must be refused.
   neither is the run-code payload. Formatting is not a matter of taste here —
   run `pnpm fmt` instead of hand-aligning.
 - TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
+- The page's files sort by what they hold, not by feature: reactive state or a
+  lifecycle belongs in `web/src/composables/`, a stateless pure function in
+  `web/src/lib/`, markup only in `web/src/components/`. The entry and its views
+  stay at `web/src/` (`App.vue` and the four view files) — they are what the page
+  is, not parts of it; the buckets hold what they compose. A component may keep
+  the view-model mapping only it renders (which dictionary key a state maps to);
+  arithmetic or a rule another module also needs goes to `lib/`. Naming stays
+  flat with a prefix (`Wall*`, `Run*`, `Console*`); there are no feature
+  subdirectories, because one wall and one drawer would outnumber the code they
+  organise.
+- The service's transport is an adapter: it identifies the caller, gathers
+  inputs and speaks HTTP (status codes, headers, bytes). A status code that
+  reflects a domain state — a Run in flight, an Orphaned Run, a verdict — is
+  decided by the module that owns the state (`status.ts`, `gallery-view.ts`,
+  `run-control.ts`), never by a route; translating a request-level refusal
+  (a malformed name, a missing file) is the route's, because `mirror-files.ts`
+  names the refusal and HTTP is the vocabulary it is translated into. The
+  response headers are hand-built in `web/server/http/respond.ts` — no router
+  default serves a response a test asserts on (ADR 0017).
 - Formatting: semicolons off, single quotes, 2-space indent, LF — enforced by
   oxfmt, not hand-maintained (`.editorconfig` still states the editor defaults
   for files outside its reach).

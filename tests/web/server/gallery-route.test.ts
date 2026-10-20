@@ -87,10 +87,12 @@ describe('GET /api/gallery', () => {
     expect(status).toBe(200)
     expect(body).toEqual({
       rows: [
-        { id: 1012, name: '1012_hash.jpg', state: 'on-disk' },
-        { id: 1011, name: '1011_hash.jpg', state: 'missing' },
-        { id: null, name: RETIRED, state: 'not-in-gallery' },
-        { id: null, name: 'notes.txt', state: 'not-in-gallery' },
+        { id: 1012, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
+        { id: 1011, name: '1011_hash.jpg', state: 'missing', viewable: false },
+        { id: null, name: RETIRED, state: 'not-in-gallery', viewable: true },
+        // The row this contract field exists for: on disk, not an image, so the
+        // page is told not to ask for a thumbnail it could never get.
+        { id: null, name: 'notes.txt', state: 'not-in-gallery', viewable: false },
       ],
       officialTotal: 2,
       newSinceLastRun: 12,
@@ -149,9 +151,9 @@ describe('GET /api/gallery', () => {
     expect(status).toBe(200)
     expect(body).toEqual({
       rows: [
-        { id: null, name: '1012_hash.jpg', state: 'on-disk' },
-        { id: null, name: RETIRED, state: 'on-disk' },
-        { id: null, name: 'notes.txt', state: 'on-disk' },
+        { id: null, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
+        { id: null, name: RETIRED, state: 'on-disk', viewable: true },
+        { id: null, name: 'notes.txt', state: 'on-disk', viewable: false },
       ],
       officialTotal: null,
       newSinceLastRun: 12,

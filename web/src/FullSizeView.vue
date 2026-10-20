@@ -30,6 +30,7 @@ import { computed, ref, watch } from 'vue'
 import { consoleToken } from './console-token'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
+import { withQueryToken } from './lib/console-api'
 
 const props = defineProps<{
   /** The gallery's own id; `null` for a Mirror file the list no longer holds. */
@@ -73,7 +74,9 @@ function zoomInFromPicture(): void {
 }
 
 function imageUrl(): string {
-  return `/api/image/${encodeURIComponent(props.name)}?token=${encodeURIComponent(consoleToken())}`
+  // The client module is the one place a request path carries the token; this
+  // view only says *which* file it wants to see.
+  return withQueryToken(`/api/image/${encodeURIComponent(props.name)}`, consoleToken())
 }
 
 // A failed original (a file that vanished mid-view) is stated rather than

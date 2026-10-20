@@ -13,7 +13,7 @@
 
 import type { GalleryList } from '../../core/gallery/gallery-source.js'
 import { officialNamesOf } from '../../core/gallery/gallery-source.js'
-import { wallpaperNameOf } from '../../core/wallpaper-url.js'
+import { isWallpaperFile, wallpaperNameOf } from '../../core/wallpaper-url.js'
 import type { ConsoleGalleryPayload, ConsoleImageSize } from '../api-types.js'
 import type { Same } from './same.js'
 
@@ -26,6 +26,17 @@ export interface GalleryRow {
   /** The Wallpaper's file name (the secondary label). */
   name: string
   state: GalleryRowState
+  /**
+   * Whether the page can show this row: the file is in the Mirror and the name
+   * is one the Wallpaper URL set accepts.
+   *
+   * The service decides it because both inputs are the service's — the row's
+   * state and the Wallpaper URL set's vocabulary, `isWallpaperFile`. The page
+   * used to hold a hand-copied copy of that vocabulary, which is exactly the
+   * kind of duplicate that drifts: a non-image Mirror extra then produced one
+   * thumbnail request per paint that could only ever answer 400.
+   */
+  viewable: boolean
 }
 
 export interface GalleryView {
@@ -53,7 +64,12 @@ export function buildGalleryView(input: {
     // the list, so every row is simply on disk and the gap stays `null` — a
     // missing count of 0 would be a claim the Mirror cannot support.
     return {
-      rows: diskNames.map(name => ({ id: null, name, state: 'on-disk' })),
+      rows: diskNames.map(name => ({
+        id: null,
+        name,
+        state: 'on-disk',
+        viewable: isWallpaperFile(name),
+      })),
       officialTotal: null,
       newSinceLastRun,
       listAvailable: false,
@@ -64,11 +80,25 @@ export function buildGalleryView(input: {
   const official = officialNamesOf(list)
   const rows: GalleryRow[] = list.entries.map(entry => {
     const name = wallpaperNameOf(entry.url)
-    return { id: entry.id, name, state: onDisk.has(name) ? 'on-disk' : 'missing' }
+    const onDiskHere = onDisk.has(name)
+    return {
+      id: entry.id,
+      name,
+      state: onDiskHere ? 'on-disk' : 'missing',
+      // A row the Mirror does not hold has no file to show; a row it holds
+      // still has to be a Wallpaper, because the Mirror takes every non-dot
+      // name and the route serves only the Wallpaper URL set.
+      viewable: onDiskHere && isWallpaperFile(name),
+    }
   })
   const extraNames = diskNames.filter(name => !official.has(name)).toSorted()
   for (const extra of extraNames) {
-    rows.push({ id: null, name: extra, state: 'not-in-gallery' })
+    rows.push({
+      id: null,
+      name: extra,
+      state: 'not-in-gallery',
+      viewable: isWallpaperFile(extra),
+    })
   }
 
   return {
