@@ -202,6 +202,12 @@ export type MessageKey = keyof typeof zhCN
 /** The values a message interpolates for the `{name}` parts of its text. */
 export type MessageParams = Record<string, string | number | undefined>
 
+/** One dictionary row: a message key and the values it interpolates. */
+export interface MessageRow {
+  key: MessageKey
+  params?: MessageParams
+}
+
 /**
  * The English dictionary, key for key. Written out rather than generated or
  * defaulted, because the point of the exercise is that the English page reads
