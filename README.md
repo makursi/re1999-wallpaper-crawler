@@ -2,7 +2,7 @@
 
 **中文** | [English](README.en.md)
 
-工具从[官网](https://re.bluepoch.com/home/detail.html#wallpaper)下载全部壁纸到本地，并在一个页面里浏览。服务只在你自己的电脑上运行，其他设备访问不到。
+工具从[官网](https://re.bluepoch.com/home/detail.html#wallpaper)下载全部壁纸到本地，并在一个页面里浏览。服务只在个人本地运行，其他设备无法访问。
 
 ![壁纸墙](docs/screenshots/console-zh.webp)
 
@@ -22,7 +22,7 @@ pnpm install
 pnpm webui
 ```
 
-终端打印一行地址，浏览器自动打开它：
+浏览器打开：
 
 ```
 WebUI: http://127.0.0.1:8791/?token=……
