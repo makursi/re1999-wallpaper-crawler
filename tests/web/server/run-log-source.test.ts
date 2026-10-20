@@ -9,6 +9,7 @@ import { ORPHAN_WINDOW_MS } from '../../../web/server/run-state.js'
 import {
   fixtureProjectRoot,
   galleryState,
+  LEGACY_LOG_NAME,
   LOG_NAME,
   NEW_FILES,
   plainLine,
@@ -69,8 +70,10 @@ describe('createRunLogSource', () => {
     expect(finished.reportPresent).toBe(true)
   })
 
-  it('reads the newest Run log by name, as check-run does, never by mtime', () => {
+  it('reads the newest Run by runId across mixed prefixes, as check-run does, never by mtime', () => {
     const options = fixture()
+    // The legacy name sorts after the new one as a plain string, so a naive
+    // pick would hand the page the older Run.
     const older = 'save-wallpapers-2026-09-15T09-36-50.jsonl'
     writeLog(options.logDir, LOG_NAME, runLog(JSON.stringify(runReport())))
     writeLog(
@@ -85,6 +88,17 @@ describe('createRunLogSource', () => {
     const facts = createRunLogSource(options).facts()
 
     expect(facts.runId).toBe(RUN_ID)
+  })
+
+  it('keeps reading a directory that holds only legacy-named logs', () => {
+    const options = fixture()
+    writeLog(options.logDir, LEGACY_LOG_NAME, runLog(JSON.stringify(runReport())))
+
+    const facts = createRunLogSource(options).facts()
+
+    expect(facts.runId).toBe(RUN_ID)
+    expect(facts.reportPresent).toBe(true)
+    expect(facts.logName).toBe(LEGACY_LOG_NAME)
   })
 
   it('reports an unfinished log older than the window idle, not orphaned', () => {

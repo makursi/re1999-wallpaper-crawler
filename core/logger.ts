@@ -12,7 +12,11 @@ export function createLogger(logDir: string): Logger {
   fs.mkdirSync(logDir, { recursive: true })
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const logFile = path.join(logDir, `save-wallpapers-${timestamp}.jsonl`)
+  // The name is neutral and carries only the Run: it must not name a command
+  // that may be deleted. The readers still accept the legacy
+  // `save-wallpapers-<runId>.jsonl` every old log on disk has (ADR 0016); the
+  // name predicates live in `core/report/run-log.ts`.
+  const logFile = path.join(logDir, `run-${timestamp}.jsonl`)
 
   // The Run log is the Run's audit trail, so it is written on this thread, not
   // by a pino transport worker: `sync: true` means every record is on disk

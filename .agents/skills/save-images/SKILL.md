@@ -67,7 +67,7 @@ Run's first call is ready to send._
 **Run — one command, launched as a background job.** `pnpm save-wallpapers`
 (tsx runs `core/main.ts`). Hash injection, the Stability loop's rounds, the Site
 assets it filters and the download batches stream into
-`logs/save-wallpapers-<ts>.jsonl` — in the log, since a background job has no
+`logs/run-<ts>.jsonl` — in the log, since a background job has no
 terminal to watch. The wrapper may **never report exit** —
 the persistent browser child inherits the stdout pipe and outlives the scraper,
 so the job sits at `running` long after the Run is over. Do not read a
@@ -107,18 +107,19 @@ routine classes from the rest:
 Gate on the exit code when you only need the verdict; read the output when you
 need the numbers. It is `tsx core/check-run.ts` underneath, so it needs the same
 sandbox access as the Run. When the output is not enough, read the log by hand:
-each Run writes one JSONL file in `logs/` (`save-wallpapers-<runId>.jsonl`); read
-the newest. Grep `"type":"run_report"` — one structured record with all metrics
-and the detected defects, the basis for judging stability, finding defects and
-proposing optimizations. Three neighbours set it in context: `"type":"run_meta"`
-carries the runId, the start time and the config snapshot (to rule out config
-drift), whose `DISCOVERY_SCRIPT_SHA` names which payload the Run executed;
-`"type":"discovery_script"` says whether this Run had to materialize that
-payload's copy (`written: false` means it was reused, which is the normal case;
-nothing parses this record — it is context, not a verdict input, so the report
-stays the only contract);
-and `"phase":"run-code"` carries the Discovery diagnostics (`[stability]`,
-`[final]`, `[thumbnails]`) behind the convergence numbers.
+each Run writes one JSONL file in `logs/` (`run-<runId>.jsonl`; Runs from before
+the rename wrote `save-wallpapers-<runId>.jsonl`, and both count as a Run log);
+read the newest. Grep `"type":"run_report"` — one structured record with all
+metrics and the detected defects, the basis for judging stability, finding
+defects and proposing optimizations. Three neighbours set it in context:
+`"type":"run_meta"` carries the runId, the start time and the config snapshot (to
+rule out config drift), whose `DISCOVERY_SCRIPT_SHA` names which payload the Run
+executed; `"type":"discovery_script"` says whether this Run had to materialize
+that payload's copy (`written: false` means it was reused, which is the normal
+case; nothing parses this record — it is context, not a verdict input, so the
+report stays the only contract); and `"phase":"run-code"` carries the Discovery
+diagnostics (`[stability]`, `[final]`, `[thumbnails]`) behind the convergence
+numbers.
 
 Judge the report block by block:
 
