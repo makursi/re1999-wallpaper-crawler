@@ -168,11 +168,12 @@ _Avoid_: auth, login
 ### Console
 
 **Console (本地控制台)**:
-The human entry point to this repository: one command starts a local service
-that serves a page in the browser. It starts a Run as a child process and never
-imports the pipeline; it knows Runs by reading the Run log directory rather than
-a handle it holds; and it reads the Mirror and the Gallery list without writing
-either. The CLI entries stay the agent's interface. See docs/adr/0008.
+The repository's only human entry: one command starts a local service that
+serves a page in the browser. The page starts and watches Runs, reads the newest
+Run's verdict, and shows the Mirror against the Gallery list; it writes neither
+the Mirror nor a Run log, and with no usable `.env` it still opens and says what
+to create. The command line — `core:run` and `check-run` — is the agent's
+interface, not a user's path. See docs/adr/0008 and docs/adr/0016.
 _Avoid_: GUI, dashboard, admin panel, web app
 
 ### Diagnostics

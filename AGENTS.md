@@ -106,7 +106,8 @@ Two layers, one directory each at the root: `core/` is the crawler, `web/` is th
 
 ```
 core/                        — the crawler
-├── config.ts                — zod-validated .env config, shared constants
+├── config.ts                — the pipeline's eager configuration: parses .env at import (a broken file fails a Run before it starts) and exports the constants the pipeline imports
+├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readConfig (the Console's non-throwing read), the tree-relative defaults, the Gallery list URL (unit-tested)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
 ├── check-run.ts             — the verdict CLI: newest Run log + Gallery state + file probe → print, exit 0/1
@@ -140,6 +141,7 @@ web/                         — the Console, whole
 tests/                       — mirrors the sources it tests
 ├── core/                    — the crawler's tests
 │   ├── logger.test.ts
+│   ├── config-read.test.ts
 │   ├── discovery-loader.test.ts
 │   ├── wallpaper-url.test.ts
 │   ├── run-log-file.test.ts
