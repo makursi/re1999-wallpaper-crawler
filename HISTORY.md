@@ -490,6 +490,29 @@
 - **派出去的 agent 会中断、会失败、会把没做到的事写成做到**。本轮一次被中断、一次 failed、一处"焦点返回"报成已实现而实测不成立。**能验收的只有流程里的实测证据,不是 agent 的结语**;接手前先量现场(那次 16 个未提交改动其实已经是全绿的),比重派一次便宜得多。
 - **没有截图能证明的那部分,要抽成纯函数**。masonry 排错列在任何截图里都不显形(每列看上去都正常),所以那个决策被单独抽出来并单测;而焦点返回与 `aria-modal` 只能靠浏览器 `eval` 断言。
 
+### 2026-10-20 — Discovery script 副本只物化一次,且永不删除（#51 / #52 / #53 / #54）
+
+**触因**：每次 Run 都把 `scripts/run-discovery.js` 替换哈希后写到仓根 `__run_script.js`，跑完再 `unlink`。代价不在速度上：实测 9.8 KB 写+删 **0.8 ms**，而一次 Run 是 **250–425 s**（写文件占 0.0002%）。真实代价是三条卫生问题——`__run_script.js` 不在 `.gitignore` 里，Run 全程 `git status` 是脏的；Ctrl-C／崩溃／900 s 超时跳过 `unlink`，留下没人敢删的 9.8 KB 未跟踪文件；内容其实完全由 `run-discovery.js` + `PAGE_HASH` 常量决定，于是每次都写一遍同样的字节再删掉，而那个 `unlink` 自己又是一个被静默吞掉的失败点。
+
+**决策**：
+- 副本落到 `.run-cache/run-discovery.generated.js`：仓内、`.gitignore` 一行、**固定名**。否决内容哈希名：Console 已串行化 Run，"并发不互相覆盖"不是理由，"只有一份、一眼能找到"才是收益。
+- **内容相同就不写、永不删除**。平台没有"只写一次"的原语，但"相同就跳过"等价，且删掉 `unlink` 顺带消掉一个失败分支。
+- `discovery-loader.ts` 成为接缝：`materializeDiscoveryScript()` 返回 `{ path, written, sha256 }`，目录／载荷／哈希均可注入；`main.ts` 只说"给我一个能跑的路径"，不再知道缓存的存在。
+- 物化提到**开浏览器之前**：载荷读不出来或目录不可写，现在毫秒级 Fatal，而不是 Chrome 起来、导航完成之后。
+- Run 日志补身份：`run_meta.config.DISCOVERY_SCRIPT_SHA`（12 位）回答"这跑用的是哪版载荷"；独立 `type: "discovery_script"` 记录带 `{ path, written }` 回答"这次写没写"——事件不属于配置，故不并进 `run_meta`。第三个 `type` 对读取侧惰性：只有 `run_report` 带字面量 schema，其余记录被 `parseRunReport` 跳过。
+- 排除理由只写一处（`.gitignore`）。实测两个 walker 都尊重它（只忽略 `.run-cache/` 时 `oxfmt --check .` 报 "all matched files may have been excluded by ignore rules"、`oxlint .` 报 0 files），而**显式点名**的路径仍会被格式化——所以"内容比较"带来的自愈不是装饰，它兜住了"有人手滑点名"这一种情形。
+- 术语不加：`CONTEXT.md` 只保留 Discovery script；副本是物化它的实现细节。ADR 也不加：挪目录是几十行的事，"难以回退"这条不成立，理由记在本文。
+
+**验证**：
+- `tests/core/discovery-loader.test.ts` **6 tests**：首次写、同内容不写（把 mtime 拨到 2020 再比，避开同毫秒假阴性）、载荷变化重写、外部改坏后自愈、目录自建、sha256 与独立算出的字面量一致。
+- 门（沙箱内的替代路径）：`tsc --noEmit` 0、`oxlint --type-aware .` 77 文件 **0 warning 0 error**、`oxfmt --check`（触碰的 4 个文件）通过、`vitest run --pool=threads` **29 文件 / 307 tests** 连跑三次全绿。
+- **沙箱里跑不了的**：`pnpm`（store 锁被拒）、提交钩子（`sh.exe` 建不了信号管道）、`oxfmt` 对 `.vue`（spawn EPERM）、以及两次真跑（`execSync(stdio:'pipe')` EPERM）。真跑验收（第一跑 `written: true`、第二跑 `written: false`）在沙箱外补，证据进 PR。
+
+**教训**：
+- **先量再争**。"效率太低"在量之前不成立（0.8 ms vs 250–425 s）；把 9.8 KB 的写盘当性能问题，会去改错的东西。真正的杠杆是十次 `npx` 冷启动（≈6 s），那属于另一个决定（把 `@playwright/cli` 变成依赖），本轮明确不做。
+- **根因要说到能指导修复的那一层**。"这是 cmd.exe 的错"会推出"那就不用 shell"；但 Windows 上 `.cmd` 不能无 shell 启动（`spawnSync('npx.cmd', …, {shell:false})` → `EINVAL`，CVE-2024-27980），真正的替代方案要解析全局安装路径——比这个修复本身更脆。留着文件是对的，要修的是它的卫生。
+- **约束要实测，不要读文档推断**。`--filename` 的允许根（outputDir 或 cwd）以及 `skillMode: true` 绕过它，都是读 bundle 读出来的；`%TEMP%` 今天能用、明天可能不能，正是否决它的唯一理由。
+
 ---
 
 ## 已否决方案速查（改动前先看这里）
@@ -533,6 +556,10 @@
 | 把 CJK 字体二进制提交进仓库 / 用 MiSans、HarmonyOS Sans、商业展示体 | 仓库不背字体字节（改为 devDependency，产物进 gitignore）；后者授权不允许再分发或无法一手核实 | 2026-10-19 / ADR 0015 |
 | 让 tile 等图片加载后再排 masonry | 整面墙会在读者光标下重排；改为服务端给出真实像素尺寸 | 2026-10-19 / #48 |
 | 为「CSS 内嵌资源」放宽守卫（允许无 token 取 `/assets/*.woff2`） | 守卫退化成两套凭据；改为样式表在出口处带上调用者的 token | 2026-10-19 / fix |
+| 把 Discovery script 副本放 `%TEMP%` | 合法性只靠 playwright-cli 硬编码 `skillMode: true` 绕过 `--filename` 的允许根检查；换版本就可能变成 `File access denied`，而失败发生在 Run 的第 2 步（浏览器已开） | 2026-10-20 / #51 |
+| 内联 `code` 取代 `--filename` | 协议支持且实测可达（多行 + `#"/%&\|< >^` 原样到达），但 shell-less 启动只能点名全局 `@playwright/cli` 的 JS 入口（`npx.cmd` 无 shell → `EINVAL`），脆；而它省的 ~600 ms/次另属一题 | 2026-10-20 / #51 |
+| 去掉哈希注入，让 `--filename` 直接指向 `scripts/run-discovery.js` | 要改协议载荷、把单一来源的 `PAGE_HASH` 复制成两处，且只能靠真跑验证 | 2026-10-20 / #51 |
+| 固定名副本 + 原子写（tmp + rename） | Run 已串行化、"内容不同才写"把窗口压到微秒；rename 反而把刚去掉的临时文件搅回来 | 2026-10-20 / #51 |
 
 ## 验证规范（所有迭代通用）
 

@@ -110,9 +110,12 @@ sandbox access as the Run. When the output is not enough, read the log by hand:
 each Run writes one JSONL file in `logs/` (`save-wallpapers-<runId>.jsonl`); read
 the newest. Grep `"type":"run_report"` — one structured record with all metrics
 and the detected defects, the basis for judging stability, finding defects and
-proposing optimizations. Two neighbours set it in context: `"type":"run_meta"`
+proposing optimizations. Three neighbours set it in context: `"type":"run_meta"`
 carries the runId, the start time and the config snapshot (to rule out config
-drift), and `"phase":"run-code"` carries the Discovery diagnostics (`[stability]`,
+drift), whose `DISCOVERY_SCRIPT_SHA` names which payload the Run executed;
+`"type":"discovery_script"` says whether this Run had to materialize that
+payload's copy (`written: false` means it was reused, which is the normal case);
+and `"phase":"run-code"` carries the Discovery diagnostics (`[stability]`,
 `[final]`, `[thumbnails]`) behind the convergence numbers.
 
 Judge the report block by block:

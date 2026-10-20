@@ -113,7 +113,7 @@ core/                        — the crawler
 ├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, wallpaperNameOf, isWallpaperFile, Site asset rules, splitWallpaperUrls (unit-tested)
 ├── run-log-file.ts          — the newest Run log's name and the file probe, shared by check-run and the Console (unit-tested)
 ├── discovery/
-│   └── discovery-loader.ts  — reads scripts/run-discovery.js and injects PAGE_HASH
+│   └── discovery-loader.ts  — materializes the run-code payload into .run-cache/ (writes only when its content changed; never deleted) and reports its sha256 (unit-tested)
 ├── download/
 │   └── download.ts          — parallel batch downloads via undici, cookie auth, 403 retry
 ├── gallery/
@@ -140,6 +140,7 @@ web/                         — the Console, whole
 tests/                       — mirrors the sources it tests
 ├── core/                    — the crawler's tests
 │   ├── logger.test.ts
+│   ├── discovery-loader.test.ts
 │   ├── wallpaper-url.test.ts
 │   ├── run-log-file.test.ts
 │   ├── gallery/
@@ -159,7 +160,7 @@ scripts/
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ```
 
-A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010).
+A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010). `.run-cache/` is the one root directory only the crawler reads: `run-code --filename` can only be handed a file, so a Run materializes the Discovery script copy there — written only when its content differs from what is on disk, and never deleted.
 
 Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/masonry.ts` → `tests/web/src/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs.
 
@@ -179,7 +180,15 @@ Commands use `npx playwright-cli -s=<session>` (CLI tool), not `npx playwright t
 
 ### Windows: run-code uses --filename, never inline
 
-cmd.exe mangles multi-line strings with `#` and quotes. The run-code script is written to a temp file (`__run_script.js`) and loaded via `--filename`. Never pass inline code via CLI arguments.
+cmd.exe mangles multi-line strings with `#` and quotes, so the payload never
+travels as a CLI argument: `core/discovery/discovery-loader.ts` materializes it
+into `.run-cache/run-discovery.generated.js` and `--filename` points there. The
+copy is compared before it is written, so a Run whose payload and page hash are
+unchanged writes nothing, and nothing is ever deleted. A `--filename` target
+must also sit inside the CLI's allowed roots — its output directory or its
+working directory — which `.run-cache/` does and the OS temp directory does not
+(reaching `%TEMP%` works only because the CLI hardcodes its skill mode). Never
+pass inline code via CLI arguments.
 
 ### run-code context is Node.js, not browser
 
