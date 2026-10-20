@@ -527,12 +527,13 @@
 - **删脚本**：`save-wallpapers` 从 `package.json` 删除，`core:run`（`tsx core/main.ts`）顶替，**不留别名**——理由与 ADR 0012 删 `console` 时相同：两个名字重建这次要消掉的歧义。Console 的启动器本来就直接 spawn tsx 入口，所以删脚本不动任何运行时行为。
 - **日志名中性化**：写侧出 `logs/run-<runId>.jsonl`；读侧永久接受旧前缀 `save-wallpapers-<runId>.jsonl`（旧文件是历史事实，不是过渡态——没有一份日志被改名、重写或删除，ADR 0007 的审计轨道因此完整）。最新 Run 的挑选**按 `runId` 排序，而不是整个文件名**：跨前缀的朴素字符串比较会把每个 `save-wallpapers-…` 排在每个 `run-…` 之后（`s` > `r`），昨天的旧日志就会压过今天的新日志。一个共享谓词 `logRunIdOf`（在纯层 `core/report/run-log.ts`，`runId` 为 `null` 即「不是 Run log」）同时服务选取、判定里的 log→Run 识别和测试夹具；`check-run` 的「无日志」行不再点名已删除的脚本。
 - **无 `.env` 也能启动**：配置 schema 只有一个家 `core/config-read.ts`；`core/config.ts` 仍在模块加载时严格 parse 并导出管线用的常量，所以 Run 的 fail-fast 原样保留，Console 用的是同一 schema 的**非抛出读**。没有可用文件（缺失、不可解析、缺必需键）时，页面照开、墙照渲染、Gallery list 退化为「未读」（`null`，绝不是空列表，也不对不存在的 URL 发请求），Run 面板用两种语言给出 setup notice：仓根建 `.env`，粘贴那两行站点常量。
-- **`runConfigAvailable` 每次 status 请求现读**：它走的就是 start 拒绝时那条 `env-file` 谓词（一次 `.env` 文件读，无 `PATH` 扫描、无注册表查询），所以环境提示与点击路径不可能给出不同答案。这**有意取代** spec 早先「boot fact」的写法：一次性读出的提示在用户建好文件后永不清除，比每次多读一个文件更糟；本轮唯一一处「实现之后改口径」就记在 ADR 0016 的 Considered options 里。
+- **`runConfigAvailable` 每次 status 请求现读**：它走的就是 start 拒绝时那条 `env-file` 谓词——一个读取器、一套全 schema（含带默认值的键），一次 `.env` 文件读，无 `PATH` 扫描、无注册表查询——所以环境提示与点击路径不可能给出不同答案。这**有意取代** spec 早先「boot fact」的写法：一次性读出的提示在用户建好文件后永不清除，比每次多读一个文件更糟；本轮唯一一处「实现之后改口径」就记在 ADR 0016 的 Considered options 里。
 - **Console 零写**：不写 `.env`、不写 Mirror、不写 Run log，仓根不因它多一个文件。页面负责说明，用户负责创建。
 - **文档同一轮改到位**：README 重写成页面优先的用户指南，AGENTS.md 命令表、CONTEXT-MAP 的 Console 关系句、CONTEXT.md 的 Console 定义、runbook 的命令与日志名全部同轮更新；`core/config-read.ts` 补进 AGENTS.md 架构树与 CONTEXT-MAP 的「Where things live」。否决方案同步进下表，免得下一轮重新提议。
 
 **验证**：
-- 五门（最终树，直连 `node_modules\.bin`）：`vitest run` **30 文件 / 329 tests 通过**（基线 308）；`tsc --noEmit` 与 `vue-tsc --noEmit -p web/tsconfig.web.json` 0；`oxlint --type-aware .` **0 warning 0 error**；`oxfmt --check` clean。
+- 五门（最终树，直连 `node_modules\.bin`）：`vitest run` **30 文件 / 335 tests 通过**（基线 308；两次评审后的修复补了 7 个测试——文件判定 5、前置条件 2——并删掉 1 个只测死代码的）；`tsc --noEmit` 与 `vue-tsc --noEmit -p web/tsconfig.web.json` 0；`oxlint --type-aware .` **0 warning 0 error**；`oxfmt --check` clean。
+- **评审后的两处真修复**（同轮，`fix/review-findings`）：其一，`/api/status` 的 `runConfigAvailable` 与 start 的 `env-file` 拒绝改走同一个**全 schema** 文件读（`core/config-read.ts` 的 `readProjectConfig`），此前 `prerequisites.ts` 自留两键 schema，于是 `BATCH_SIZE=abc` 的 `.env` 会「报告可用 → 允许开始 → Run 自己 import 时抛 ZodError」；其二，Console 不再在启动时把 `.env` 灌进 `process.env`（dotenv 不覆盖），否则启动时写错的键会永久遮蔽后来改对的文件。手动证明（同一进程、同一 token、端口 8811）：`BATCH_SIZE=abc` 时 status 报 `false`，把同一份文件改成 `4` 后**不重启**即报 `true`，而 Gallery 端点仍按 ADR 0016 保持启动时的 `null`。
 - **手动真服务，无 `.env`**（本分支 #57/#60 的实测）：`webui --no-open` 起得来、页面 200、`/api/status` 返回 `runConfigAvailable: false`、Run 面板两种语言都显示 setup notice；点「开始运行」返回 `412 missing-prerequisite`，缺项里点名 `env-file`；创建 `.env` 后下一次 status 读回到 `true`，提示随之消失。Console 进程没有在仓根写任何文件。
 - **混合前缀**（单测覆盖）：`tests/core/run-log-file.test.ts` 在同一目录放一份旧前缀与一份新前缀，断言挑选跟着 `runId` 走而不是前缀；`tests/core/report/run-log.test.ts` 断言两种前缀都算 Run log、`.bak` 与无关 `.jsonl` 不算；`check-run` 的「无日志」行在源码里不再出现旧脚本名（这一行没有测试断言）。
 - **setup notice 的字典覆盖**：`tests/web/src/i18n/messages.test.ts` 断言两种语言都带那两行站点常量原文、并且句子里点名 `.env`，字典完整性测试继续枚举所有 code。
@@ -541,6 +542,7 @@
 **教训**：
 - **文档也是契约，而它不会自己喊**。改命令名与日志名时，测试、类型和 lint 都不会因为 README、runbook、HISTORY 的验证规范、AGENTS 的架构树过期而变红；这次把验收标准直接写成「过时名字不能活在日期记录之外」，比逐处记忆可靠。
 - **「便宜的事实」要按读者的体验排序**。`runConfigAvailable` 按 boot 读一次在逻辑上成立，在体验上却是一条永不清除的提示；改成每请求一次文件读、并与拒绝共用同一个谓词之后，「提示与点击不可能不一致」才是结构性的。
+- **「现在可用吗」只能有一个答案**。同一个 `.env` 被两套 schema 判过（start 用两键、启动用全 schema）时，用户看到的是「报告可用 → 点开始 → Run 抛 ZodError」；而 Console 启动时把 `.env` 灌进 `process.env`（dotenv 不覆盖）会让**后来改对的文件永远被启动时的旧值遮蔽**。这两件事都不是逻辑错误，是「同一个问题有了第二个答案」的两次化身。
 - **日志名跟着领域词走，不跟着命令走**。`save-wallpapers` 被删的那一刻，旧日志名就成了对一个不存在命令的引用；`run-` 只承载 Run，命令以后再改也拖不动日志名。
 - **兼容要写成「历史事实」而不是「过渡期」**。两个前缀永久可读，于是没有人需要决定旧日志何时过期，也没有人需要给它们改名——过期日期本身才是将来要维护的东西。
 
