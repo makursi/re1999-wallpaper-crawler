@@ -32,6 +32,10 @@ export const SESSION = parsed.SESSION_NAME
 export const BATCH_SIZE = parsed.BATCH_SIZE
 export const PLAYWRIGHT_CONFIG = parsed.PLAYWRIGHT_CONFIG
 export const LOG_DIR = path.resolve(PROJECT_ROOT, parsed.LOG_DIR)
+// Where a Run materializes the Discovery script copy that `run-code --filename`
+// needs. Gitignored, and the one directory in this tree that only the crawler
+// reads: the copy is written when its content changes and never deleted.
+export const RUN_CACHE_DIR = path.resolve(PROJECT_ROOT, '.run-cache')
 // The site's own gallery list — the authoritative Wallpaper URL set and total
 // (docs/adr/0006). Derived from BASE_ORIGIN so it cannot drift from the site.
 export const GALLERY_LIST_URL = `${BASE_ORIGIN}/activity/official/websites/picture/query`

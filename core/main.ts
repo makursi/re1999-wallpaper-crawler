@@ -18,7 +18,8 @@ import {
   SESSION,
   USER_AGENT,
 } from './config.js'
-import { buildRunCodeScript } from './discovery/discovery-loader.js'
+import type { DiscoveryScriptCopy } from './discovery/discovery-loader.js'
+import { materializeDiscoveryScript } from './discovery/discovery-loader.js'
 import { downloadBatch, extractCookies } from './download/download.js'
 import type { GalleryList } from './gallery/gallery-source.js'
 import { falsePositivesAmong, fetchGalleryList, officialNamesOf } from './gallery/gallery-source.js'
@@ -59,7 +60,7 @@ function pwc(args: string, timeoutSec = 300): string {
 
 // ── helpers ────────────────────────────────────────────────────────
 
-function newRunMeta(): {
+function newRunMeta(discoveryScript: DiscoveryScriptCopy): {
   meta: RunMeta
   config: Record<string, string | number | boolean | undefined>
 } {
@@ -68,6 +69,10 @@ function newRunMeta(): {
   return {
     meta: { runId, startedAt, config: {} },
     config: {
+      // Which payload this Run executed: the copy has a fixed name, so its
+      // identity lives here instead of in the filename (#51). Twelve hex
+      // characters tell two payloads apart and still fit on one line.
+      DISCOVERY_SCRIPT_SHA: discoveryScript.sha256.slice(0, 12),
       BASE_ORIGIN,
       PAGE_PATH,
       PAGE_HASH,
@@ -340,11 +345,26 @@ function finishRun(
 // ── main ────────────────────────────────────────────────────────────
 
 async function main() {
+  // The Discovery script copy is materialized before anything else — before the
+  // Run log exists, and before the browser is touched: a payload that cannot be
+  // handed to `run-code` must fail in milliseconds, and it must not leave a Run
+  // log whose missing `run_report` would be misread as a lost report. Its
+  // content is compared rather than trusted, so a Run that changes nothing
+  // writes nothing, and nothing is ever left at the repository root (#51).
+  const discoveryScript = materializeDiscoveryScript()
+
   const logger = createLogger(LOG_DIR)
-  const { meta, config } = newRunMeta()
+
+  const { meta, config } = newRunMeta(discoveryScript)
   logger.info(
     { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
     'run started',
+  )
+  // A separate record because this is an event, not configuration: the Run's
+  // `run_meta` says *which* payload ran, this says whether it had to be written.
+  logger.info(
+    { type: 'discovery_script', path: discoveryScript.path, written: discoveryScript.written },
+    discoveryScript.written ? 'discovery script copy written' : 'discovery script copy reused',
   )
 
   // 0. Clean slate
@@ -373,14 +393,10 @@ async function main() {
   logger.info('2. Running image discovery (scroll + thumbnails)...')
   logger.info('   (this may take several minutes)')
 
-  // Write run-code script to temp file, load via --filename.
-  // This avoids Windows cmd.exe escaping issues with multi-line strings and # hashes.
-  const runScript = buildRunCodeScript()
-  const scriptFile = path.resolve(PROJECT_ROOT, '__run_script.js')
-  fs.writeFileSync(scriptFile, runScript, 'utf8')
-
+  // The payload goes in by file, never inline: cmd.exe mangles multi-line code
+  // with # and quotes (AGENTS.md › "Windows: run-code uses --filename").
   try {
-    execSync(`npx playwright-cli -s=${SESSION} run-code --filename="${scriptFile}"`, {
+    execSync(`npx playwright-cli -s=${SESSION} run-code --filename="${discoveryScript.path}"`, {
       encoding: 'utf8',
       stdio: 'pipe',
       timeout: 900_000, // slow networks: discovery can take >10min (425s observed)
@@ -389,9 +405,6 @@ async function main() {
   } catch (err: unknown) {
     logger.error({ err: errorMessage(err) }, 'run-code execution failed')
   }
-  try {
-    fs.unlinkSync(scriptFile)
-  } catch {}
 
   // 3. Extract URLs from browser (merged network + DOM from run-code)
   logger.info('3. Extracting image URLs from browser...')

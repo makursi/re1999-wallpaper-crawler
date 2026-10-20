@@ -5,6 +5,9 @@ images/
 logs/
 .playwright/
 .playwright-cli/
+# The Discovery script copy a Run materializes for `run-code --filename`: written
+# only when its content changes, never deleted. Both tool walkers honour this file.
+.run-cache/
 # The Console's own artifacts, under its layer directory: the built page and the
 # thumbnail cache. Named by path rather than as a bare `dist/`, because the layer
 # owns them now and a stray root-level `dist/` would belong to nobody.

@@ -271,8 +271,12 @@ which unmounts off-screen images and makes DOM counting unreliable.
 
 ## Gotchas
 
-- **Windows / cmd.exe**: the Discovery script must be passed via `--filename`
-  (temp file), never inline — cmd.exe mangles multi-line strings and `#`.
+- **Windows / cmd.exe**: the Discovery script must be passed via `--filename`,
+  never inline — cmd.exe mangles multi-line strings and `#`. The loader
+  materializes that file into `.run-cache/`: written only when its content
+  differs from what is on disk, never deleted, and inside the CLI's allowed
+  roots (its output directory or its working directory), which the OS temp
+  directory is not.
 - **`.env` `#` is a comment char**: `PAGE_HASH=#wallpaper` is hardcoded in
   `core/config.ts`, not read from `.env`.
 - **Viewport matters**: the site renders a mobile layout for small viewports;
