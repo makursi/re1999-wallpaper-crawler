@@ -212,18 +212,45 @@ export function runReportRecordPresent(logText: string): boolean {
   })
 }
 
+// ── the Run log's name ─────────────────────────────────────────────
+
+// The one pattern that decides what a Run log name is. Two prefixes are
+// accepted and both are permanent: the writer's current `run-<runId>.jsonl` and
+// the legacy `save-wallpapers-<runId>.jsonl` that every log already on disk
+// carries. The old files are a historical fact, not a transitional state —
+// nothing is renamed — so this is not an expiry-dated branch (ADR 0016).
+//
+// It lives here, in the pure layer, because three seams need the same answer:
+// the newest-log pick (`core/run-log-file.ts`), the verdict's log-to-Run
+// identification (`assessRun`'s `logRunId`), and the tests. A pattern repeated
+// in the filesystem reader could drift from this one and make the page and
+// `check-run` disagree about which file is a Run log.
+const RUN_LOG_NAME = /^(?:save-wallpapers-|run-)(.+)\.jsonl$/
+
 /**
- * The Run a log file belongs to, from its name (`save-wallpapers-<runId>.jsonl`),
- * or `null` when the name is not one of ours.
+ * The Run a log file belongs to, from its name, or `null` when the name is not
+ * a Run log.
  *
  * This is what lets a *missing* Run report still answer "did the Run finish?".
  * The Gallery state's `runId` is written by a Run's last step, so a state naming
  * this log's Run means the Run finished and only its report is lost, while a
  * state naming an older Run means this one never got that far.
+ *
+ * The `runId` half of the shared name pair: the pick orders by it, because the
+ * whole file name cannot be compared across the two prefixes (see
+ * `newestRunLogName`).
  */
 export function logRunIdOf(filename: string): string | null {
-  const match = /^save-wallpapers-(.+)\.jsonl$/.exec(filename)
-  return match?.[1] ?? null
+  return RUN_LOG_NAME.exec(filename)?.[1] ?? null
+}
+
+/**
+ * Whether a name is a Run log's — the other half of the pair. `false` covers
+ * every `.jsonl` that is not one of ours: a notes file, a `.bak`, a truncated
+ * name, or a prefix that only appears inside a longer name.
+ */
+export function isRunLogName(filename: string): boolean {
+  return logRunIdOf(filename) !== null
 }
 
 // ── the verdict ────────────────────────────────────────────────────

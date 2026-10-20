@@ -81,7 +81,7 @@ function report(over: Partial<RunReport> = {}): RunReport {
 }
 
 function writeLog(dir: string, runId: string, lines: unknown[]): string {
-  const file = path.join(dir, `save-wallpapers-${runId}.jsonl`)
+  const file = path.join(dir, `run-${runId}.jsonl`)
   fs.writeFileSync(file, `${lines.map(line => JSON.stringify(line)).join('\n')}\n`, 'utf8')
   return file
 }
@@ -111,7 +111,7 @@ describe('readNewestRunReport', () => {
     fs.utimesSync(newest, old, old)
     fs.utimesSync(older, new Date(), new Date())
 
-    expect(newestRunLogName(dir)).toBe('save-wallpapers-2026-10-18T01-03-31.jsonl')
+    expect(newestRunLogName(dir)).toBe('run-2026-10-18T01-03-31.jsonl')
     expect(readNewestRunReport(dir)?.gallery.newSinceLastRun).toBe(12)
     expect(readNewestRunReport(dir)?.gallery.officialTotal).toBe(1010)
   })
@@ -125,6 +125,19 @@ describe('readNewestRunReport', () => {
       { level: 30, msg: 'Download : ok 12, skipped 33, failed 0' },
       { level: 30, msg: '===== done =====' },
     ])
+
+    expect(readNewestRunReport(dir)?.gallery.newSinceLastRun).toBe(12)
+  })
+
+  it('reads a legacy-named Run log permanently, never as "no Run"', () => {
+    // Every log written before the rename carries this name; the report reader
+    // must keep finding it (ADR 0007: nothing on disk is renamed).
+    const dir = logDir()
+    fs.writeFileSync(
+      path.join(dir, 'save-wallpapers-2026-10-18T01-03-31.jsonl'),
+      JSON.stringify(report()),
+      'utf8',
+    )
 
     expect(readNewestRunReport(dir)?.gallery.newSinceLastRun).toBe(12)
   })
@@ -147,7 +160,7 @@ describe('readNewestRunReport', () => {
     // The newest name that *is* a Run log, with a `run_meta` and no report.
     writeLog(dir, '2026-10-18T00-00-00', [{ type: 'run_meta', runId: '2026-10-18T00-00-00' }])
 
-    expect(newestRunLogName(dir)).toBe('save-wallpapers-2026-10-18T00-00-00.jsonl')
+    expect(newestRunLogName(dir)).toBe('run-2026-10-18T00-00-00.jsonl')
     expect(readNewestRunReport(dir)).toBeNull()
   })
 })
