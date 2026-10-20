@@ -65,7 +65,7 @@
 
 | Concern              | File                             |
 |----------------------|----------------------------------|
-| Configuration (.env) | `core/config.ts`                  |
+| Configuration (.env) | `core/config-read.ts` (the schema + the Console's non-throwing read), `core/config.ts` (the pipeline's eager constants) |
 | Logging              | `core/logger.ts`                  |
 | Wallpaper URL set / Site asset rules | `core/wallpaper-url.ts`           |
 | Gallery list (site endpoint) | `core/gallery/gallery-source.ts` |
