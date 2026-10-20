@@ -82,6 +82,20 @@ export interface ConsoleServerDeps {
    * `404`, not a no-op that claims it cleaned something.
    */
   cleanupRun?: RunCleaner
+  /**
+   * Whether a Run's site configuration is usable *now* (#60).
+   *
+   * `/api/status` carries it as `runConfigAvailable`, and the page shows its
+   * setup notice while it is `false`. The entry point injects a fresh read of
+   * the repository's `.env` — the same predicate the start's `env-file` refusal
+   * makes — so creating the file clears the notice on the next status read
+   * instead of requiring a Console restart.
+   *
+   * Optional on purpose: a service given only a configuration value (a test, or
+   * a service with no Run control) falls back to #57's boot fact, which is the
+   * truthful answer for that service.
+   */
+  runConfigAvailable?: () => boolean
   /** This start's access token, generated per start and never persisted. */
   token: string
   /** The port to prefer; `0` asks the OS for one (tests). */
@@ -292,11 +306,12 @@ async function handleRequest(
         run: deps.runState(),
         mirrorCount: countMirrorWallpapers(config.imagesDir),
         gallery: await deps.galleryFacts(),
-        // #57: a boot fact, read off the configuration value the entry point
-        // injected. The Gallery list endpoint is absent exactly when there is no
-        // usable `.env`, so this costs no file read, no `PATH` scan and no
-        // registry lookup on a polling route.
-        runConfigAvailable: config.galleryListEndpoint !== null,
+        // #60: read now, not at boot — a `.env` created since the service
+        // started has to clear the page's setup notice on this read. The entry
+        // point injects the same one-file check the start's `env-file` refusal
+        // makes, so the ambient notice and the click path cannot disagree; the
+        // fallback is #57's boot fact for a service given no reader.
+        runConfigAvailable: deps.runConfigAvailable?.() ?? config.galleryListEndpoint !== null,
       }),
     )
     return

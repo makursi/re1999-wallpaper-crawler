@@ -28,7 +28,7 @@ type RawStatusFacts = ConsoleRunLogFacts & {
 /**
  * The whole status view in one call: the Run half derived purely from the raw
  * facts, then assembled with the Mirror's count, the Gallery list's answer and
- * the boot-time "a Run can be configured" fact.
+ * whether a Run can be configured.
  * Defaults are a finished, healthy Run with the list read.
  */
 function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
@@ -238,9 +238,8 @@ describe('deriveStatus', () => {
   })
 
   it('carries whether a Run’s configuration is available, with the list left unread', () => {
-    // No usable `.env`: the service reports it as a boot fact, and the Gallery
-    // half degrades to the contract's "not read" — `null`, never `0`, and never
-    // an empty list.
+    // No usable `.env`: the service reports it, and the Gallery half degrades to
+    // the contract's "not read" — `null`, never `0`, and never an empty list.
     const status = statusOf({
       runConfigAvailable: false,
       officialTotal: null,

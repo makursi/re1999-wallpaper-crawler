@@ -213,6 +213,26 @@ describe('GET /api/status', () => {
     })
   })
 
+  it('reads the configuration fact on every status request, so a new .env clears the notice', async () => {
+    // #60: the setup notice has to disappear on the next status read once the
+    // file exists, without restarting the Console. The entry point injects the
+    // same one-file check the start's `env-file` refusal makes; the route asks it
+    // per request rather than repeating what the process saw at boot.
+    let available = false
+    const service = await serve({ runConfigAvailable: () => available })
+
+    const read = async (): Promise<unknown> => {
+      const response = await fetch(`${service.origin}/api/status?token=${TOKEN}`)
+      return response.json()
+    }
+
+    expect(await read()).toMatchObject({ runConfigAvailable: false })
+
+    available = true
+
+    expect(await read()).toMatchObject({ runConfigAvailable: true })
+  })
+
   it('takes the Run and Gallery halves from the injected readers', async () => {
     const service = await serve({
       runState: () => ({

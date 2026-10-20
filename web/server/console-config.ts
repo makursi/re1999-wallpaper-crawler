@@ -28,8 +28,10 @@ export interface ConsoleConfig {
    * `null` means "there is no usable configuration", not "the site is down": a
    * configured Console whose endpoint merely refuses a request degrades to the
    * same "not read" after trying. With `null` there is no URL to try, so the
-   * Console makes no request at all — and this is also the boot fact
-   * `/api/status` reports as `runConfigAvailable` (#57).
+   * Console makes no request at all. The endpoint is fixed for the process's
+   * life; `/api/status`'s `runConfigAvailable` is a fresh `.env` read instead
+   * (#57, #60), so a file created later clears the page's notice without the
+   * Gallery list being re-derived.
    */
   galleryListEndpoint: string | null
 }

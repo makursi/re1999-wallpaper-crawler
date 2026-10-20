@@ -115,9 +115,10 @@ export interface ConsoleStatusFacts {
   mirrorCount: number
   gallery: ConsoleGalleryFacts
   /**
-   * Whether a Run's configuration was available when the service booted (#57).
-   * A boot fact from the injected configuration value, not a probe: the status
-   * poll must not scan `PATH` or the registry to answer it.
+   * Whether a Run's configuration is usable now (#57, #60). The entry point
+   * re-reads the repository's `.env` for each status assembly — one file, never
+   * a `PATH` scan or a registry lookup — so a file created after the Console
+   * booted clears the page's setup notice on the next read.
    */
   runConfigAvailable: boolean
 }
