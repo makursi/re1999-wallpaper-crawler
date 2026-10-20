@@ -26,35 +26,20 @@ import {
   DialogTrigger,
   VisuallyHidden,
 } from 'reka-ui'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 
-import type { ConsoleStatusPayload } from '../api-types.js'
-import { consoleToken } from './console-token'
+import { useConsoleStatus } from './composables/useConsoleStatus'
 import GalleryView from './GalleryView.vue'
 import { locale, setLocale, t } from './i18n/locale'
 import Message from './i18n/Message.vue'
 import { LOCALES } from './i18n/messages'
 import RunPanel from './RunPanel.vue'
 
-const status = ref<ConsoleStatusPayload | null>(null)
-const failure = ref<string | null>(null)
+// The nav's Mirror count and the drawer's Run facts are one fact, so they come
+// from one store: `composables/useConsoleStatus.ts` holds the page's single read
+// of `/api/status`, and the count above the wall follows the Run poll.
+const { status, failure } = useConsoleStatus()
 const drawerOpen = ref(false)
-
-async function loadStatus(): Promise<void> {
-  try {
-    const response = await fetch(`/api/status?token=${encodeURIComponent(consoleToken())}`)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    // The service's own payload; its shape is declared once, in
-    // web/api-types.ts, and imported here as a type only.
-    status.value = (await response.json()) as ConsoleStatusPayload
-  } catch (error) {
-    failure.value = error instanceof Error ? error.message : String(error)
-  }
-}
-
-onMounted(() => {
-  void loadStatus()
-})
 </script>
 
 <template>

@@ -11,7 +11,7 @@
 // The layout is a pure function of the Mirror's own numbers. Each row carries
 // the file's pixel size (`/api/gallery`'s `sizes`, measured by the service), so
 // a tile's box is reserved before its lazy thumbnail arrives — which is what
-// keeps the wall still while it loads, and what lets `web/src/masonry.ts`
+// keeps the wall still while it loads, and what lets `web/src/lib/masonry.ts`
 // balance the columns against real heights instead of guessing from whatever
 // the browser happens to have loaded. A row the service could not measure falls
 // back to a portrait placeholder box, which is a guess and is allowed to be one.
@@ -21,15 +21,17 @@
 // when the viewer closes (#48's first verified defect).
 
 import { DialogRoot, DialogTrigger } from 'reka-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 
-import type { ConsoleGalleryPayload, ConsoleGalleryRow, ConsoleImageSize } from '../api-types.js'
+import type { ConsoleGalleryRow, ConsoleImageSize } from '../api-types.js'
+import { useGallery } from './composables/useGallery'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
 import { GALLERY_ROW_STATE_MESSAGE_KEYS } from './i18n/messages'
-import { columnsOf } from './masonry'
+import { withToken } from './lib/console-api'
+import { columnsOf } from './lib/masonry'
 
 /**
  * The wall's columns. Five is the gallery's own measurement (spec #43: about
@@ -45,29 +47,14 @@ const PLACEHOLDER_BOX = '3 / 4'
 /** The same guess as a height-to-width ratio, which is what the columns add up. */
 const PLACEHOLDER_HEIGHT_RATIO = 4 / 3
 
-const gallery = ref<ConsoleGalleryPayload | null>(null)
-const failure = ref<string | null>(null)
+// `/api/gallery` is read once, by the wall's own composable; the client it uses
+// is the page's only place a request carries this start's token.
+const { gallery, failure } = useGallery()
 
 /** The tile the viewer is showing; kept after a close so the exit can finish. */
 const shown = ref<ConsoleGalleryRow | null>(null)
 /** Whether the viewer is open; `shown` deliberately outlives it (see above). */
 const viewerOpen = ref(false)
-
-async function loadGallery(): Promise<void> {
-  try {
-    const response = await fetch(`/api/gallery?token=${encodeURIComponent(consoleToken())}`)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    // The service's own payload; its shape is declared once, in
-    // web/api-types.ts, and imported here as a type only.
-    gallery.value = (await response.json()) as ConsoleGalleryPayload
-  } catch (error) {
-    failure.value = error instanceof Error ? error.message : String(error)
-  }
-}
-
-onMounted(() => {
-  void loadGallery()
-})
 
 /**
  * The image extensions the service serves (`IMAGE_EXTENSIONS`,
@@ -140,7 +127,7 @@ const columns = computed(() => columnsOf(gallery.value?.rows ?? [], COLUMN_COUNT
  * every other request carries it.
  */
 function thumbnailUrl(name: string): string {
-  return `/api/thumbnail/${encodeURIComponent(name)}?token=${encodeURIComponent(consoleToken())}`
+  return withToken(`/api/thumbnail/${encodeURIComponent(name)}`, consoleToken())
 }
 
 /** An id the page can key a row by: an entry's own, or a Mirror file's name. */
