@@ -121,6 +121,28 @@ describe('the locale dictionary', () => {
 })
 
 /**
+ * The setup notice (#60): with no usable `.env`, the Run panel has to tell a
+ * first-time reader what to create before they click anything. The two lines
+ * are the site's constants, not copy to be translated — the same two lines
+ * `README.md`'s quick start gives — so both locales carry them verbatim, and
+ * the sentence that introduces them names the file the reader creates.
+ */
+describe('the setup notice', () => {
+  it('gives the two .env lines verbatim in both locales', () => {
+    const lines = 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html'
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'run.setup.lines')).toBe(lines)
+    }
+  })
+
+  it('names the file the reader creates', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'run.setup.file', { file: '.env' })).toContain('.env')
+    }
+  })
+})
+
+/**
  * The service's codes, and the page's words for them (#47).
  *
  * The contract exports all five vocabularies as runtime tuples — refusals,

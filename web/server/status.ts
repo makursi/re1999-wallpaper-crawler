@@ -114,6 +114,13 @@ export interface ConsoleStatusFacts {
   /** The Mirror's non-dot entry count (web/server/mirror.ts). */
   mirrorCount: number
   gallery: ConsoleGalleryFacts
+  /**
+   * Whether a Run's configuration is usable now (#57, #60). The entry point
+   * re-reads the repository's `.env` for each status assembly — one file, never
+   * a `PATH` scan or a registry lookup — so a file created after the Console
+   * booted clears the page's setup notice on the next read.
+   */
+  runConfigAvailable: boolean
 }
 
 /** No Run is in flight and no Run log has been read. */
@@ -241,6 +248,7 @@ export function buildStatus({
   run,
   mirrorCount,
   gallery,
+  runConfigAvailable,
 }: ConsoleStatusFacts): ConsoleStatusPayload {
   const payload: ConsoleStatusPayload = {
     runId: run.runId,
@@ -252,6 +260,8 @@ export function buildStatus({
     defects: toApiDefects(run.defects),
     verdictReasons: run.verdictReasons,
     listAvailable: gallery.listAvailable,
+    // #57: the one setup fact the page needs, carried beside the two halves.
+    runConfigAvailable,
     report: toApiReport(run.report),
     reportPresent: run.reportPresent,
   }

@@ -179,14 +179,24 @@ describe('parseRunReport', () => {
 })
 
 describe('logRunIdOf', () => {
-  it('reads the Run out of a Run log filename', () => {
+  it('reads the Run out of a Run log filename, with either prefix', () => {
+    // The current writer's name.
+    expect(logRunIdOf('run-2026-10-18T01-03-31.jsonl')).toBe('2026-10-18T01-03-31')
+    // The name every log already on disk carries: read permanently, never
+    // renamed (ADR 0007 keeps the log the audit trail).
     expect(logRunIdOf('save-wallpapers-2026-10-18T01-03-31.jsonl')).toBe('2026-10-18T01-03-31')
   })
 
   it('returns null for a name that is not a Run log', () => {
     expect(logRunIdOf('save-wallpapers.jsonl')).toBeNull()
+    expect(logRunIdOf('run.jsonl')).toBeNull()
+    expect(logRunIdOf('run-.jsonl')).toBeNull()
     expect(logRunIdOf('notes.jsonl')).toBeNull()
+    expect(logRunIdOf('run-2026-10-18T01-03-31.jsonl.bak')).toBeNull()
     expect(logRunIdOf('save-wallpapers-2026-10-18T01-03-31.jsonl.bak')).toBeNull()
+    // Only a whole-name match counts: the runId is not plucked out of anything
+    // that merely contains a prefix.
+    expect(logRunIdOf('my-run-2026-10-18T01-03-31.jsonl')).toBeNull()
   })
 })
 

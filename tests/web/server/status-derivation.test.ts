@@ -17,20 +17,29 @@ import {
   STARTED_AT,
 } from './run-fixtures.js'
 
-/** The raw Run facts plus the two Gallery numbers the assembly takes. */
+/** The raw Run facts plus the facts the assembly takes from the service. */
 type RawStatusFacts = ConsoleRunLogFacts & {
   mirrorCount: number
   officialTotal: number | null
   listAvailable: boolean
+  runConfigAvailable: boolean
 }
 
 /**
  * The whole status view in one call: the Run half derived purely from the raw
- * facts, then assembled with the Mirror's count and the Gallery list's answer.
+ * facts, then assembled with the Mirror's count, the Gallery list's answer and
+ * whether a Run can be configured.
  * Defaults are a finished, healthy Run with the list read.
  */
 function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
-  const { logText, mirrorCount = 1013, officialTotal = 1010, listAvailable = true, ...run } = over
+  const {
+    logText,
+    mirrorCount = 1013,
+    officialTotal = 1010,
+    listAvailable = true,
+    runConfigAvailable = true,
+    ...run
+  } = over
   return buildStatus({
     run: deriveRunFacts({
       logName: LOG_NAME,
@@ -46,6 +55,7 @@ function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
     }),
     mirrorCount,
     gallery: { officialTotal, listAvailable },
+    runConfigAvailable,
   })
 }
 
@@ -225,5 +235,30 @@ describe('deriveStatus', () => {
 
     expect(status.officialTotal).toBeNull()
     expect(status.listAvailable).toBe(false)
+  })
+
+  it('carries whether a Run’s configuration is available, with the list left unread', () => {
+    // No usable `.env`: the service reports it, and the Gallery half degrades to
+    // the contract's "not read" — `null`, never `0`, and never an empty list.
+    const status = statusOf({
+      runConfigAvailable: false,
+      officialTotal: null,
+      listAvailable: false,
+    })
+
+    expect(status.runConfigAvailable).toBe(false)
+    expect(status.officialTotal).toBeNull()
+    expect(status.listAvailable).toBe(false)
+    // The Run half keeps its exact shape beside the new fact.
+    expect(status.report).not.toBeNull()
+    expect(status.verdict).toBe('clean')
+  })
+
+  it('carries the same fact as true when the configuration is usable', () => {
+    const status = statusOf({ runConfigAvailable: true, officialTotal: 1010, listAvailable: true })
+
+    expect(status.runConfigAvailable).toBe(true)
+    expect(status.officialTotal).toBe(1010)
+    expect(status.listAvailable).toBe(true)
   })
 })

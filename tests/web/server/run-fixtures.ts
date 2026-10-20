@@ -25,7 +25,10 @@ export const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 
 export const RUN_ID = '2026-10-18T01-03-31'
 export const STARTED_AT = '2026-10-18T01:03:31.856Z'
-export const LOG_NAME = `save-wallpapers-${RUN_ID}.jsonl`
+/** The name today's writer emits: `core/logger.ts`'s `run-<runId>.jsonl`. */
+export const LOG_NAME = `run-${RUN_ID}.jsonl`
+/** The name every log already in `logs/` carries — still read, never renamed. */
+export const LEGACY_LOG_NAME = `save-wallpapers-${RUN_ID}.jsonl`
 export const NEW_FILES = ['1024_abc.jpg', '1023_def.png']
 
 export function defects(over: Partial<RunDefects> = {}): RunDefects {

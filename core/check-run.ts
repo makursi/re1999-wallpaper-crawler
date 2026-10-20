@@ -61,7 +61,7 @@ function readNewestLog(dir: string): LogReading {
 }
 
 function describeLog(reading: LogReading): string {
-  if (reading.kind === 'none') return 'none (no save-wallpapers-*.jsonl in the log directory)'
+  if (reading.kind === 'none') return 'none (no Run log in the log directory)'
   if (reading.kind === 'unreadable') return `${reading.file} — could not be read`
   return reading.file
 }

@@ -25,6 +25,18 @@ function readRunLog(): string {
 }
 
 describe('createLogger', () => {
+  it('names the Run log run-<runId>.jsonl, not after any command', () => {
+    const logger = createLogger(logDir)
+    logger.info('a record')
+
+    // The file name is a contract the readers honour by that pattern. It
+    // carries the Run and nothing user-facing: `save-wallpapers-` was a deleted
+    // command's name (ADR 0016). The timestamp is the runId the readers order by.
+    expect(fs.readdirSync(logDir)).toEqual([
+      expect.stringMatching(/^run-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.jsonl$/),
+    ])
+  })
+
   it('puts a record on disk before the Run can carry on', () => {
     const logger = createLogger(logDir)
     logger.info('audit trail record')

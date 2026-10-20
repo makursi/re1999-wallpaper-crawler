@@ -1,9 +1,10 @@
 // ── Reading the Run log directory ───────────────────────────────────
 //
 // The Console's knowledge of Runs is the Run log directory, never a process
-// handle it happens to hold (ADR 0009): which `save-wallpapers-*.jsonl` file is
-// newest, what its text says, when it was last written, and what the Gallery
-// state and the Mirror say about the Run it names. A Run started from a
+// handle it happens to hold (ADR 0009): which `run-*.jsonl` file is newest (or
+// the legacy `save-wallpapers-*.jsonl` every older log carries — both are read
+// permanently), what its text says, when it was last written, and what the
+// Gallery state and the Mirror say about the Run it names. A Run started from a
 // terminal is therefore read exactly like one the Console started.
 //
 // This module is a reader, not a rule: the state decision lives in the pure
@@ -76,18 +77,20 @@ export function createRunLogSource(options: RunLogSourceOptions): RunLogSource {
   return {
     acknowledgeOrphan(): void {
       // The newest log is the one the page was showing: the same pick as
-      // `check-run`, by name (run-report-source.ts), never by mtime.
+      // `check-run`, by runId, never by mtime.
       const name = newestRunLogName(options.logDir)
       if (name !== null) acknowledged.add(name)
     },
 
     facts(): ConsoleRunFacts {
-      // The newest Run log, by **name** — the ordering `check-run` uses
-      // (`toSorted().at(-1)`), never by mtime: the filename carries the
-      // timestamp, so the last name in ascending order is exact, while a copy or
-      // a touch would make mtime name a different Run. #33's source owns that
-      // rule (`newestRunLogName`); the page and the command must pick the same
-      // file, so it is reused rather than re-implemented.
+      // The newest Run log, ordered by its **runId** — the rule `check-run`
+      // uses, never by mtime and never by the whole name: with both prefixes in
+      // the directory a plain string compare would rank every legacy name above
+      // every new one. The filename carries the timestamp, so an ascending
+      // runId compare is exact, while a copy or a touch would make mtime name a
+      // different Run. #33's source owns that rule (`newestRunLogName`); the
+      // page and the command must pick the same file, so it is reused rather
+      // than re-implemented.
       const name = newestRunLogName(options.logDir)
       const file = name === null ? null : path.join(options.logDir, name)
       let logText: string | null = null

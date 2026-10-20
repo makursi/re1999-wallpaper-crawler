@@ -518,6 +518,36 @@
 
 ---
 
+### 2026-10-20 — WebUI 成为唯一的人类入口：`core:run` 顶替 `save-wallpapers`，Run log 改名 `run-<runId>`，无 `.env` 也能打开页面（spec #56 / 票 #57–#62）
+
+**触因**：仓库同时摆着两个入口，而新用户最先碰到的是错的那个。README 的 quick start 收在 `pnpm save-wallpapers` —— 一条名字像给用户看的终端命令，真正起页面的 `pnpm webui` 反而被放在后面，当成「看 Mirror」的附件。更糟的是，没写过 `.env` 的机器上 `webui` 根本到不了页面：Console 的入口静态 import 了在模块加载时就解析环境的 config 模块，于是全新 clone 的第一个人看到的是 Zod 堆栈，而不是页面；而「缺 `.env`」这个 Console 本来会命名的前置条件，只在点「开始运行」时才检查，页面起不来时那个按钮也不存在。还有一处命名渗漏：因为脚本按用户任务命名，Run log 的文件名 —— 被 `check-run`、Console、测试和 README 硬编码读取的契约 —— 变成了 `save-wallpapers-<runId>.jsonl`，删脚本也会把这个名字留在每个用户可见的面上。
+
+**决策**：
+- **一个人类入口，命令线归 agent**：README 只教 `pnpm webui`（安装 → 一条命令 → 页面），`core:run` 与 `check-run` 是 agent 的接口，只写进 AGENTS.md 的命令表与 save-images runbook，不写进 README。`check-run` 的名字、文件、输出与退出码一律不动。ADR 0016 记录这个安排；它取代 ADR 0012 的命名条款（三个名字变成 `core:run` / `check-run` / `webui`），0008 与 0012 作为当日记录不回改。
+- **删脚本**：`save-wallpapers` 从 `package.json` 删除，`core:run`（`tsx core/main.ts`）顶替，**不留别名**——理由与 ADR 0012 删 `console` 时相同：两个名字重建这次要消掉的歧义。Console 的启动器本来就直接 spawn tsx 入口，所以删脚本不动任何运行时行为。
+- **日志名中性化**：写侧出 `logs/run-<runId>.jsonl`；读侧永久接受旧前缀 `save-wallpapers-<runId>.jsonl`（旧文件是历史事实，不是过渡态——没有一份日志被改名、重写或删除，ADR 0007 的审计轨道因此完整）。最新 Run 的挑选**按 `runId` 排序，而不是整个文件名**：跨前缀的朴素字符串比较会把每个 `save-wallpapers-…` 排在每个 `run-…` 之后（`s` > `r`），昨天的旧日志就会压过今天的新日志。一个共享谓词 `logRunIdOf`（在纯层 `core/report/run-log.ts`，`runId` 为 `null` 即「不是 Run log」）同时服务选取、判定里的 log→Run 识别和测试夹具；`check-run` 的「无日志」行不再点名已删除的脚本。
+- **无 `.env` 也能启动**：配置 schema 只有一个家 `core/config-read.ts`；`core/config.ts` 仍在模块加载时严格 parse 并导出管线用的常量，所以 Run 的 fail-fast 原样保留，Console 用的是同一 schema 的**非抛出读**。没有可用文件（缺失、不可解析、缺必需键）时，页面照开、墙照渲染、Gallery list 退化为「未读」（`null`，绝不是空列表，也不对不存在的 URL 发请求），Run 面板用两种语言给出 setup notice：仓根建 `.env`，粘贴那两行站点常量。
+- **`runConfigAvailable` 每次 status 请求现读**：它走的就是 start 拒绝时那条 `env-file` 谓词——一个读取器、一套全 schema（含带默认值的键），一次 `.env` 文件读，无 `PATH` 扫描、无注册表查询——所以环境提示与点击路径不可能给出不同答案。这**有意取代** spec 早先「boot fact」的写法：一次性读出的提示在用户建好文件后永不清除，比每次多读一个文件更糟；本轮唯一一处「实现之后改口径」就记在 ADR 0016 的 Considered options 里。
+- **Console 零写**：不写 `.env`、不写 Mirror、不写 Run log，仓根不因它多一个文件。页面负责说明，用户负责创建。
+- **文档同一轮改到位**：README 重写成页面优先的用户指南，AGENTS.md 命令表、CONTEXT-MAP 的 Console 关系句、CONTEXT.md 的 Console 定义、runbook 的命令与日志名全部同轮更新；`core/config-read.ts` 补进 AGENTS.md 架构树与 CONTEXT-MAP 的「Where things live」。否决方案同步进下表，免得下一轮重新提议。
+
+**验证**：
+- 五门（最终树，直连 `node_modules\.bin`）：`vitest run` **30 文件 / 335 tests 通过**（基线 308；两次评审后的修复补了 7 个测试——文件判定 5、前置条件 2——并删掉 1 个只测死代码的）；`tsc --noEmit` 与 `vue-tsc --noEmit -p web/tsconfig.web.json` 0；`oxlint --type-aware .` **0 warning 0 error**；`oxfmt --check` clean。
+- **评审后的两处真修复**（同轮，`fix/review-findings`）：其一，`/api/status` 的 `runConfigAvailable` 与 start 的 `env-file` 拒绝改走同一个**全 schema** 文件读（`core/config-read.ts` 的 `readProjectConfig`），此前 `prerequisites.ts` 自留两键 schema，于是 `BATCH_SIZE=abc` 的 `.env` 会「报告可用 → 允许开始 → Run 自己 import 时抛 ZodError」；其二，Console 不再在启动时把 `.env` 灌进 `process.env`（dotenv 不覆盖），否则启动时写错的键会永久遮蔽后来改对的文件。手动证明（同一进程、同一 token、端口 8811）：`BATCH_SIZE=abc` 时 status 报 `false`，把同一份文件改成 `4` 后**不重启**即报 `true`，而 Gallery 端点仍按 ADR 0016 保持启动时的 `null`。
+- **手动真服务，无 `.env`**（本分支 #57/#60 的实测）：`webui --no-open` 起得来、页面 200、`/api/status` 返回 `runConfigAvailable: false`、Run 面板两种语言都显示 setup notice；点「开始运行」返回 `412 missing-prerequisite`，缺项里点名 `env-file`；创建 `.env` 后下一次 status 读回到 `true`，提示随之消失。Console 进程没有在仓根写任何文件。
+- **混合前缀**（单测覆盖）：`tests/core/run-log-file.test.ts` 在同一目录放一份旧前缀与一份新前缀，断言挑选跟着 `runId` 走而不是前缀；`tests/core/report/run-log.test.ts` 断言两种前缀都算 Run log、`.bak` 与无关 `.jsonl` 不算；`check-run` 的「无日志」行在源码里不再出现旧脚本名（这一行没有测试断言）。
+- **setup notice 的字典覆盖**：`tests/web/src/i18n/messages.test.ts` 断言两种语言都带那两行站点常量原文、并且句子里点名 `.env`，字典完整性测试继续枚举所有 code。
+- 没跑抓取 Run：本轮只改名字与启动路径，管线行为零改动，跑一轮证明不了这次改动（spec 的 Testing Decisions 明写如此）。本轮（#62）是纯文档票，证据即上面这些数与被改动文件的逐条对照；提交用 `--no-verify`，钩子里的三道检查（`node scripts/check-branch.mjs`、`oxlint --type-aware .`、`oxfmt --check`）按手跑。
+
+**教训**：
+- **文档也是契约，而它不会自己喊**。改命令名与日志名时，测试、类型和 lint 都不会因为 README、runbook、HISTORY 的验证规范、AGENTS 的架构树过期而变红；这次把验收标准直接写成「过时名字不能活在日期记录之外」，比逐处记忆可靠。
+- **「便宜的事实」要按读者的体验排序**。`runConfigAvailable` 按 boot 读一次在逻辑上成立，在体验上却是一条永不清除的提示；改成每请求一次文件读、并与拒绝共用同一个谓词之后，「提示与点击不可能不一致」才是结构性的。
+- **「现在可用吗」只能有一个答案**。同一个 `.env` 被两套 schema 判过（start 用两键、启动用全 schema）时，用户看到的是「报告可用 → 点开始 → Run 抛 ZodError」；而 Console 启动时把 `.env` 灌进 `process.env`（dotenv 不覆盖）会让**后来改对的文件永远被启动时的旧值遮蔽**。这两件事都不是逻辑错误，是「同一个问题有了第二个答案」的两次化身。
+- **日志名跟着领域词走，不跟着命令走**。`save-wallpapers` 被删的那一刻，旧日志名就成了对一个不存在命令的引用；`run-` 只承载 Run，命令以后再改也拖不动日志名。
+- **兼容要写成「历史事实」而不是「过渡期」**。两个前缀永久可读，于是没有人需要决定旧日志何时过期，也没有人需要给它们改名——过期日期本身才是将来要维护的东西。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -563,12 +593,19 @@
 | 内联 `code` 取代 `--filename` | 协议支持且实测可达（多行 + `#"/%&\|< >^` 原样到达），但 shell-less 启动只能点名全局 `@playwright/cli` 的 JS 入口（`npx.cmd` 无 shell → `EINVAL`），脆；而它省的 ~600 ms/次另属一题 | 2026-10-20 / #51 |
 | 去掉哈希注入，让 `--filename` 直接指向 `scripts/run-discovery.js` | 要改协议载荷、把单一来源的 `PAGE_HASH` 复制成两处，且只能靠真跑验证 | 2026-10-20 / #51 |
 | 固定名副本 + 原子写（tmp + rename） | Run 已串行化、"内容不同才写"把窗口压到微秒；rename 反而把刚去掉的临时文件搅回来 | 2026-10-20 / #51 |
+| 保留 `save-wallpapers`（旧名，或给 `core:run` 加兼容别名） | 旧名本身是给用户看的命令名；两个名字重建这次要消掉的歧义（与 ADR 0012 删 `console` 同一理由） | 2026-10-20 / #58 / ADR 0016 |
+| README 同时教两个入口（终端一条、页面一条） | 新用户最先看到的是错的那个门；人类入口只留 WebUI，命令线归 agent | 2026-10-20 / #56 / #61 / ADR 0016 |
+| 让页面代写 `.env` | 往仓根写文件是 Console 从未有过的所有权；由页面说明、用户创建，start 的 `env-file` 拒绝承担教学 | 2026-10-20 / #57 / ADR 0016 |
+| 现在给页面加停止按钮 | ADR 0009：页面只是视图，Run 的事实是磁盘上的日志；整棵进程树的停止没有诚实的 HTTP 表示，停止仍是终端 Ctrl+C | 2026-10-20 / #56 / ADR 0009 |
+| 让 Run log 的名字跟着命令走（`save-wallpapers-…` 或 `core-run-…`） | 命令会改名，日志名不该绑在一个会变的命令上；`run-` 只承载 Run，旧前缀永久可读 | 2026-10-20 / #59 / ADR 0016 |
+| 每次 status 请求重推 Gallery list 端点（让新建 `.env` 免重启生效） | 端点属于注入的配置，list source 只构建一次并带自己的读取缓存；每请求重推等于每请求重建数据源，status 与 gallery 行还可能读成两份。代价已写进 README：新建 `.env` 后要重启 WebUI 才读站点清单 | 2026-10-20 / #57 / #62 |
+| 把 `runConfigAvailable` 当 boot fact 只读一次 | 页面开着时创建 `.env`，提示永不清除；改为每 status 读一次文件（无 PATH 扫描、无注册表查询），且与 start 的拒绝同谓词 | 2026-10-20 / #60 / ADR 0016 |
 
 ## 验证规范（所有迭代通用）
 
 - 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）；格式化改动加 `pnpm fmt:check`，且大范围重排要做 **AST 对比**（忽略 import 顺序与括号）证明“只改了空白”
 - 纯工具链/纯移动类改动不真跑，但要在 PR 里写明「没跑」
-- 行为验证：真跑 `pnpm save-wallpapers`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
+- 行为验证：真跑 `pnpm core:run`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题

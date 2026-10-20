@@ -237,6 +237,17 @@ export interface ConsoleStatusPayload {
   /** `false` when the Gallery list could not be read — never "nothing missing". */
   listAvailable: boolean
   /**
+   * Whether a Run's site configuration is usable *now*: `true` only when the
+   * repository root's `.env` exists and validates against the whole
+   * configuration schema a Run parses, defaulted keys included. Read on each
+   * status request (#60) — one file, no `PATH` scan and no registry lookup —
+   * from the same predicate the start's `env-file` refusal uses, so the page's
+   * ambient setup notice clears on the next status read (a reload, or the next
+   * poll while a Run is in flight) and can never disagree with what a click
+   * returns (#57).
+   */
+  runConfigAvailable: boolean
+  /**
    * The newest Run report, verbatim (#34): the Gallery numbers, Download
    * numbers and detected defects the owner judges together. `null` while a Run
    * is in flight and when no readable report was found.
