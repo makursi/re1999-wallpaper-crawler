@@ -19,7 +19,7 @@ Then `pnpm install` for project dependencies.
 
 | Task | Command |
 |------|---------|
-| Scrape wallpapers | `pnpm save-wallpapers` (`tsx core/main.ts`) |
+| Scrape wallpapers | `pnpm core:run` (`tsx core/main.ts`) |
 | Check the newest Run | `pnpm check-run` (`tsx core/check-run.ts`) |
 | WebUI (local page) | `pnpm webui` (`tsx web/server/console.ts`, flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |

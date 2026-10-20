@@ -47,8 +47,8 @@
   visible.
 - **Discovery → Gallery list**: `discovery.coverage` measures one Run's capture
   against the list.
-- **Console → CLI entries**: the Console is the human entry point, and it starts
-  a Run as a child process; `save-wallpapers` and `check-run` stay the
+- **Console → CLI entries**: the WebUI is the only human entry, and the Console
+  starts a Run as a child process; `core:run` and `check-run` are the
   agent-facing entries, with their names, exit codes and contracts unchanged.
 - **Run log → Console**: the Console knows Runs by reading the Run log
   directory, never a handle it holds, so a terminal-started Run is visible and a
