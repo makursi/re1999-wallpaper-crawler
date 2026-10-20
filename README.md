@@ -1,175 +1,78 @@
-# Wallpaper Scraper
+# 重返未来：1999 壁纸下载器
 
-Download every official `重返未来：1999` Wallpaper from
-[Bluepoch](https://re.bluepoch.com/home/detail.html#wallpaper), and browse what
-you already have, from one local page.
+**中文** | [English](README.en.md)
 
-The page is the app. It shows your Mirror (`images/`) against the site's own
-Gallery list, starts a Run when you ask for one, and reads the newest Run's
-verdict when it ends. A Run drives a real Chrome window through the gallery,
-captures the images on the network layer, drops the site's own UI art, and saves
-the rest in parallel.
+把[官网](https://re.bluepoch.com/home/detail.html#wallpaper)上的壁纸全部下载到自己电脑里，并在一页里浏览、随时补齐。个人本地运行，别人访问不到。
 
-## Quick start
+![壁纸墙](docs/screenshots/console-zh.webp)
 
-Needs Node 22.22+, [pnpm](https://pnpm.io), and the Playwright CLI installed
-once, globally:
+## 第一次使用
+
+先装好 [Node 22](https://nodejs.org)、[pnpm](https://pnpm.io) 和 Chrome。然后在**这个文件夹里**打开终端（Windows 叫 PowerShell），逐行复制下面的命令，每行按一次回车：
 
 ```bash
 npm install -g @playwright/cli
 npx playwright-cli install
-```
-
-Then the project's dependencies:
-
-```bash
 pnpm install
 ```
 
-Then one command:
+## 开始使用
 
 ```bash
 pnpm webui
 ```
 
-The first start builds the page; every later start reuses the build. The command
-binds the service to loopback, prints the URL and opens it in your browser. That
-page is the app.
+浏览器会自动打开一个页面，这就是全部界面：
 
-Two flags: `--port` is the port to prefer (8791 unless you say otherwise; if it
-is taken, a free port is chosen and printed) and `--no-open` prints the URL
-instead of opening a browser. The URL carries a token minted for this start, and
-the service answers nothing without it: it binds to loopback only, and it writes
-neither the Mirror nor a Run log.
+![运行面板](docs/screenshots/run-panel-zh.webp)
 
-## The page
+- 第一次打开要等一会儿，之后会快很多。
+- 没自动打开的话，把终端里打印的那行网址整条复制到浏览器（末尾一串字符是钥匙，别删）。
 
-The wall is the whole catalogue — five columns, each Wallpaper at its own
-proportions, uncropped. A Wallpaper the Gallery list names but you do not have
-yet is an outlined placeholder rather than a broken image. When the Gallery list
-was not read, the wall shows your Mirror's files alone and the caption says so:
-"not read", never "nothing missing". When it was read, the caption counts what
-the two disagree about — listed Wallpapers missing from the Mirror, and Mirror
-files the gallery no longer holds.
+点右上角「运行」，它会自己打开一个 Chrome 窗口，把官网壁纸翻一遍再下载下来。
 
-Click a tile to open the original file from disk at full size, with zoom steps up
-to 4× and Escape to close. The viewer names the gallery's id and the file name
-together, so a Wallpaper can be read against a Run.
+## 页面上能做什么
 
-The floating header carries the Mirror count and the language switch. The page is
-bilingual — 中文 and English, 中文 first — and every word follows the switch,
-including the setup notice. The choice is remembered.
+- **一面墙**：五列，按原图比例铺开，不裁剪。灰色轮廓的格子表示官网有、你还没有。
+- **点一张**：打开原图看大图，可放大缩小，按 Esc 关闭。
+- **「运行」**：开始或补齐下载；结束后点它看这次的结果。
+- **墙上的数字**：「镜像 1013」是你电脑里已有张数，「官方清单 1010」是官网现有张数，下一行写明差几张、多了几个。
+- **语言**：页面上随时切换中文 / English，会记住你的选择。
 
-The Run panel (the 运行 button) starts a Run and shows the in-flight progress as
-your Mirror's count against the Gallery total. When the Run ends it shows the
-newest Run's verdict, its Gallery numbers, its Download numbers and one row per
-defect class — or that none was found. It polls only while a Run is in flight.
+## 运行的时候
 
-An Orphaned Run — a Run log with no report that was written recently — is named
-with its log and offered a cleanup. The cleanup closes the leftover Browser
-session and withdraws the claim; it never edits or deletes the log, because the
-log is the Run's audit trail. It is offered, not forced: the log directory alone
-cannot tell a leftover from a Run that is still writing.
+- 会自己弹出一个 Chrome 窗口在自动翻页，别去点它，也别关它。
+- 关掉网页不会停止下载；要停就在终端按 Ctrl+C，下载也会一起停。
+- 可以反复运行：已经下载过的会跳过，只下新的。
 
-The wall and the header's Mirror count are read when the page loads. Reload after
-a Run to see what arrived.
+## 看结果
 
-## Stopping
+每次运行结束，「运行」面板给出三种结论之一：
 
-Ctrl+C in the terminal that runs the WebUI stops the service and, when the WebUI
-started it, the Run's whole process tree — the loader, the browser CLI and
-Chrome. With a Run in flight it asks first, and a "no" leaves both running.
+- **干净**：一切正常。
+- **已解释**：有常规情况（比如官网自己的背景图被正确排除），记下来但不影响使用。
+- **缺陷**：这次没抓全，或有文件没下成。再运行一次通常就好。
 
-There is deliberately no stop control on the page: closing the tab stops nothing,
-because the page is a view and the Run's truth is its log on disk. The terminal
-prompts are in Chinese.
+## 常见问题
 
-## Configuration
+- **提示「先完成站点配置」**：还缺 `.env` 文件。在这个文件夹里新建文本文件，命名为 `.env`，写入两行，保存后刷新页面：
 
-You do not need `.env` to open the page. With no usable file it still serves the
-wall, and the Run panel explains what to create — `.env` at the repository root —
-with the two lines to paste. A Run is what refuses to start without it, rather
-than guessing.
+  ```
+  BASE_ORIGIN=https://re.bluepoch.com
+  PAGE_PATH=/home/detail.html
+  ```
 
-Only `BASE_ORIGIN` and `PAGE_PATH` are required. Everything else has a default,
-so you can ignore this table:
+  Windows 上可以在文件名末尾多打一个点（`.env.`）再回车，系统会自动去掉那个点。
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `BASE_ORIGIN` | **required** | Site origin, e.g. `https://re.bluepoch.com` |
-| `PAGE_PATH` | **required** | Gallery page path, e.g. `/home/detail.html` |
-| `SESSION_NAME` | `bluepoch` | Browser session name: the persistent Chrome profile a Run uses |
-| `IMAGES_DIR` | `images` | Where Wallpapers are saved |
-| `BATCH_SIZE` | `4` | Parallel downloads per batch (1–20) |
-| `LOG_DIR` | `logs` | Where the JSONL Run logs are written |
+- **提示「孤儿运行」**：上次运行被打断留下的记录，点「清理」即可，然后重新运行。
+- **某个格子写着「未落盘」**：官网有这张，但还没下到本地，下次运行会补上。
+- **想找人帮忙**：把 `logs` 文件夹里最新的那个文件留着，里面记着每次运行的全过程。
 
-The service re-reads `.env` whenever it reads status and when a Run starts, so a
-file created after `pnpm webui` clears the setup notice on the next status read —
-reload the page — and a Run can start without a restart. The Gallery list is the
-exception: its endpoint is fixed when the service starts, so a `.env` created
-after boot leaves the list at "not read" until you restart `pnpm webui`. The wall
-still shows the Mirror; it just cannot say what is missing.
+## 文件在哪
 
-## What a Run does
+- `images` 文件夹：所有壁纸。
+- `logs` 文件夹：每次运行的记录。
 
-A Run first clears its Browser session — the named, persistent Chrome profile —
-and reopens it, so it never inherits a previous Run's state. Then it walks the
-gallery page: image URLs are captured at the network layer by a
-`page.on("response")` listener, while the DOM is only scrolled and clicked,
-because the gallery's virtual list unmounts whatever leaves the viewport. The
-capture is filtered — icons, SVGs and the site's own UI art go away — and the
-remaining Wallpapers are downloaded in parallel batches of `BATCH_SIZE`, reusing
-the browser's cookies and retrying once with full browser headers when the CDN
-answers 403.
+## 给开发者
 
-Every Run also asks the site's own Gallery list (one POST, no login) for every
-entry it holds. That list is the authority behind the Gallery total, the count of
-entries new since the last Run and the Mirror check — and it is what proves the
-filter kept the right things: a dropped URL the list calls a Wallpaper is
-reported, not silently lost.
-
-Don't click around in the Chrome window a Run opened — a stray click disturbs
-discovery. Re-running is safe: files already on disk are skipped, so only new
-Wallpapers are downloaded.
-
-## Reading a run
-
-Each Run writes one log to `logs/`, named `run-<runId>.jsonl`, where the id is
-the Run's start time. Logs written under the older name are still read, so
-history stays visible and the newest Run is found either way. The log's final
-record is the Run report, the whole Run in one object; the page turns it into one
-of three verdicts:
-
-- **clean** — nothing was flagged.
-- **explained** — only the routine classes were flagged: a discovery leak whose
-  URLs are all Site assets the page itself served, or Mirror files the gallery no
-  longer lists. They are named and recorded, not failed.
-- **defect** — anything else: a crawl that did not converge or captured nothing,
-  persistent download failures, empty files, a Site asset mistaken for a
-  Wallpaper, a Gallery list that could not be read, listed Wallpapers missing from
-  the Mirror, a claimed new file that is not on disk, or a Gallery state that
-  names a different Run (or cannot be read).
-
-"Not checked" is not "clean". When the Gallery list could not be read, the Mirror
-gap is reported as not checked, and that is a defect: nothing may claim your copy
-is complete on the strength of a reading that never happened.
-
-A Run log that stops before its report is a defect in the log, not proof the Run
-failed — an exit code of 0 does not prove the report was written.
-
-That is the short version. The field-by-field reading — every number, every
-reading trap — lives in the agent instructions: start at `AGENTS.md` → *Analyzing
-a run's logs*.
-
-## Development
-
-| Task | Command |
-|------|---------|
-| Tests | `pnpm test` |
-| Typecheck | `pnpm typecheck` |
-| Lint | `pnpm lint` |
-| Format | `pnpm fmt` (check only: `pnpm fmt:check`) |
-
-`AGENTS.md` is the developer and agent reference: the crawler's command line, the
-conventions, the architecture and the gotchas. Vocabulary and the decisions
-behind this tree live in `CONTEXT.md` and `docs/adr/`.
+架构、命令与约定见 [AGENTS.md](AGENTS.md)，词汇与决策见 [CONTEXT.md](CONTEXT.md) 和 `docs/adr/`。
