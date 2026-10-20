@@ -155,6 +155,7 @@ tests/                       — mirrors the sources it tests
         ├── masonry.test.ts
         └── i18n/
             └── messages.test.ts
+.run-cache/                  — the Discovery script copy a Run materializes for `run-code --filename` (gitignored; written only when its content changed, never deleted)
 scripts/
 ├── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
@@ -188,7 +189,9 @@ unchanged writes nothing, and nothing is ever deleted. A `--filename` target
 must also sit inside the CLI's allowed roots — its output directory or its
 working directory — which `.run-cache/` does and the OS temp directory does not
 (reaching `%TEMP%` works only because the CLI hardcodes its skill mode). Never
-pass inline code via CLI arguments.
+pass inline code via CLI arguments. Because the copy is materialized before the
+Run log's first record, a payload that cannot be materialized fails with no Run
+log at all — by design, since the Run never started.
 
 ### run-code context is Node.js, not browser
 

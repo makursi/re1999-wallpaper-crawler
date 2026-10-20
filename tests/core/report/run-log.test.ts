@@ -127,6 +127,13 @@ describe('parseRunReport', () => {
   it('finds the Run report among the log records, wherever it sits', () => {
     const log = [
       metaLine(RUN_ID),
+      JSON.stringify({
+        level: 30,
+        type: 'discovery_script',
+        path: 'C:/repo/.run-cache/run-discovery.generated.js',
+        written: false,
+        msg: 'discovery script copy reused',
+      }),
       JSON.stringify({ level: 30, msg: '0. Preparing fresh browser session...' }),
       JSON.stringify({ level: 30, msg: '   Session cleared.' }),
       reportLine(report()),

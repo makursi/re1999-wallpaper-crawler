@@ -114,7 +114,9 @@ proposing optimizations. Three neighbours set it in context: `"type":"run_meta"`
 carries the runId, the start time and the config snapshot (to rule out config
 drift), whose `DISCOVERY_SCRIPT_SHA` names which payload the Run executed;
 `"type":"discovery_script"` says whether this Run had to materialize that
-payload's copy (`written: false` means it was reused, which is the normal case);
+payload's copy (`written: false` means it was reused, which is the normal case;
+nothing parses this record — it is context, not a verdict input, so the report
+stays the only contract);
 and `"phase":"run-code"` carries the Discovery diagnostics (`[stability]`,
 `[final]`, `[thumbnails]`) behind the convergence numbers.
 

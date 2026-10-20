@@ -10,7 +10,7 @@ import { PAGE_HASH, PROJECT_ROOT, RUN_CACHE_DIR } from '../config.js'
 // has to materialize the payload. It does so exactly once per payload version:
 // the content on disk is compared before anything is written, and the copy is
 // never deleted — a Run that changes nothing performs no write at all, and
-// whatever corrupted the copy is repaired by the next Run (issue #51).
+// whatever corrupted the copy is repaired by the next Run (#51).
 
 /** The name the materialized copy carries inside its directory. */
 const COPY_NAME = 'run-discovery.generated.js'
@@ -58,7 +58,7 @@ function readIfPresent(file: string): string | null {
  * its content differs from what is already there, and never removed.
  */
 export function materializeDiscoveryScript(options: MaterializeOptions = {}): DiscoveryScriptCopy {
-  const dir = options.dir ?? RUN_CACHE_DIR
+  const dir = path.resolve(options.dir ?? RUN_CACHE_DIR)
   const content = buildRunCodeScript(options)
   const file = path.join(dir, COPY_NAME)
   const written = readIfPresent(file) !== content

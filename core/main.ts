@@ -18,6 +18,7 @@ import {
   SESSION,
   USER_AGENT,
 } from './config.js'
+import type { DiscoveryScriptCopy } from './discovery/discovery-loader.js'
 import { materializeDiscoveryScript } from './discovery/discovery-loader.js'
 import { downloadBatch, extractCookies } from './download/download.js'
 import type { GalleryList } from './gallery/gallery-source.js'
@@ -59,7 +60,7 @@ function pwc(args: string, timeoutSec = 300): string {
 
 // ── helpers ────────────────────────────────────────────────────────
 
-function newRunMeta(discoveryScriptSha: string): {
+function newRunMeta(discoveryScript: DiscoveryScriptCopy): {
   meta: RunMeta
   config: Record<string, string | number | boolean | undefined>
 } {
@@ -68,10 +69,10 @@ function newRunMeta(discoveryScriptSha: string): {
   return {
     meta: { runId, startedAt, config: {} },
     config: {
-      // Which payload this Run executed: the generated copy has a fixed name, so
-      // the identity lives here instead of in the filename (issue #51). Twelve
-      // hex characters tell two payloads apart and still fit on one line.
-      DISCOVERY_SCRIPT_SHA: discoveryScriptSha.slice(0, 12),
+      // Which payload this Run executed: the copy has a fixed name, so its
+      // identity lives here instead of in the filename (#51). Twelve hex
+      // characters tell two payloads apart and still fit on one line.
+      DISCOVERY_SCRIPT_SHA: discoveryScript.sha256.slice(0, 12),
       BASE_ORIGIN,
       PAGE_PATH,
       PAGE_HASH,
@@ -344,16 +345,17 @@ function finishRun(
 // ── main ────────────────────────────────────────────────────────────
 
 async function main() {
-  const logger = createLogger(LOG_DIR)
-
-  // The Discovery script copy is materialized before anything touches the
-  // browser: a payload that cannot be handed to `run-code` must fail in
-  // milliseconds, not after Chrome has started and navigated. Its content is
-  // compared rather than trusted, so a Run that changes nothing writes nothing,
-  // and nothing is ever left at the repository root (issue #51).
+  // The Discovery script copy is materialized before anything else — before the
+  // Run log exists, and before the browser is touched: a payload that cannot be
+  // handed to `run-code` must fail in milliseconds, and it must not leave a Run
+  // log whose missing `run_report` would be misread as a lost report. Its
+  // content is compared rather than trusted, so a Run that changes nothing
+  // writes nothing, and nothing is ever left at the repository root (#51).
   const discoveryScript = materializeDiscoveryScript()
 
-  const { meta, config } = newRunMeta(discoveryScript.sha256)
+  const logger = createLogger(LOG_DIR)
+
+  const { meta, config } = newRunMeta(discoveryScript)
   logger.info(
     { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
     'run started',
