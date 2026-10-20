@@ -73,7 +73,7 @@ export function missingPrerequisites(deps: PrerequisiteDeps): PrerequisiteCode[]
   const real: PrerequisiteChecks = {
     playwrightCli: () => onPath(['playwright-cli'], env, platform),
     chrome: () => realChrome(env, platform),
-    envFile: () => validRunEnv(deps.projectRoot, env),
+    envFile: () => runEnvFileAvailable(deps.projectRoot, env),
     tsxEntry: () => fs.existsSync(tsxEntryPath(deps.projectRoot)),
   }
   const checks: PrerequisiteChecks = { ...real, ...deps.checks }
@@ -153,7 +153,20 @@ const runEnvSchema = z.object({
   PAGE_PATH: z.string().min(1),
 })
 
-function validRunEnv(projectRoot: string, env: NodeJS.ProcessEnv): boolean {
+/**
+ * Whether the repository root's `.env` is usable *now*: present, and satisfying
+ * the two keys the Run's config requires.
+ *
+ * Exported because two surfaces ask this one question (#60): the start refuses
+ * with the `env-file` prerequisite when it is `false`, and `/api/status` reports
+ * it as `runConfigAvailable` so the page's setup notice clears the moment the
+ * file exists — without a Console restart, and without the ambient notice and
+ * the click path ever reaching different answers.
+ */
+export function runEnvFileAvailable(
+  projectRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
   let text: string
   try {
     text = fs.readFileSync(path.join(projectRoot, '.env'), 'utf8')

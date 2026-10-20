@@ -32,7 +32,7 @@ import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
-import { missingPrerequisites, tsxEntryPath } from './prerequisites.js'
+import { missingPrerequisites, runEnvFileAvailable, tsxEntryPath } from './prerequisites.js'
 import type { RunLauncher } from './run-control.js'
 import {
   createBrowserSessionCloser,
@@ -341,6 +341,11 @@ async function main(options: ConsoleOptions): Promise<void> {
     runState: () => runLogSource.facts(),
     galleryFacts: async () => galleryFactsOf(await galleryList.get()),
     galleryList,
+    // #60: the page's setup notice has to clear on the next status read once
+    // `.env` exists, so this is the `.env` half of `missingPrerequisites` read
+    // again per request — one file, no `PATH` scan and no registry lookup — and
+    // the same predicate the start refuses on, so notice and refusal agree.
+    runConfigAvailable: () => runEnvFileAvailable(config.projectRoot),
     // The one Run number the gallery view needs (#33), read from the newest Run
     // log exactly as `check-run` reads it — never recomputed from the Gallery
     // state, which would give 0.

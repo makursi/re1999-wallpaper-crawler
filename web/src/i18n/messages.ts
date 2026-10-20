@@ -95,6 +95,15 @@ const zhCN = {
     '运行日志带有本控制台读不懂的运行报告 — 旧版运行契约?这既不是报告缺失,也不证明运行失败。',
   'run.start': '开始运行',
   'run.refusedStart': '本地控制台拒绝启动(HTTP {status})',
+  // The setup notice (#60): with no usable `.env` the panel says what to create
+  // before the reader clicks start. The file name is a data cell, so it travels
+  // as a parameter; the two lines are the site's constants, not translatable
+  // prose, and are the same two lines README.md's quick start gives.
+  'run.setup.heading': '先完成站点配置',
+  'run.setup.body': '这个控制台还没有可用的站点配置,所以暂时不能开始运行。',
+  'run.setup.file': '请在仓库根目录创建 {file} 文件,写入以下两行:',
+  'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html',
+  'run.setup.note': '保存后刷新页面,提示就会消失,就可以开始运行了。',
 
   // The verdict is `check-run`'s three-state enum, mapped here because the page
   // owns every word the reader sees (docs/adr/0014).
@@ -241,6 +250,11 @@ const en = {
     'The Run log carries a Run report this Console cannot read — an older Run contract? Not a missing report, and not proof the Run failed.',
   'run.start': 'Start a Run',
   'run.refusedStart': 'the Console refused the start (HTTP {status})',
+  'run.setup.heading': 'Set up the site first',
+  'run.setup.body': 'This Console has no usable site configuration yet, so a Run cannot start.',
+  'run.setup.file': 'Create the {file} file at the repository root with these two lines:',
+  'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html',
+  'run.setup.note': 'After saving it, refresh the page: the notice goes away and a Run can start.',
 
   'verdict.clean': 'clean',
   'verdict.explained': 'explained',
