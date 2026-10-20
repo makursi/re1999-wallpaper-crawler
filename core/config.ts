@@ -1,47 +1,39 @@
-import * as path from 'node:path'
 import process from 'node:process'
 
-import { z } from 'zod'
 import 'dotenv/config'
 
-// ── configuration schema ──────────────────────────────────────────
+import type { ConfigValues } from './config-read.js'
+import { galleryListUrlOf, parseConfig, PROJECT_ROOT, siteConfig } from './config-read.js'
 
-const configSchema = z.object({
-  BASE_ORIGIN: z.url(),
-  PAGE_PATH: z.string().min(1),
-  SESSION_NAME: z.string().min(1).default('bluepoch'),
-  IMAGES_DIR: z.string().min(1).default('images'),
-  BATCH_SIZE: z.coerce.number().int().positive().max(20).default(4),
-  PLAYWRIGHT_CONFIG: z.string().min(1).default('.playwright/config.json'),
-  LOG_DIR: z.string().min(1).default('logs'),
-})
+// ── the eager configuration ───────────────────────────────────────
+//
+// The pipeline's configuration, parsed at module load: an absent or invalid
+// `.env` throws here, before a Run can start, and every consumer below imports
+// the constants it produced. The schema and the tree-relative resolution live in
+// `core/config-read.ts`, which is also what the Console reads without throwing —
+// importing *this* module is the strict parse, deliberately (#57).
 
-const parsed = configSchema.parse(process.env)
+const parsed: ConfigValues = parseConfig(process.env)
+const site = siteConfig(PROJECT_ROOT, parsed)
 
 // ── exports ───────────────────────────────────────────────────────
 
-export const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
+/** The repository root: a Run's cwd, where `.env`, `node_modules/` and the data live. */
+export { PROJECT_ROOT }
 
 export const BASE_ORIGIN = parsed.BASE_ORIGIN
 export const PAGE_PATH = parsed.PAGE_PATH
 export const PAGE_URL = `${BASE_ORIGIN}${PAGE_PATH}`
 // Hash is page logic, not env config (# is comment char in .env)
 export const PAGE_HASH = '#wallpaper'
-export const IMAGES_DIR = path.resolve(PROJECT_ROOT, parsed.IMAGES_DIR)
-export const SESSION = parsed.SESSION_NAME
+export const IMAGES_DIR = site.imagesDir
+export const SESSION = site.sessionName
 export const BATCH_SIZE = parsed.BATCH_SIZE
 export const PLAYWRIGHT_CONFIG = parsed.PLAYWRIGHT_CONFIG
-export const LOG_DIR = path.resolve(PROJECT_ROOT, parsed.LOG_DIR)
-// Where a Run materializes the Discovery script copy that `run-code --filename`
-// needs. Gitignored, and the one directory in this tree that only the crawler
-// reads: the copy is written when its content changes and never deleted.
-export const RUN_CACHE_DIR = path.resolve(PROJECT_ROOT, '.run-cache')
-// The site's own gallery list — the authoritative Wallpaper URL set and total
-// (docs/adr/0006). Derived from BASE_ORIGIN so it cannot drift from the site.
-export const GALLERY_LIST_URL = `${BASE_ORIGIN}/activity/official/websites/picture/query`
-// Cross-run memory of that list, kept next to the mirror it describes
-// (docs/adr/0006); not a log, and deleted together with `images/`.
-export const GALLERY_STATE_FILE = path.join(IMAGES_DIR, '.gallery-state.json')
+export const LOG_DIR = site.logDir
+export const RUN_CACHE_DIR = site.runCacheDir
+export const GALLERY_LIST_URL = galleryListUrlOf(BASE_ORIGIN)
+export const GALLERY_STATE_FILE = site.galleryStateFile
 
 export const USER_AGENT =
   process.env.USER_AGENT ??

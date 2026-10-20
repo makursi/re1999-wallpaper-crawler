@@ -2,9 +2,12 @@
 //
 // The one command: build the page if it is not on disk, start the loopback
 // service, print the URL it bound and open it in the default browser. It reads
-// `core/config.ts` — which parses `.env` at import time — and injects a
-// configuration value, so nothing under `web/server/` ever reads the
-// environment and `tests/**` keeps needing no `.env` (spec decision 29).
+// the project's `.env` through `core/config-read.ts` — the non-throwing half of
+// the schema `core/config.ts` parses eagerly for the pipeline — and injects a
+// configuration value, so nothing under `web/server/` ever reads the environment
+// and `tests/**` keeps needing no `.env` (spec decision 29). A missing or broken
+// `.env` is not fatal here: the Console boots, says a Run cannot be configured
+// yet, and leaves the failing fast to the Run (#57).
 //
 // ADR 0008: no dispatcher and no CLI framework. The Console takes `--port` and
 // `--no-open` and nothing more; the flags are parsed by Node's own parser.
@@ -17,19 +20,16 @@ import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
 
-import {
-  GALLERY_LIST_URL,
-  GALLERY_STATE_FILE,
-  IMAGES_DIR,
-  LOG_DIR,
-  PROJECT_ROOT,
-  SESSION,
-} from '../../core/config.js'
+import { config as loadDotenv } from 'dotenv'
+
+import type { ConfigValues, SiteConfig } from '../../core/config-read.js'
+import { galleryListUrlOf, PROJECT_ROOT, readConfig, siteConfig } from '../../core/config-read.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import type { ConsoleRunState } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console-config.js'
+import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
 import { missingPrerequisites, tsxEntryPath } from './prerequisites.js'
@@ -72,15 +72,42 @@ interface ConsoleOptions {
 const WEB_ROOT = path.resolve(import.meta.dirname, '..')
 
 /** The Console's configuration, built here and injected into the service. */
-function consoleConfig(): ConsoleConfig {
+function consoleConfig(values: ConfigValues | null, site: SiteConfig): ConsoleConfig {
   return {
     projectRoot: PROJECT_ROOT,
-    imagesDir: IMAGES_DIR,
-    logDir: LOG_DIR,
-    galleryStateFile: GALLERY_STATE_FILE,
+    imagesDir: site.imagesDir,
+    logDir: site.logDir,
+    galleryStateFile: site.galleryStateFile,
     distDir: path.join(WEB_ROOT, DIST_DIR_NAME),
-    galleryListEndpoint: GALLERY_LIST_URL,
+    // Absent when there is no usable `.env`: the Gallery list is then "not read"
+    // and `/api/status` reports that a Run cannot be configured yet (#57).
+    galleryListEndpoint: values === null ? null : galleryListUrlOf(values.BASE_ORIGIN),
   }
+}
+
+/**
+ * Read the project's own `.env` — the file `prerequisites.ts` checks at start
+ * time — rather than the one in the process's cwd. A Run's configuration is the
+ * repository root's, so the page's ambient setup fact and the start-time
+ * `env-file` refusal have to be talking about the same file. An absent file is
+ * not an error here: it is the state the Console has to boot in.
+ */
+function loadProjectEnv(): void {
+  loadDotenv({ path: path.join(PROJECT_ROOT, '.env'), quiet: true })
+}
+
+/**
+ * The Gallery list source for the injected configuration.
+ *
+ * With no endpoint there is nothing to ask: the source answers the contract's
+ * "not read" without making a request, which is the same answer a configured
+ * Console gives when its read fails. No URL is ever built from a missing origin.
+ */
+function galleryListSource(endpoint: string | null): GalleryListSource {
+  if (endpoint === null) return { get: async () => null }
+  return createGalleryListSource({
+    fetchList: () => fetchGalleryList({ endpoint }),
+  })
 }
 
 /**
@@ -242,16 +269,21 @@ function installStopHandlers(deps: StopDeps): void {
 }
 
 async function main(options: ConsoleOptions): Promise<void> {
-  const config = consoleConfig()
+  // The tolerant read (#57): the Console boots on no `.env`, an unparsable one or
+  // one missing required keys. All three come out as `null`, and everything below
+  // still has the defaults it needs. The Run keeps its own fail-fast — it is the
+  // pipeline that parses strictly, not this entry point.
+  loadProjectEnv()
+  const values = readConfig(process.env)
+  const site = siteConfig(PROJECT_ROOT, values)
+  const config = consoleConfig(values, site)
   await ensureBundle(config)
 
   // One cached read of the Gallery list serves both `/api/status` (its
   // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
   // polls, so the endpoint is read once per TTL, and a refused read is
   // remembered rather than retried once per request (spec decision 19; #33).
-  const galleryList = createGalleryListSource({
-    fetchList: () => fetchGalleryList({ endpoint: config.galleryListEndpoint }),
-  })
+  const galleryList = galleryListSource(config.galleryListEndpoint)
 
   // Run control (#34, #36). The launcher owns the child; the log source reads
   // the Runs — its own and the ones a terminal started — from the Run log
@@ -299,7 +331,7 @@ async function main(options: ConsoleOptions): Promise<void> {
   const cleanupRun = createRunCleaner({
     // Never clean under a live Run; that is the one refusal (ADR 0009).
     isRunInFlight: () => runLogSource.facts().state === 'running',
-    closeBrowserSession: createBrowserSessionCloser({ sessionName: SESSION }),
+    closeBrowserSession: createBrowserSessionCloser({ sessionName: site.sessionName }),
     acknowledgeOrphan: () => runLogSource.acknowledgeOrphan(),
   })
 

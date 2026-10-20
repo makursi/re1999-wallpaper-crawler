@@ -94,15 +94,26 @@ function fixture(): ConsoleConfig {
   return config
 }
 
-async function serve(overrides: Partial<ConsoleServerDeps> = {}): Promise<ConsoleService> {
-  const service = await startConsoleServer(fixture(), {
-    runState: () => IDLE_RUN_FACTS,
-    galleryFacts: () => UNREAD_GALLERY_FACTS,
-    startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
-    token: TOKEN,
-    port: 0,
-    ...overrides,
-  })
+/**
+ * Serve one fixture. `configOverrides` is for the cases a route has to answer
+ * differently because of the configuration value the entry point injected — #57
+ * boots with no Gallery list endpoint at all.
+ */
+async function serve(
+  overrides: Partial<ConsoleServerDeps> = {},
+  configOverrides: Partial<ConsoleConfig> = {},
+): Promise<ConsoleService> {
+  const service = await startConsoleServer(
+    { ...fixture(), ...configOverrides },
+    {
+      runState: () => IDLE_RUN_FACTS,
+      galleryFacts: () => UNREAD_GALLERY_FACTS,
+      startRun: async () => ({ started: false, refusal: { code: 'run-busy', missing: [] } }),
+      token: TOKEN,
+      port: 0,
+      ...overrides,
+    },
+  )
   openServices.push(service)
   return service
 }
@@ -180,8 +191,25 @@ describe('GET /api/status', () => {
       // newest Run report with whether the log carries a report record at all.
       verdictReasons: null,
       listAvailable: false,
+      // The fixture's configuration carries an endpoint, so a Run can start.
+      runConfigAvailable: true,
       report: null,
       reportPresent: false,
+    })
+  })
+
+  it('reports that a Run’s configuration is unavailable when the configuration has no endpoint', async () => {
+    // #57: the entry point leaves the Gallery list endpoint absent when there is
+    // no usable `.env`; the page learns it from the status, not from a refused
+    // start, and the Gallery half still reads "not read".
+    const service = await serve({}, { galleryListEndpoint: null })
+
+    const response = await fetch(`${service.origin}/api/status?token=${TOKEN}`)
+
+    expect(await response.json()).toMatchObject({
+      runConfigAvailable: false,
+      officialTotal: null,
+      listAvailable: false,
     })
   })
 
