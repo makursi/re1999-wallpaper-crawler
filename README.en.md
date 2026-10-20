@@ -2,7 +2,7 @@
 
 [中文](README.md) | **English**
 
-The tool downloads every wallpaper from the [official gallery](https://re.bluepoch.com/home/detail.html#wallpaper) to your computer and shows them on one page. The service runs on your machine only; other devices cannot reach it.
+The tool downloads every wallpaper from the [official gallery](https://re.bluepoch.com/home/detail.html#wallpaper) to your computer and shows them on one page. The service runs locally only; other devices cannot reach it.
 
 ![The wallpaper wall](docs/screenshots/console-en.webp)
 
@@ -22,7 +22,7 @@ pnpm install
 pnpm webui
 ```
 
-The terminal prints one address, and the browser opens it:
+The browser opens:
 
 ```
 WebUI: http://127.0.0.1:8791/?token=…
