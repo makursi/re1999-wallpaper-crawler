@@ -6,224 +6,55 @@
 // (spec decision 13), because a page the owner happens to be visiting must not
 // be able to start a Run on their machine.
 //
+// **What the router owns, and what it does not.** Method-and-path dispatch and
+// URL parsing are a library's job, and `@hono/node-server` runs a standard
+// `Request`→`Response` app on Node's `http` server. Everything else is ours and
+// stays ours: the token / `Host` / `Origin` guard (`http/guard.ts`, one
+// middleware above every route), the built page's markup and its stylesheet's
+// `url()` rewrites (`http/token-rewrite.ts`, which no static-file helper can do
+// — it maps a path to bytes and streams them), the four response shapes
+// (`http/respond.ts`, because the page's tests assert exact header strings that
+// a framework's defaults would rewrite), and the port fallback below.
+//
+// Nothing here decides what a status code means. Each route module gathers
+// inputs and hands them to the module that decides — `status.ts`,
+// `gallery-view.ts`, `run-control.ts` — and the response is built from that
+// decision. A reader auditing "does the transport make decisions?" reads
+// `routes/` and finds none.
+//
 // Everything the server needs arrives by injection (spec decision 29): the
-// configuration value and the three readers. `web/server/console.ts` is the only
-// place that reads `core/config.ts`, which is what keeps `tests/**` free of a
-// `.env`.
+// configuration value and the readers. `web/server/console.ts` is the only place
+// that reads `core/config.ts`, which is what keeps `tests/**` free of a `.env`.
 
-import { timingSafeEqual } from 'node:crypto'
-import * as fs from 'node:fs'
-import * as http from 'node:http'
-import * as path from 'node:path'
+import { createAdaptorServer } from '@hono/node-server'
+import type { ServerType } from '@hono/node-server'
+import { Hono } from 'hono'
 
-import { IMAGE_EXTENSIONS, isWallpaperFile } from '../../core/wallpaper-url.js'
-import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
-import type { GalleryListSource } from './gallery-list-source.js'
-import { buildGalleryView, toGalleryPayload } from './gallery-view.js'
-import type { ImageSizeReader } from './image-sizes.js'
-import { imageSizesOf } from './image-sizes.js'
-import { resolveMirrorFile, MIRROR_REFUSALS } from './mirror-files.js'
-import { countMirrorNames, countMirrorWallpapers, readMirrorNames } from './mirror.js'
-import type { ConsoleGalleryFacts, ConsoleRunFacts } from './status.js'
-import { buildStatus } from './status.js'
+import type { ConsoleServerDeps, ConsoleService, ServiceRuntime } from './http/deps.js'
+import { authGuard } from './http/guard.js'
+import { json } from './http/respond.js'
+import { registerGalleryRoute } from './routes/gallery.js'
+import { registerImageRoutes } from './routes/images.js'
+import { registerRunRoutes } from './routes/run.js'
+import { registerStaticRoutes } from './routes/static.js'
+import { registerStatusRoute } from './routes/status.js'
 
-/**
- * What a start request answers. Declared here so #34 implements one shape: the
- * body is the page's `ConsoleRunStartPayload`, and `status` is the HTTP status
- * the refusal carries (409 when a Run is already in flight, 412 when a global
- * prerequisite is missing).
- */
-export interface RunStartResult extends ConsoleRunStartPayload {
-  status?: number
-}
+// The contract keeps its address: tests and the entry point import these from
+// `web/server/server.js` exactly as they always have, so moving the transport's
+// internals never moves the seam.
+export type {
+  ConsoleServerDeps,
+  ConsoleService,
+  RunCleaner,
+  RunCleanupResult,
+  RunStartResult,
+  RunStarter,
+  ThumbnailSource,
+} from './http/deps.js'
 
-/** Starts a Run (spec decision 6). #32 fixes the seam; #34 implements it. */
-export type RunStarter = () => Promise<RunStartResult>
-
-/**
- * What a cleanup request answers (#36). `cleaned: false` is a refusal — only a
- * Run in flight refuses one — and `status` is the HTTP status it carries (409).
- */
-export interface RunCleanupResult extends ConsoleRunCleanupPayload {
-  status?: number
-}
-
-/** Cleans an Orphaned Run up (ADR 0009). #36 implements it. */
-export type RunCleaner = () => Promise<RunCleanupResult>
-
-/**
- * Image bytes for one thumbnail, generated — or read back from the cache —
- * after the request has been validated (#35).
- *
- * Injected like every other outside touch (spec decision 29), for one specific
- * reason: the image library's native addon may be absent or broken, and a test
- * must be able to assert the 500 that follows without owning that failure mode.
- * `web/server/console.ts` — the composition root — builds the real one; a service given
- * none answers a named 500 rather than crashing.
- */
-export interface ThumbnailSource {
-  thumbnail: (name: string, sourceFile: string) => Promise<Buffer>
-}
-
-export interface ConsoleServerDeps {
-  /** The status's Run half. #32 injects the idle state; #34/#36 read the log. */
-  runState: () => ConsoleRunFacts
-  /** The status's Gallery half. #32 injects "not read"; #33 fetches the list. */
-  galleryFacts: () => ConsoleGalleryFacts | Promise<ConsoleGalleryFacts>
-  /** The Run starter (`createRunStarter`): `POST /api/run`'s whole answer. */
-  startRun: RunStarter
-  /**
-   * The Orphaned Run cleanup (`createRunCleaner`): `POST /api/run/cleanup`'s
-   * whole answer (#36).
-   *
-   * Optional on purpose: a service without Run control — #32's shape and its
-   * tests — has no cleanup to offer, and the honest answer to that route is
-   * `404`, not a no-op that claims it cleaned something.
-   */
-  cleanupRun?: RunCleaner
-  /**
-   * Whether a Run's site configuration is usable *now* (#60).
-   *
-   * `/api/status` carries it as `runConfigAvailable`, and the page shows its
-   * setup notice while it is `false`. The entry point injects a fresh read of
-   * the repository's `.env` — the same predicate the start's `env-file` refusal
-   * makes — so creating the file clears the notice on the next status read
-   * instead of requiring a Console restart.
-   *
-   * Optional on purpose: a service given only a configuration value (a test, or
-   * a service with no Run control) falls back to #57's boot fact, which is the
-   * truthful answer for that service.
-   */
-  runConfigAvailable?: () => boolean
-  /** This start's access token, generated per start and never persisted. */
-  token: string
-  /** The port to prefer; `0` asks the OS for one (tests). */
-  port: number
-  /**
-   * The cached Gallery list `GET /api/gallery` reads (#33). The entry injects
-   * the same source behind `galleryFacts`, so the two routes cannot disagree
-   * about whether the list was read.
-   *
-   * Optional on purpose: a service that only answers `/api/status` — #32's
-   * shape and its tests — legitimately has no list, and the gallery route's
-   * honest answer to that is the degraded view ("the list was not read"), not
-   * a 500 and not a fabricated empty list.
-   */
-  galleryList?: GalleryListSource
-  /**
-   * The newest Run report's `gallery.newSinceLastRun` (#33): read from the log
-   * the same way `check-run` picks it, never recomputed from the Gallery state
-   * (recomputing gives 0). Absent or `null` = nothing to report.
-   */
-  newSinceLastRun?: () => number | null
-  /**
-   * The thumbnail generator (#35). `web/server/console.ts` injects the real one;
-   * absent means "this service cannot render", which the route answers as a
-   * named 500 — never a crash and never a 404.
-   */
-  thumbnailSource?: ThumbnailSource
-  /**
-   * The Wallpapers' own pixel sizes, as the Mirror's files hold them (#48).
-   *
-   * The wall is masonry and its columns are balanced against heights, so the
-   * page needs each tile's proportion *before* the lazy thumbnail arrives —
-   * otherwise every image that loads re-balances the wall under the reader's
-   * cursor. `web/server/console.ts` injects the measurement, memoised per file
-   * for the process's life.
-   *
-   * Optional on purpose: a service given none (and #32's status-only shape) has
-   * no sizes, and the wall falls back to placeholder proportions. A missing
-   * measurement is a slightly less exact column, never an error.
-   */
-  imageSizeSource?: ImageSizeReader
-}
-
-export interface ConsoleService {
-  /** `http://127.0.0.1:<port>` — the authority every request has to present. */
-  origin: string
-  /** The port actually bound, never the requested one (spec decision 3). */
-  port: number
-  /** `true` when the preferred port was taken and the OS assigned another. */
-  fellBack: boolean
-  /** The page's URL with the token on it — what the entry prints and opens. */
-  url: string
-  close: () => Promise<void>
-}
-
-const ASSET_PREFIX = '/assets/'
-const THUMBNAIL_PREFIX = '/api/thumbnail/'
-const THUMBNAIL_ROUTE = '/api/thumbnail'
-const IMAGE_PREFIX = '/api/image/'
-const IMAGE_ROUTE = '/api/image'
-
-/** What a served file's extension means over HTTP. */
-const CONTENT_TYPES: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-}
-
-/**
- * The image routes' answer, for exactly the extensions a Wallpaper can have
- * (`IMAGE_EXTENSIONS`, core/wallpaper-url.ts): derived from `CONTENT_TYPES` so
- * the two tables cannot disagree about what a `.jpg` is, and from the Wallpaper
- * URL set's own list so the routes serve what the pipeline downloads.
- */
-const IMAGE_CONTENT_TYPES: Record<string, string> = Object.fromEntries(
-  IMAGE_EXTENSIONS.map(extension => [extension, CONTENT_TYPES[extension]]),
-)
-
-/** `true` for either image route's path, with or without a name after it. */
-function isImageRoute(pathname: string): boolean {
-  for (const route of [THUMBNAIL_ROUTE, IMAGE_ROUTE]) {
-    if (pathname === route || pathname.startsWith(`${route}/`)) return true
-  }
-  return false
-}
-
-/**
- * The file a gallery row's name stands for, or `null` when the Mirror would not
- * serve it (#48).
- *
- * The same decisive check the image routes make — exact membership in the
- * listing the rows were built from, plus an image name — without the URL
- * decoding those routes need: this name came out of the listing, not out of a
- * URL, so it is already the file's own name and a `%` in it is a `%`.
- */
-function mirrorFilePath(
-  imagesDir: string,
-  listed: ReadonlySet<string>,
-  name: string,
-): string | null {
-  return listed.has(name) && isWallpaperFile(name) ? path.join(imagesDir, name) : null
-}
-
-/**
- * One image response: the bytes, their type, and `nosniff` so a browser cannot
- * decide the type for itself. A year-long cache is honest on both routes — a
- * Wallpaper's name embeds a content hash, and so does the thumbnail derived
- * from it.
- */
-function sendImageBytes(res: http.ServerResponse, bytes: Buffer, contentType: string): void {
-  res.writeHead(200, {
-    'content-type': contentType,
-    'cache-control': 'public, max-age=31536000, immutable',
-    'x-content-type-options': 'nosniff',
-  })
-  res.end(bytes)
-}
+/** Loopback only: there is no `0.0.0.0` form anywhere (spec decision 13). */
+const BIND_HOST = '127.0.0.1'
 
 /**
  * Bind the service. The preferred port is tried first and an OS-assigned one
@@ -235,23 +66,14 @@ export async function startConsoleServer(
   config: ConsoleConfig,
   deps: ConsoleServerDeps,
 ): Promise<ConsoleService> {
-  // The guard needs the bound port, and a request cannot arrive before
-  // `listen` has resolved and this assignment has run.
-  let boundPort = 0
-  const server = http.createServer((req, res) => {
-    // `port` is read here, at request time, because `boundPort` is only known
-    // once `listen` has resolved.
-    handleRequest(req, res, { config, deps, port: boundPort }).catch(() => {
-      // The handler threw before answering: a socket left open would be worse
-      // than a named 500.
-      if (res.headersSent) res.destroy()
-      else sendJson(res, 500, { error: 'the Console failed to answer' })
-    })
-  })
+  // The guard compares `Host` against the bound port, which is not known until
+  // `listen` resolves — so the runtime object is mutable and read per request.
+  const runtime: ServiceRuntime = { config, deps, port: 0 }
+  const app = createApp(runtime)
 
-  const { port, fellBack } = await listenWithFallback(server, deps.port)
-  boundPort = port
-  const origin = `http://127.0.0.1:${port}`
+  const { server, port, fellBack } = await listenWithFallback(app.fetch, deps.port)
+  runtime.port = port
+  const origin = `http://${BIND_HOST}:${port}`
 
   return {
     origin,
@@ -263,466 +85,79 @@ export async function startConsoleServer(
 }
 
 /**
- * What one request needs from the service: the configuration value, the
- * injected readers, and the port actually bound — which is what the guard
- * compares the `Host` header against. The two per-request values (the request
- * and the response) stay positional, so the split between "the service this
- * request reached" and "this request" is visible at the call site.
+ * The application: the guard, then the routes, then the two fallbacks.
+ *
+ * Registration order is the request order — the guard is above everything, and
+ * the not-found handler is the answer for a path no route claimed. A new route
+ * is authenticated by construction rather than by remembering to be.
  */
-interface RequestContext {
-  config: ConsoleConfig
-  deps: ConsoleServerDeps
-  port: number
-}
+function createApp(runtime: ServiceRuntime): Hono {
+  const app = new Hono()
 
-async function handleRequest(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  { config, deps, port }: RequestContext,
-): Promise<void> {
-  if (port === 0) {
-    sendJson(res, 500, { error: 'the Console is not listening' })
-    return
-  }
+  // A handler that threw before answering is a named 500 — never the
+  // framework's own error page, and never a dropped socket.
+  app.onError(() => json(500, { error: 'the Console failed to answer' }))
 
-  // Parse the target as WHATWG URL so plain `..` segments are collapsed before
-  // routing; encoded ones survive and are handled by `sendAsset`.
-  const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
+  app.use('*', authGuard(runtime))
 
-  if (!isAuthorized(req, url, port, deps.token)) {
-    sendJson(res, 403, { error: 'forbidden' })
-    return
-  }
+  registerStatusRoute(app, runtime)
+  registerGalleryRoute(app, runtime)
+  registerImageRoutes(app, runtime)
+  registerRunRoutes(app, runtime)
+  registerStaticRoutes(app, runtime)
 
-  if (url.pathname === '/api/status') {
-    if (req.method !== 'GET') {
-      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
-      return
-    }
-    sendJson(
-      res,
-      200,
-      buildStatus({
-        run: deps.runState(),
-        mirrorCount: countMirrorWallpapers(config.imagesDir),
-        gallery: await deps.galleryFacts(),
-        // #60: read now, not at boot — a `.env` created since the service
-        // started has to clear the page's setup notice on this read. The entry
-        // point injects the same one-file check the start's `env-file` refusal
-        // makes, so the ambient notice and the click path cannot disagree; the
-        // fallback is #57's boot fact for a service given no reader.
-        runConfigAvailable: deps.runConfigAvailable?.() ?? config.galleryListEndpoint !== null,
-      }),
-    )
-    return
-  }
+  // `{ "error": "not found" }` for every unclaimed path, whatever the method —
+  // which is what the surface answered before it had a router, and what the
+  // page's tests still assert.
+  app.notFound(() => json(404, { error: 'not found' }))
 
-  // ── GET /api/gallery (#33, sizes #48) ─────────────────────────────
-  //
-  // The Gallery list read against the Mirror: one row per entry, the Mirror's
-  // extras after them, the gap as set arithmetic, and the newest Run's
-  // `newSinceLastRun`. All the deciding is in the pure `buildGalleryView`; this
-  // block only gathers its inputs.
-  //
-  // The rows' pixel sizes are the masonry's second input (#48): the wall deals
-  // tiles into the shortest column, and the measurement has to be the file's,
-  // because the page would only learn it once the lazy thumbnail arrived. The
-  // measuring runs against the one listing read below, so a name the Mirror no
-  // longer holds is skipped rather than opened.
-  if (url.pathname === '/api/gallery') {
-    if (req.method !== 'GET') {
-      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
-      return
-    }
-    const list = deps.galleryList === undefined ? null : await deps.galleryList.get()
-    // One read of the Mirror, so the rows and the count cannot describe two
-    // different directories — and so the sizes are measured against exactly the
-    // names those rows came from.
-    const diskFiles = readMirrorNames(config.imagesDir)
-    const view = buildGalleryView({
-      list,
-      diskFiles,
-      newSinceLastRun: deps.newSinceLastRun?.() ?? null,
-    })
-    const sizeSource = deps.imageSizeSource
-    // The listing as a set: one membership test per row, not one scan per row.
-    const listed = new Set(diskFiles)
-    const sizes =
-      sizeSource === undefined
-        ? {}
-        : await imageSizesOf(
-            // Only a row with a file can be measured: a `missing` row is a
-            // Gallery entry the Mirror does not hold.
-            view.rows.filter(row => row.state !== 'missing').map(row => row.name),
-            name => mirrorFilePath(config.imagesDir, listed, name),
-            sizeSource,
-          )
-    sendJson(res, 200, toGalleryPayload(view, countMirrorNames(diskFiles), sizes))
-    return
-  }
-  // ── end GET /api/gallery ──────────────────────────────────────────
-
-  // ── GET /api/thumbnail/<name> and GET /api/image/<name> (#35) ─────
-  //
-  // Two routes, one block, because they share the whole of their safety: the
-  // name comes from the URL, `resolveMirrorFile` is what turns it into a path
-  // (or a refusal), and that resolution — not the image library — is what the
-  // 404/500 boundary is made of. A well-formed name that is not in the Mirror
-  // is a missing file; only a name that resolved can fail to render.
-  if (isImageRoute(url.pathname)) {
-    const isThumbnail = url.pathname.startsWith(THUMBNAIL_PREFIX)
-    if (req.method !== 'GET') {
-      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'GET' })
-      return
-    }
-
-    // The token is already checked: `isAuthorized` refuses an absent, wrong,
-    // foreign or misdirected request before any route is reached.
-    const prefix = isThumbnail ? THUMBNAIL_PREFIX : IMAGE_PREFIX
-    // `/api/image` with no name is an empty name, which the resolver refuses —
-    // the route does not need its own case for it.
-    const name = url.pathname.length <= prefix.length ? '' : url.pathname.slice(prefix.length)
-    const resolved = resolveMirrorFile(config.imagesDir, name)
-    if (!resolved.ok) {
-      // A malformed name and a name that is merely not there are different
-      // answers: 400 says the request was wrong, 404 says the Wallpaper is not
-      // in the Mirror. The invalid-name message never carries a path.
-      sendJson(
-        res,
-        resolved.reason === MIRROR_REFUSALS.notListed ? 404 : 400,
-        resolved.reason === MIRROR_REFUSALS.notListed
-          ? { error: 'missing file' }
-          : { error: 'invalid name' },
-      )
-      return
-    }
-
-    const extension = path.extname(resolved.path).toLowerCase()
-    const contentType = IMAGE_CONTENT_TYPES[extension] ?? 'application/octet-stream'
-    if (!isThumbnail) {
-      sendImageBytes(res, fs.readFileSync(resolved.path), contentType)
-      return
-    }
-
-    if (deps.thumbnailSource === undefined) {
-      // A service that cannot render (a broken native binary surfaces as a
-      // rejected dynamic import at this very call site) answers a named 500;
-      // the route survives and the next request retries.
-      sendJson(res, 500, { error: 'thumbnail failed' })
-      return
-    }
-    let bytes: Buffer
-    try {
-      bytes = await deps.thumbnailSource.thumbnail(path.basename(resolved.path), resolved.path)
-    } catch {
-      sendJson(res, 500, { error: 'thumbnail failed' })
-      return
-    }
-    sendImageBytes(res, bytes, contentType)
-    return
-  }
-  // ── end GET /api/thumbnail/<name> and GET /api/image/<name> ───────
-
-  // ── POST /api/run (#34) ───────────────────────────────────────────
-  //
-  // The answer is only whether the start was accepted, and why it was refused:
-  // a Run's identity is its Run log, never this handle, so the next
-  // `/api/status` reports it from the log directory and a Run started from a
-  // terminal looks identical (spec decision 7). The refusals are the two the
-  // page can act on — 409 for a Run already in flight, 412 with the missing
-  // prerequisite's name — and the starter decides which (run-control.ts).
-  if (url.pathname === '/api/run') {
-    if (req.method !== 'POST') {
-      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'POST' })
-      return
-    }
-    const result = await deps.startRun()
-    const payload: ConsoleRunStartPayload = { started: result.started, refusal: result.refusal }
-    sendJson(res, result.status ?? (result.started ? 202 : 409), payload)
-    return
-  }
-  // ── end POST /api/run ─────────────────────────────────────────────
-
-  // ── POST /api/run/cleanup (#36) ───────────────────────────────────
-  //
-  // The one route this ticket adds to the spec's list, and added on purpose: an
-  // Orphaned Run is a first-class state (ADR 0009), so the page that reports it
-  // has to be able to clear it. The cleanup does two things and no more —
-  // closes the leftover Browser session and acknowledges the log's claim in
-  // memory. It never deletes or rewrites a Run log: the log is the audit trail
-  // (ADR 0007) and the Console does not own it, so cleaning up removes the
-  // claim that a Run may still be writing, not the record that it ran.
-  if (url.pathname === '/api/run/cleanup') {
-    if (req.method !== 'POST') {
-      sendJson(res, 405, { error: 'method not allowed' }, { allow: 'POST' })
-      return
-    }
-    if (deps.cleanupRun === undefined) {
-      sendJson(res, 404, { error: 'not found' })
-      return
-    }
-    const cleaned = await deps.cleanupRun()
-    const payload: ConsoleRunCleanupPayload = {
-      cleaned: cleaned.cleaned,
-      refusal: cleaned.refusal,
-    }
-    sendJson(res, cleaned.status ?? (cleaned.cleaned ? 200 : 409), payload)
-    return
-  }
-  // ── end POST /api/run/cleanup ─────────────────────────────────────
-
-  if (req.method !== 'GET') {
-    sendJson(res, 404, { error: 'not found' })
-    return
-  }
-
-  if (url.pathname === '/' || url.pathname === '/index.html') {
-    sendPage(res, config.distDir, deps.token)
-    return
-  }
-
-  if (url.pathname.startsWith(ASSET_PREFIX)) {
-    sendAsset(res, config.distDir, url.pathname, deps.token)
-    return
-  }
-
-  sendJson(res, 404, { error: 'not found' })
+  return app
 }
 
 /**
- * The request guard (spec decision 13).
+ * Listen on the preferred port, or on an OS-assigned one if it is taken.
  *
- * 1. **Host** has to be the authority the service bound — the DNS-rebinding
- *    defence, because an attacker's page can point its own hostname at
- *    127.0.0.1 and would then send *its* authority, not ours.
- * 2. **Origin**, when present, has to be this service's own origin. An absent
- *    one is the page's normal case, not a refusal: a top-level navigation and
- *    every `<script>`, `<img>` and same-origin `fetch` GET send no `Origin` at
- *    all, so requiring one would refuse the Console itself.
- * 3. **Token** has to be the one this start generated. It is the only defence
- *    a `no-cors` GET or a markup subresource leaves, so it is required on
- *    every request, assets included — which is why `sendPage` rewrites the
- *    built page's asset URLs to carry it, and `rewriteStylesheet` does the same
- *    for the `url()` references inside the built stylesheet, which a browser
- *    does not resolve with the stylesheet's own query string.
+ * `createAdaptorServer` rather than `serve`: the listen / error / listening
+ * dance is the one place `EADDRINUSE` and `EACCES` have to be told apart from a
+ * real failure, and this shape keeps that decision readable.
  */
-function isAuthorized(req: http.IncomingMessage, url: URL, port: number, token: string): boolean {
-  const host = (req.headers.host ?? '').toLowerCase()
-  if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return false
-
-  const origin = req.headers.origin
-  if (
-    origin !== undefined &&
-    origin !== `http://127.0.0.1:${port}` &&
-    origin !== `http://localhost:${port}`
-  ) {
-    return false
-  }
-
-  return secretMatches(url.searchParams.get('token') ?? '', token)
-}
-
-/**
- * Constant-time comparison with this start's token. `timingSafeEqual` throws on
- * a length mismatch, so the lengths are compared first — a token's length is
- * not the secret worth keeping.
- */
-function secretMatches(presented: string, expected: string): boolean {
-  const a = Buffer.from(presented)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
-
-/**
- * Serve the built page's `index.html` with the token appended to every asset URL
- * Vite emitted.
- *
- * Why the rewrite: the guard requires the token on every request, and a
- * `<script>` or `<link>` cannot attach a query string of its own. So the
- * Console opens `http://127.0.0.1:<port>/?token=<t>`, the service puts the
- * same token on `./assets/index-<hash>.js` and `./assets/index-<hash>.css` on
- * the way out, and the page reads the token from its own URL and appends it to
- * every `fetch` it makes. That is the whole mechanism: no cookie, nothing
- * persisted, and no route prefix — the API routes stay exactly as the spec
- * lists them.
- */
-function sendPage(res: http.ServerResponse, distDir: string, token: string): void {
-  let html: string
-  try {
-    html = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8')
-  } catch {
-    sendJson(res, 404, { error: 'the page has not been built' })
-    return
-  }
-
-  const body = html.replace(
-    /(src|href)="\.\/(assets\/[^"]+)"/g,
-    (_match, attribute: string, assetPath: string) =>
-      `${attribute}="${withToken(`./${assetPath}`, token)}"`,
-  )
-
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' })
-  res.end(body)
-}
-
-/**
- * Append this start's token to one relative reference — the one place the
- * rewrite's two halves (the page's markup and the stylesheet's `url()`) agree on
- * what "carry the token" means.
- *
- * `?` when the reference has no query, `&` when it already has one, and
- * unchanged when it already carries a `token` parameter — so a second pass over
- * the same reference cannot produce `?token=…?token=…` or `?v=2?token=…`.
- *
- * A `#fragment` stays last: `url(./sprite.svg#icon)` has to become
- * `./sprite.svg?token=<t>#icon`, because a browser never sends a fragment to the
- * server and a token placed after the `#` would arrive as nothing at all.
- */
-function withToken(reference: string, token: string): string {
-  const hash = reference.indexOf('#')
-  const target = hash === -1 ? reference : reference.slice(0, hash)
-  const fragment = hash === -1 ? '' : reference.slice(hash)
-
-  const query = target.indexOf('?')
-  if (query !== -1) {
-    const parameters = new URLSearchParams(target.slice(query + 1))
-    if (parameters.has('token')) return reference
-  }
-  const separator = query === -1 ? '?' : '&'
-  return `${target}${separator}token=${encodeURIComponent(token)}${fragment}`
-}
-
-/**
- * The `url()` references a stylesheet resolves itself, in either quoting style:
- * `url(./x.woff2)`, `url("./x.woff2")` and `url('./x.woff2')`.
- *
- * Only `./`-relative references are matched. That is exactly what Vite emits
- * with `base: './'`, and it is what leaves the other three forms a stylesheet
- * can hold untouched: an absolute `url(https://…)`, an inline `url(data:…)` and
- * a document fragment `url(#mask)` — none of which a token belongs on.
- */
-const CSS_URL_REFERENCE = /url\(\s*(?:(["'])\.\/([^"']*)\1|\.\/([^)"'\s]*))\s*\)/g
-
-/**
- * Serve a stylesheet with the token appended to every relative `url()` it
- * embeds, for the same reason the page's markup gets one — and one the page's
- * rewrite cannot reach.
- *
- * A browser resolving a relative `url()` inside a stylesheet does **not**
- * inherit the stylesheet's own query string: it resolves against the
- * stylesheet's URL with the query dropped. So `index-<hash>.css?token=<t>`
- * pointing at `url(./font.woff2)` made the browser request
- * `/assets/font.woff2` with no token, and the guard refused all 16 webfonts
- * while `document.fonts` reported 110 declared faces and none loaded. The
- * token has to be written into the reference itself.
- *
- * This covers every asset a stylesheet can embed, not just fonts: a
- * `background-image`, a mask, a cursor — anything `url()` can name.
- */
-function rewriteStylesheet(css: string, token: string): string {
-  return css.replace(
-    CSS_URL_REFERENCE,
-    (match: string, quote: string, quoted: string, bare: string) => {
-      const reference = quoted === undefined ? bare : quoted
-      const rewritten = withToken(`./${reference}`, token)
-      // Keep the reference's original quoting, so the served stylesheet differs
-      // from the built one only in the token.
-      return quote === undefined ? `url(${rewritten})` : `url(${quote}${rewritten}${quote})`
-    },
-  )
-}
-
-/** Serve one built asset from the page's `assets/`, refusing anything outside it. */
-function sendAsset(
-  res: http.ServerResponse,
-  distDir: string,
-  pathname: string,
-  token: string,
-): void {
-  const assetsDir = path.join(distDir, 'assets')
-  let name: string
-  try {
-    name = decodeURIComponent(pathname.slice(ASSET_PREFIX.length))
-  } catch {
-    sendJson(res, 404, { error: 'not found' })
-    return
-  }
-
-  // Containment, not a name pattern: `new URL` collapses plain `..`, and an
-  // encoded `%2e%2e%2f` survives it, so the decoded name is resolved and then
-  // checked to still be under the built page's `assets/`.
-  const file = path.resolve(assetsDir, name)
-  if (!file.startsWith(assetsDir + path.sep)) {
-    sendJson(res, 404, { error: 'not found' })
-    return
-  }
-
-  let body: Buffer
-  try {
-    body = fs.readFileSync(file)
-  } catch {
-    sendJson(res, 404, { error: 'not found' })
-    return
-  }
-
-  const contentType = CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream'
-  // A stylesheet is the one asset that names other assets, and the browser will
-  // not lend it its query string — so its references are handed the token here.
-  const payload = contentType.startsWith('text/css')
-    ? rewriteStylesheet(body.toString('utf8'), token)
-    : body
-
-  res.writeHead(200, {
-    'content-type': contentType,
-    // Vite's asset names carry a content hash, so a year-long cache is honest.
-    'cache-control': 'public, max-age=31536000, immutable',
-    'x-content-type-options': 'nosniff',
-  })
-  res.end(payload)
-}
-
-function sendJson(
-  res: http.ServerResponse,
-  status: number,
-  payload: unknown,
-  headers: Record<string, string> = {},
-): void {
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-    ...headers,
-  })
-  res.end(JSON.stringify(payload))
-}
-
 async function listenWithFallback(
-  server: http.Server,
+  fetch: Hono['fetch'],
   preferredPort: number,
-): Promise<{ port: number; fellBack: boolean }> {
+): Promise<{ server: ServerType; port: number; fellBack: boolean }> {
   try {
-    await listenOnce(server, preferredPort)
-    return { port: boundPortOf(server), fellBack: false }
+    const server = await listenOnce(fetch, preferredPort)
+    return { server, port: boundPortOf(server), fellBack: false }
   } catch (error) {
     if (!isUnbindable(error)) throw error
-    await listenOnce(server, 0)
-    return { port: boundPortOf(server), fellBack: true }
+    const server = await listenOnce(fetch, 0)
+    return { server, port: boundPortOf(server), fellBack: true }
   }
 }
 
-function listenOnce(server: http.Server, port: number): Promise<void> {
+function listenOnce(fetch: Hono['fetch'], port: number): Promise<ServerType> {
+  // The adapter's `hostname` option is real but undocumented — it exists only in
+  // the package's type declarations — so it is named here once rather than
+  // spread through the module. The adapter's `fetch` takes the Node bindings as
+  // a second argument; Hono's does not, so this hands it the request alone.
+  const server = createAdaptorServer({
+    fetch: request => fetch(request),
+    hostname: BIND_HOST,
+  })
+
   return new Promise((resolve, reject) => {
     const onError = (error: Error): void => {
       server.off('listening', onListening)
+      server.close()
       reject(error)
     }
     const onListening = (): void => {
       server.off('error', onError)
-      resolve()
+      resolve(server)
     }
     server.once('error', onError)
     server.once('listening', onListening)
-    // Loopback only: there is no `0.0.0.0` form anywhere (spec decision 13).
-    server.listen(port, '127.0.0.1')
+    server.listen(port, BIND_HOST)
   })
 }
 
@@ -733,16 +168,18 @@ function isUnbindable(error: unknown): boolean {
   return code === 'EADDRINUSE' || code === 'EACCES'
 }
 
-function boundPortOf(server: http.Server): number {
+function boundPortOf(server: ServerType): number {
   const address = server.address()
   if (address === null || typeof address === 'string') return 0
   return address.port
 }
 
-function closeServer(server: http.Server): Promise<void> {
+function closeServer(server: ServerType): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Keep-alive connections would otherwise hold `close()` open.
-    server.closeAllConnections()
+    // Keep-alive connections would otherwise hold `close()` open. The adapter's
+    // type is the union of the HTTP/1 and HTTP/2 servers it can build, and only
+    // the HTTP/1 one — the one this service asks for — has `closeAllConnections`.
+    if ('closeAllConnections' in server) server.closeAllConnections()
     server.close(error => (error === undefined ? resolve() : reject(error)))
   })
 }
