@@ -2,12 +2,17 @@
 //
 // The one command: build the page if it is not on disk, start the loopback
 // service, print the URL it bound and open it in the default browser. It reads
-// the project's `.env` through `core/config-read.ts` — the non-throwing half of
-// the schema `core/config.ts` parses eagerly for the pipeline — and injects a
-// configuration value, so nothing under `web/server/` ever reads the environment
-// and `tests/**` keeps needing no `.env` (spec decision 29). A missing or broken
-// `.env` is not fatal here: the Console boots, says a Run cannot be configured
-// yet, and leaves the failing fast to the Run (#57).
+// the project's `.env` through `core/config-read.ts`'s file-reading predicate —
+// the same schema `core/config.ts` parses eagerly for the pipeline — and injects
+// a configuration value, so nothing under `web/server/` ever reads the
+// environment and `tests/**` keeps needing no `.env` (spec decision 29). A
+// missing or broken `.env` is not fatal here: the Console boots, says a Run
+// cannot be configured yet, and leaves the failing fast to the Run (#57).
+//
+// The Console deliberately never loads `.env` into `process.env`: dotenv does
+// not override, so a value that was wrong at boot would shadow a corrected file
+// forever and the setup notice could never clear without a restart (#60). The
+// Run is unaffected — it reads its own `.env` from its working directory.
 //
 // ADR 0008: no dispatcher and no CLI framework. The Console takes `--port` and
 // `--no-open` and nothing more; the flags are parsed by Node's own parser.
@@ -20,10 +25,13 @@ import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
 
-import { config as loadDotenv } from 'dotenv'
-
 import type { ConfigValues, SiteConfig } from '../../core/config-read.js'
-import { galleryListUrlOf, PROJECT_ROOT, readConfig, siteConfig } from '../../core/config-read.js'
+import {
+  galleryListUrlOf,
+  PROJECT_ROOT,
+  readProjectConfig,
+  siteConfig,
+} from '../../core/config-read.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import type { ConsoleRunState } from '../api-types.js'
@@ -83,17 +91,6 @@ function consoleConfig(values: ConfigValues | null, site: SiteConfig): ConsoleCo
     // and `/api/status` reports that a Run cannot be configured yet (#57).
     galleryListEndpoint: values === null ? null : galleryListUrlOf(values.BASE_ORIGIN),
   }
-}
-
-/**
- * Read the project's own `.env` — the file `prerequisites.ts` checks at start
- * time — rather than the one in the process's cwd. A Run's configuration is the
- * repository root's, so the page's ambient setup fact and the start-time
- * `env-file` refusal have to be talking about the same file. An absent file is
- * not an error here: it is the state the Console has to boot in.
- */
-function loadProjectEnv(): void {
-  loadDotenv({ path: path.join(PROJECT_ROOT, '.env'), quiet: true })
 }
 
 /**
@@ -269,12 +266,13 @@ function installStopHandlers(deps: StopDeps): void {
 }
 
 async function main(options: ConsoleOptions): Promise<void> {
-  // The tolerant read (#57): the Console boots on no `.env`, an unparsable one or
-  // one missing required keys. All three come out as `null`, and everything below
-  // still has the defaults it needs. The Run keeps its own fail-fast — it is the
-  // pipeline that parses strictly, not this entry point.
-  loadProjectEnv()
-  const values = readConfig(process.env)
+  // The tolerant, file-reading read (#57, #60): the project's `.env`, parsed and
+  // validated through the full schema with the process environment merged over
+  // it. An absent file, an unparsable one or a malformed value all come out as
+  // `null`, and everything below still has the defaults it needs. The file is
+  // deliberately not loaded into `process.env` — dotenv does not override, so a
+  // boot-time load would freeze a wrong value over a corrected file.
+  const values = readProjectConfig(PROJECT_ROOT)
   const site = siteConfig(PROJECT_ROOT, values)
   const config = consoleConfig(values, site)
   await ensureBundle(config)

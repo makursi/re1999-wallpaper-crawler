@@ -1,10 +1,12 @@
+import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { ZodError } from 'zod'
 
 import type { ConfigValues } from '../../core/config-read.js'
-import { parseConfig, readConfig, siteConfig } from '../../core/config-read.js'
+import { parseConfig, readConfig, readProjectConfig, siteConfig } from '../../core/config-read.js'
 
 /** The two keys a Run's `.env` must supply; every other key has a default. */
 const REQUIRED_ENV: NodeJS.ProcessEnv = {
@@ -18,6 +20,23 @@ function valuesOf(env: NodeJS.ProcessEnv = REQUIRED_ENV): ConfigValues {
   if (values === null) throw new Error('the fixture environment must be valid')
   return values
 }
+
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+})
+
+/** A temporary project root holding the given `.env` text, or none at all. */
+function projectRootWith(envText: string | null): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'config-read-'))
+  roots.push(root)
+  if (envText !== null) fs.writeFileSync(path.join(root, '.env'), envText, 'utf8')
+  return root
+}
+
+/** The two lines a minimal usable `.env` carries. */
+const REQUIRED_LINES = `BASE_ORIGIN=${REQUIRED_ENV.BASE_ORIGIN}\nPAGE_PATH=${REQUIRED_ENV.PAGE_PATH}`
 
 describe('readConfig', () => {
   it('reads a complete environment with the schema’s defaults filled in', () => {
@@ -65,6 +84,47 @@ describe('readConfig', () => {
   it('answers “no usable configuration” when a required key is missing', () => {
     expect(readConfig({ BASE_ORIGIN: 'https://re.bluepoch.com' })).toBeNull()
     expect(readConfig({ PAGE_PATH: '/home/detail.html' })).toBeNull()
+  })
+})
+
+describe('readProjectConfig', () => {
+  it('reads a valid .env through the whole schema, defaults included', () => {
+    const root = projectRootWith(REQUIRED_LINES)
+
+    expect(readProjectConfig(root, {})).toEqual(valuesOf())
+  })
+
+  it('answers null for an absent .env rather than throwing', () => {
+    // The fresh clone the Console has to boot on: no file, no throw.
+    expect(readProjectConfig(projectRootWith(null), {})).toBeNull()
+  })
+
+  it.each(['abc', '0'])(
+    'answers null when a defaulted key in the file is malformed (BATCH_SIZE=%s)',
+    batchSize => {
+      // The two required keys are fine; this is the file that used to pass the
+      // two-key check and then die in the Run's own parse (#60).
+      const root = projectRootWith(`${REQUIRED_LINES}\nBATCH_SIZE=${batchSize}`)
+
+      expect(readProjectConfig(root, {})).toBeNull()
+    },
+  )
+
+  it('lets the real environment win over the file, as dotenv/config does', () => {
+    const root = projectRootWith(
+      `BASE_ORIGIN=https://file.example\nPAGE_PATH=/file.html\nBATCH_SIZE=2`,
+    )
+
+    const values = readProjectConfig(root, {
+      BASE_ORIGIN: 'https://shell.example',
+      BATCH_SIZE: '8',
+    })
+
+    expect(values).toMatchObject({
+      BASE_ORIGIN: 'https://shell.example',
+      PAGE_PATH: '/file.html',
+      BATCH_SIZE: 8,
+    })
   })
 })
 

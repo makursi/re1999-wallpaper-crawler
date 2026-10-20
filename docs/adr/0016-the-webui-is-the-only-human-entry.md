@@ -27,9 +27,9 @@ There is one human entry now, and the command line is the agent's interface.
   the Run log is the audit trail (ADR 0007). The newest-Run pick orders by the
   `runId` the name carries, never by the whole file name: a plain string compare
   ranks every `save-wallpapers-…` after every `run-…` (`s` > `r`), so yesterday's
-  legacy log would beat today's. One shared name pair — "is this a Run log" and
-  "which Run does this name belong to" — serves the pick, the verdict's
-  log-to-Run identification and the tests.
+  legacy log would beat today's. One predicate, `logRunIdOf`, answers both "is
+  this a Run log" and "which Run does this name belong to", and serves the pick,
+  the verdict's log-to-Run identification and the tests.
 - The Console boots with no usable `.env` — absent, unparsable or missing a
   required key. The configuration schema has exactly one home,
   `core/config-read.ts`; `core/config.ts` still parses it at import and exports
@@ -43,7 +43,9 @@ There is one human entry now, and the command line is the agent's interface.
 - `runConfigAvailable` — the fact behind that notice — is read per status
   request, not once at boot. It is one file read of `.env` through the same
   predicate the start's `env-file` refusal makes, with no `PATH` scan and no
-  registry lookup. This deliberately supersedes the earlier "boot fact" wording:
+  registry lookup. That predicate validates the whole configuration schema a Run
+  parses, defaulted keys included, so a file it accepts cannot then fail the
+  Run's own parse. This deliberately supersedes the earlier "boot fact" wording:
   a notice that never clears after the user creates the file is worse than one
   cheap file read, and the ambient notice and the click path cannot disagree.
 - The Console writes nothing into the repository root. It reads `.env`, the

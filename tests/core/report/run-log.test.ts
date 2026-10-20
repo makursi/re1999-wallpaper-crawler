@@ -8,7 +8,6 @@ import type { RunReport } from '../../../core/report/report.js'
 import type { RunDefects, FileProbe } from '../../../core/report/run-log.js'
 import {
   assessRun,
-  isRunLogName,
   logRunIdOf,
   parseRunReport,
   runReportRecordPresent,
@@ -191,24 +190,13 @@ describe('logRunIdOf', () => {
   it('returns null for a name that is not a Run log', () => {
     expect(logRunIdOf('save-wallpapers.jsonl')).toBeNull()
     expect(logRunIdOf('run.jsonl')).toBeNull()
+    expect(logRunIdOf('run-.jsonl')).toBeNull()
     expect(logRunIdOf('notes.jsonl')).toBeNull()
     expect(logRunIdOf('run-2026-10-18T01-03-31.jsonl.bak')).toBeNull()
     expect(logRunIdOf('save-wallpapers-2026-10-18T01-03-31.jsonl.bak')).toBeNull()
     // Only a whole-name match counts: the runId is not plucked out of anything
     // that merely contains a prefix.
     expect(logRunIdOf('my-run-2026-10-18T01-03-31.jsonl')).toBeNull()
-  })
-})
-
-describe('isRunLogName', () => {
-  it('accepts both prefixes and nothing else', () => {
-    expect(isRunLogName('run-2026-10-18T01-03-31.jsonl')).toBe(true)
-    expect(isRunLogName('save-wallpapers-2026-10-18T01-03-31.jsonl')).toBe(true)
-
-    expect(isRunLogName('notes.jsonl')).toBe(false)
-    expect(isRunLogName('run-.jsonl')).toBe(false)
-    expect(isRunLogName('run-2026-10-18T01-03-31.jsonl.bak')).toBe(false)
-    expect(isRunLogName('other-run-2026-10-18T01-03-31.jsonl')).toBe(false)
   })
 })
 

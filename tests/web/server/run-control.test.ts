@@ -1,7 +1,9 @@
+import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import process from 'node:process'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { PrerequisiteChecks } from '../../../web/server/prerequisites.js'
 import { missingPrerequisites } from '../../../web/server/prerequisites.js'
@@ -86,7 +88,29 @@ const ALL_PRESENT: PrerequisiteChecks = {
   tsxEntry: () => true,
 }
 
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+})
+
 describe('missingPrerequisites', () => {
+  /** A temporary project root with a `.env` the test writes, and the other three checks present. */
+  function rootWithEnv(envText: string): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'prerequisites-'))
+    roots.push(root)
+    fs.writeFileSync(path.join(root, '.env'), envText, 'utf8')
+    return root
+  }
+
+  const otherChecks: Partial<PrerequisiteChecks> = {
+    playwrightCli: () => true,
+    chrome: () => true,
+    tsxEntry: () => true,
+  }
+
+  const requiredLines = 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html'
+
   it('names what is absent, in the order the notes list it', () => {
     const missing = missingPrerequisites({
       projectRoot: 'C:\\root',
@@ -112,6 +136,22 @@ describe('missingPrerequisites', () => {
 
   it('names nothing when the machine has all four', () => {
     expect(missingPrerequisites({ projectRoot: 'C:\\root', checks: ALL_PRESENT })).toEqual([])
+  })
+
+  it('accepts a valid .env file', () => {
+    const root = rootWithEnv(requiredLines)
+
+    expect(missingPrerequisites({ projectRoot: root, checks: otherChecks, env: {} })).toEqual([])
+  })
+
+  it('refuses a .env whose defaulted value the Run would reject', () => {
+    // The two required keys are present; `BATCH_SIZE=abc` fails the full schema
+    // the Run parses, so the start refuses what the setup notice warns about.
+    const root = rootWithEnv(`${requiredLines}\nBATCH_SIZE=abc`)
+
+    expect(missingPrerequisites({ projectRoot: root, checks: otherChecks, env: {} })).toEqual([
+      'env-file',
+    ])
   })
 })
 
