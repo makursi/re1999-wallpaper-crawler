@@ -9,7 +9,16 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// The loader's defaults come from `core/config.ts`, which validates the
+// environment at import time — and a CI checkout has no `.env`. Seeding the two
+// required values before the imports are evaluated keeps this test about the
+// copy rather than about the machine it runs on.
+vi.hoisted(() => {
+  process.env.BASE_ORIGIN ??= 'https://example.test'
+  process.env.PAGE_PATH ??= '/home/detail.html'
+})
 
 import type { DiscoveryScriptCopy } from '../../core/discovery/discovery-loader.js'
 import { materializeDiscoveryScript } from '../../core/discovery/discovery-loader.js'
