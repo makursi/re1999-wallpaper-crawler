@@ -272,7 +272,13 @@ async function main() {
   logger.info('2. Downloading images...')
   fs.mkdirSync(IMAGES_DIR, { recursive: true })
 
-  const outcomes = await downloadBatch(discovery.urls, IMAGES_DIR, BATCH_SIZE, logger)
+  const outcomes = await downloadBatch(
+    discovery.urls,
+    IMAGES_DIR,
+    BATCH_SIZE,
+    { baseOrigin: BASE_ORIGIN, userAgent: USER_AGENT },
+    logger,
+  )
 
   // 3. Summarize, report and print.
   printSummary(logger, finishRun(logger, meta, discovery, outcomes, galleryList))

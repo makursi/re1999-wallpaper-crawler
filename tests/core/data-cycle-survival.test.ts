@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import type { DataLayout } from '../../core/data-layout.js'
 import { DATA_LAYOUT_VERSION, ensureDataLayout } from '../../core/data-layout.js'
-import type { DownloadFetch } from '../../core/download/download.js'
+import type { DownloadFetch, DownloadSite } from '../../core/download/download.js'
 import { downloadBatch } from '../../core/download/download.js'
 import type { GalleryList } from '../../core/gallery/gallery-source.js'
 import {
@@ -109,6 +109,16 @@ function seededInstallation(prefix: string): {
   return { appRoot, dataRoot, data: result.ready.layout }
 }
 
+/**
+ * The site inputs a Run passes to Download. They are explicit because the
+ * download layer must not import the eager configuration: this test proves the
+ * Run's data cycle with no `.env` at all.
+ */
+const SITE: DownloadSite = {
+  baseOrigin: 'https://cdn.test',
+  userAgent: 'Mozilla/5.0 (test)',
+}
+
 /** The network Download is given: one successful image, no socket. */
 const fetchImpl: DownloadFetch = async () => ({
   status: 200,
@@ -133,6 +143,7 @@ describe('a Run round trip over a temporary data directory', () => {
       ['https://cdn.test/20261021/1024_new.jpg'],
       data.imagesDir,
       1,
+      SITE,
       logger,
       fetchImpl,
     )

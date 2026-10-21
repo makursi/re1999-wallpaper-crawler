@@ -3,7 +3,13 @@ import process from 'node:process'
 
 import { dataRootOf, resolveAppRoot } from './app-root.js'
 import type { ConfigValues } from './config-read.js'
-import { galleryListUrlOf, parseConfig, readLayeredConfig, siteConfig } from './config-read.js'
+import {
+  galleryListUrlOf,
+  parseConfig,
+  readLayeredConfig,
+  siteConfig,
+  USER_AGENT,
+} from './config-read.js'
 import { DATA_LAYOUT_FILE_NAME, DataLayoutError, layoutRefusalOf } from './data-layout.js'
 
 // ── the eager configuration ───────────────────────────────────────
@@ -38,11 +44,13 @@ const layoutRefusal = layoutRefusalOf(path.join(DATA_ROOT, DATA_LAYOUT_FILE_NAME
 if (layoutRefusal !== null) throw new DataLayoutError(layoutRefusal)
 
 // `dotenv/config` used to put every file key into `process.env`, so a key the
-// schema does not carry (the logger's `LOG_LEVEL`, `USER_AGENT`) was visible to
-// whoever read the environment. Keep that half of dotenv's semantics for the
-// pipeline, without overriding a real environment variable: this is a fresh
-// process per Run, and the Console — which deliberately never loads the files —
-// imports `core/config-read.ts`, not this module.
+// schema does not carry (the logger's `LOG_LEVEL`) was visible to whoever read
+// the environment. Keep that half of dotenv's semantics for the pipeline,
+// without overriding a real environment variable: this is a fresh process per
+// Run, and the Console — which deliberately never loads the files — imports
+// `core/config-read.ts`, not this module. `USER_AGENT` is the one key outside
+// the schema that does not need this pass: it is a pure default, read where it
+// is defined in `core/config-read.ts`.
 for (const [key, value] of Object.entries(layered.env)) {
   if (value !== undefined && process.env[key] === undefined) process.env[key] = value
 }
@@ -72,6 +80,10 @@ export const LOG_DIR = site.logDir
 export const GALLERY_LIST_URL = galleryListUrlOf(BASE_ORIGIN)
 export const GALLERY_STATE_FILE = site.galleryStateFile
 
-export const USER_AGENT =
-  process.env.USER_AGENT ??
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+/**
+ * The download's `User-Agent`, re-exported from the module that never parses
+ * eagerly. The literal and its `USER_AGENT` override live there because the
+ * value needs no configuration, and `core/download/download.ts` takes it as an
+ * injected input rather than importing this module.
+ */
+export { USER_AGENT }

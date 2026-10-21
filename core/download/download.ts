@@ -5,7 +5,6 @@ import * as path from 'node:path'
 import type { Logger } from 'pino'
 import { fetch } from 'undici'
 
-import { BASE_ORIGIN, USER_AGENT } from '../config.js'
 import type { DownloadOutcome } from '../report/report.js'
 import { wallpaperNameOf } from '../wallpaper-url.js'
 
@@ -39,6 +38,19 @@ export interface DownloadRequest {
 /** The HTTP client Download calls. `undici`'s `fetch` is one. */
 export type DownloadFetch = (url: string, request: DownloadRequest) => Promise<DownloadResponse>
 
+/**
+ * The site a download speaks to, injected rather than read from the
+ * configuration: an origin to resolve relative Wallpaper URLs against (and to
+ * name as the `Referer`) and the `User-Agent` every request carries. Nothing in
+ * this module reads the configuration, so importing it never parses one.
+ */
+export interface DownloadSite {
+  /** The site origin: relative URLs resolve against it, and it is the `Referer`. */
+  baseOrigin: string
+  /** The `User-Agent` header every request sends. */
+  userAgent: string
+}
+
 // ── URL utilities ──────────────────────────────────────────────────
 
 export function getFilenameFromUrl(url: string): string {
@@ -60,13 +72,13 @@ export function resolveUrl(url: string, base: string): string {
 export async function downloadFile(
   url: string,
   dest: string,
-  referer: string,
+  site: DownloadSite,
   fetchImpl: DownloadFetch = fetch,
 ): Promise<{ status: number; retried: boolean }> {
   async function doRequest(retry: boolean): Promise<{ status: number; retried: boolean }> {
     const headers: Record<string, string> = {
-      'User-Agent': USER_AGENT,
-      Referer: referer,
+      'User-Agent': site.userAgent,
+      Referer: site.baseOrigin,
     }
 
     if (retry) {
@@ -102,10 +114,11 @@ export async function downloadFile(
 export async function downloadOne(
   url: string,
   destDir: string,
+  site: DownloadSite,
   _logger: Logger,
   fetchImpl: DownloadFetch = fetch,
 ): Promise<DownloadOutcome> {
-  const absUrl = resolveUrl(url, BASE_ORIGIN)
+  const absUrl = resolveUrl(url, site.baseOrigin)
   const filename = getFilenameFromUrl(absUrl)
   const dest = path.join(destDir, filename)
 
@@ -115,7 +128,7 @@ export async function downloadOne(
 
   const start = Date.now()
   try {
-    const { status, retried } = await downloadFile(absUrl, dest, BASE_ORIGIN, fetchImpl)
+    const { status, retried } = await downloadFile(absUrl, dest, site, fetchImpl)
     const bytes = fs.statSync(dest).size
     return {
       kind: 'ok',
@@ -145,6 +158,7 @@ export async function downloadBatch(
   urls: string[],
   destDir: string,
   batchSize: number,
+  site: DownloadSite,
   logger: Logger,
   fetchImpl: DownloadFetch = fetch,
 ): Promise<DownloadOutcome[]> {
@@ -153,7 +167,7 @@ export async function downloadBatch(
     const batch = urls.slice(i, i + batchSize)
     const results = await Promise.all(
       batch.map(async url => {
-        const outcome = await downloadOne(url, destDir, logger, fetchImpl)
+        const outcome = await downloadOne(url, destDir, site, logger, fetchImpl)
         switch (outcome.kind) {
           case 'ok':
             logger.debug(

@@ -13,19 +13,19 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 
 import { pino } from 'pino'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
-// `core/download/download.ts` imports `core/config.ts`, which validates the
-// environment at import time — and a CI checkout has no `.env`.
-vi.hoisted(() => {
-  process.env.BASE_ORIGIN ??= 'https://re.bluepoch.com'
-})
-
-import { BASE_ORIGIN } from '../../../core/config.js'
-import type { DownloadFetch } from '../../../core/download/download.js'
+import type { DownloadFetch, DownloadSite } from '../../../core/download/download.js'
 import { downloadBatch, downloadFile, downloadOne } from '../../../core/download/download.js'
 
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'
+
+// The two site inputs a Run passes. Nothing here reads the configuration, so
+// this file imports the download layer without a usable `.env`.
+const SITE: DownloadSite = {
+  baseOrigin: 'https://re.bluepoch.com',
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) test-agent',
+}
 
 const roots: string[] = []
 
@@ -61,13 +61,15 @@ describe('downloadFile', () => {
     const dest = path.join(scratch(), 'a.jpg')
     const { fetchImpl, calls } = scripted(200)
 
-    const result = await downloadFile(`${CDN}/20260907/1012.jpg`, dest, BASE_ORIGIN, fetchImpl)
+    const result = await downloadFile(`${CDN}/20260907/1012.jpg`, dest, SITE, fetchImpl)
 
     expect(result).toEqual({ status: 200, retried: false })
     expect(fs.readFileSync(dest, 'utf8')).toBe('bytes')
     expect(calls[0].url).toBe(`${CDN}/20260907/1012.jpg`)
-    expect(calls[0].headers['User-Agent']).toContain('Mozilla/5.0')
-    expect(calls[0].headers.Referer).toBe(BASE_ORIGIN)
+    // Both headers are the injected inputs, verbatim: the layer reads no
+    // ambient configuration to fill them in.
+    expect(calls[0].headers['User-Agent']).toBe(SITE.userAgent)
+    expect(calls[0].headers.Referer).toBe(SITE.baseOrigin)
     // #76: the session is gone, so a download carries nothing a browser would.
     expect(calls[0].headers).not.toHaveProperty('Cookie')
   })
@@ -76,7 +78,7 @@ describe('downloadFile', () => {
     const dest = path.join(scratch(), 'a.jpg')
     const { fetchImpl, calls } = scripted(403, 200)
 
-    const result = await downloadFile(`${CDN}/20260907/1012.jpg`, dest, BASE_ORIGIN, fetchImpl)
+    const result = await downloadFile(`${CDN}/20260907/1012.jpg`, dest, SITE, fetchImpl)
 
     expect(result).toEqual({ status: 200, retried: true })
     expect(calls).toHaveLength(2)
@@ -96,9 +98,9 @@ describe('downloadFile', () => {
     const dest = path.join(scratch(), 'a.jpg')
     const { fetchImpl, calls } = scripted(404)
 
-    await expect(
-      downloadFile(`${CDN}/20260907/1012.jpg`, dest, BASE_ORIGIN, fetchImpl),
-    ).rejects.toThrow(/HTTP 404/)
+    await expect(downloadFile(`${CDN}/20260907/1012.jpg`, dest, SITE, fetchImpl)).rejects.toThrow(
+      /HTTP 404/,
+    )
     expect(calls).toHaveLength(1)
     expect(fs.existsSync(dest)).toBe(false)
   })
@@ -116,7 +118,7 @@ describe('downloadOne', () => {
       return new Response('bytes', { status: 200 })
     }
 
-    const outcome = await downloadOne(`${CDN}/20260907/1012.jpg`, dir, logger, fetchImpl)
+    const outcome = await downloadOne(`${CDN}/20260907/1012.jpg`, dir, SITE, logger, fetchImpl)
 
     expect(outcome).toEqual({
       kind: 'skipped',
@@ -130,7 +132,7 @@ describe('downloadOne', () => {
     const dir = scratch()
     const { fetchImpl, calls } = scripted(403, 403)
 
-    const outcome = await downloadOne(`${CDN}/20260907/1012.jpg`, dir, logger, fetchImpl)
+    const outcome = await downloadOne(`${CDN}/20260907/1012.jpg`, dir, SITE, logger, fetchImpl)
 
     expect(calls).toHaveLength(2)
     expect(outcome).toMatchObject({
@@ -147,10 +149,10 @@ describe('downloadOne', () => {
     const dir = scratch()
     const { fetchImpl, calls } = scripted(200)
 
-    const outcome = await downloadOne('/pictures/1012.jpg', dir, logger, fetchImpl)
+    const outcome = await downloadOne('/pictures/1012.jpg', dir, SITE, logger, fetchImpl)
 
-    expect(calls[0].url).toBe(`${BASE_ORIGIN}/pictures/1012.jpg`)
-    expect(outcome).toMatchObject({ kind: 'ok', url: `${BASE_ORIGIN}/pictures/1012.jpg` })
+    expect(calls[0].url).toBe(`${SITE.baseOrigin}/pictures/1012.jpg`)
+    expect(outcome).toMatchObject({ kind: 'ok', url: `${SITE.baseOrigin}/pictures/1012.jpg` })
   })
 })
 
@@ -165,6 +167,7 @@ describe('downloadBatch', () => {
       [`${CDN}/20260907/1012.jpg`, `${CDN}/20260907/1011.jpg`],
       dir,
       1,
+      SITE,
       logger,
       fetchImpl,
     )

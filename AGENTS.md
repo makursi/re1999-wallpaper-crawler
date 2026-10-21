@@ -115,7 +115,7 @@ Two layers, one directory each at the root: `core/` is the crawler, `web/` is th
 core/                        — the crawler
 ├── app-root.ts              — the two injected roots: RE1999_APP_ROOT / RE1999_DATA_ROOT or their caller fallbacks; nothing derives either from module position (unit-tested)
 ├── config.ts                — the pipeline's eager configuration: reads the two layers at import (an unusable pair fails a Run before it starts) and exports the constants the pipeline imports
-├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the data-relative defaults, the Gallery list URL (unit-tested)
+├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the data-relative defaults, the Gallery list URL, and the User-Agent default (no eager parse; re-exported by config.ts) (unit-tested)
 ├── data-layout.ts           — the arrangement inside the data directory: images/, logs/, cache/thumbnails/, the layout.json version marker, and the forward-only same-volume rename of a pre-#80 checkout (unit-tested; never deletes)
 ├── version.ts               — the one current version: the build-injected constant (`RE1999_VERSION`, ticket #84's define seam) with the app root's package metadata as the source run's fallback (unit-tested)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
@@ -126,7 +126,7 @@ core/                        — the crawler
 ├── discovery/
 │   └── discovery.ts         — Discovery: turns the Gallery list into the Run's URL set and the report's counters/capture audit (the list request itself stays in gallery-source.ts; unit-tested)
 ├── download/
-│   └── download.ts          — parallel batch downloads via undici (injected client), no session, 403 retry (unit-tested)
+│   └── download.ts          — parallel batch downloads via undici (injected client and site inputs), no session, 403 retry (unit-tested)
 ├── gallery/
 │   ├── gallery-source.ts    — the site's gallery list endpoint: fetch + validate (unit-tested)
 │   └── gallery-state.ts     — cross-run id set + mirror check, writes <data>/images/.gallery-state.json (unit-tested)
