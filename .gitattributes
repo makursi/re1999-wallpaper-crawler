@@ -1,3 +1,9 @@
 # Line endings are LF everywhere: oxfmt writes LF, and this keeps Windows
 # checkouts from re-introducing CRLF through core.autocrlf.
 * text=auto eol=lf
+# ... except the launcher (#85). cmd.exe reads a `.bat` line by line and its
+# label/goto and block parsing expect CRLF; a batch file that fits the rest of
+# the repository's LF rule is the kind of thing that works on one machine and
+# silently skips a line on another. `-text` stores and checks out the bytes the
+# packaging ticket (#86) copies into the archive verbatim.
+*.bat -text

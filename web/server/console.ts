@@ -32,10 +32,17 @@
 // this start only reopens that page and exits, so one program cannot become two
 // processes writing the same Run log directory. The record it publishes once its
 // port is known is removed when the boot that wrote it exits.
+//
+// #85: the package's launcher (`packaging/启动.bat`) is ASCII-only and does
+// nothing but `cd` into `app\` and run this file, because cmd.exe renders a
+// `.bat`'s Chinese through the console's code page. Everything the person at the
+// window reads comes from here: the title (the stop instruction), the "do not
+// close" line, the unsafely-downloaded notice, and the pointer the updater reads.
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import * as fs from 'node:fs'
+import * as path from 'node:path'
 import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
@@ -47,12 +54,18 @@ import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import { applicationVersion } from '../../core/version.js'
 import type { ConsoleRunState } from '../api-types.js'
-import { buildArtifactRefusal, runEntryPath } from './build-artifacts.js'
+import {
+  buildArtifactRefusal,
+  pageEntryFile,
+  runEntryPath,
+  SERVER_ENTRY_FILE,
+} from './build-artifacts.js'
 import type { ConsoleConfig } from './console-config.js'
 import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
+import { installPointerFile, installRootOf, writeInstallPointer } from './installation.js'
 import { runningInstanceUrl } from './instance-handshake.js'
 import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
 import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
@@ -74,7 +87,22 @@ import {
   realThumbnailCache,
   realThumbnailGenerator,
 } from './thumbnails.js'
+import { markedAsUnsafe, unsafeDownloadNotice } from './unsafe-download.js'
 import { checkForUpdate } from './update-check.js'
+
+/**
+ * The launcher's window title (#85): the stop instruction itself, because
+ * closing the window is the whole stop story — the page has no stop control
+ * (ADR 0016). Set with `process.title`, which on Windows is a real console title
+ * write and therefore Unicode-safe, unlike anything a `.bat` prints.
+ */
+const WINDOW_TITLE = 're1999 壁纸下载器 - 关闭这个窗口就是停止'
+
+/** What a start says once, before anything can take a while (#85). */
+const STOP_INSTRUCTION = '关闭这个窗口就是停止程序。抓取和下载期间请不要关闭。'
+
+/** What a start says when it spawns a Run (#85 story 11). */
+const RUN_STARTED_NOTICE = '抓取已开始:下载期间请不要关闭这个窗口。'
 
 interface ConsoleOptions {
   port: number
@@ -259,6 +287,14 @@ async function main(options: ConsoleOptions): Promise<void> {
     process.exit(0)
   }
 
+  // #85: the window the user double-clicked into existence *is* the program's
+  // stop control (ADR 0016). The title says what closing it does, and the one
+  // line below says it again where the user is looking; the page gains no stop
+  // button. `process.title` is a Unicode console-title write on Windows, which
+  // is why the words can be Chinese while the launcher stays ASCII.
+  process.title = WINDOW_TITLE
+  process.stdout.write(`${STOP_INSTRUCTION}\n`)
+
   // #81: the one outbound request that is not the game's site or its CDN. It is
   // started here, beside the rest of the boot's work, and awaited only where the
   // service needs its answer — so the page's first status read can carry it.
@@ -308,6 +344,41 @@ async function main(options: ConsoleOptions): Promise<void> {
     process.exit(1)
   }
 
+  // #85: a zip that came from a browser carries Mark-of-the-Web, and extraction
+  // copies it onto every file — a class of failure with no honest error message
+  // (a blank page, a 500 on one tile, a program that will not start). The files
+  // this turn will run are checked here, before the port is bound, and the
+  // Chinese unblock instruction is printed. It is a notice, not a refusal: the
+  // tree may well work, and refusing a working tree would be its own support
+  // case. `node.exe` is present only in the packaged tree, which is exactly the
+  // tree that can have arrived with the mark.
+  const programFiles = [
+    path.join(config.appRoot, 'node.exe'),
+    path.join(config.appRoot, SERVER_ENTRY_FILE),
+    runEntryPath(config.appRoot),
+    pageEntryFile(config.distDir),
+  ].filter(file => fs.existsSync(file))
+  const unsafeNotice = unsafeDownloadNotice(markedAsUnsafe(programFiles), config.appRoot)
+  if (unsafeNotice !== null) process.stdout.write(`${unsafeNotice}\n`)
+
+  // #85: record where this installation is, for the updater (#87). Only the
+  // portable package has an installation root (a source checkout answers null),
+  // and the pointer is rewritten on every start so a moved folder heals on its
+  // next launch. A write that fails is said once and does not stop the program:
+  // the updater's memory is not worth a failed start.
+  const installRoot = installRootOf(config.appRoot, dataRoot)
+  if (installRoot !== null) {
+    const pointer = writeInstallPointer({ installRoot })
+    if (!pointer.written) {
+      const file = installPointerFile(process.env.LOCALAPPDATA)
+      process.stdout.write(
+        `无法记录安装位置(${pointer.reason}),更新时可能找不到这个安装。${
+          file === null ? '' : `\n  目标文件:${file}`
+        }\n`,
+      )
+    }
+  }
+
   // One cached read of the Gallery list serves both `/api/status` (its
   // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
   // polls, so the endpoint is read once per TTL, and a refused read is
@@ -334,6 +405,9 @@ async function main(options: ConsoleOptions): Promise<void> {
     onStarted: () => {
       ownRunLogName = null
       newestBeforeSpawn = newestRunLogName(config.logDir)
+      // #85 story 11: the most expensive moment of the program's life says so,
+      // in the window whose closing is the stop control.
+      process.stdout.write(`${RUN_STARTED_NOTICE}\n`)
     },
     onExited: () => {
       const newest = newestRunLogName(config.logDir)
