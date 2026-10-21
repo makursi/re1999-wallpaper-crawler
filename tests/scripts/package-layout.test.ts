@@ -59,6 +59,7 @@ describe('isPackagedPath', () => {
     for (const archivePath of [
       'app/server.js',
       'app/run.js',
+      'app/update.js',
       'app/package.json',
       'app/node.exe',
       'app/.env',

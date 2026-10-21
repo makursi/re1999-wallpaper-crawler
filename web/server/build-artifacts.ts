@@ -37,6 +37,14 @@ export const SERVER_ENTRY_FILE = 'server.js'
  */
 export const RUN_ENTRY_FILE = 'run.js'
 
+/**
+ * The updater's entry in the built tree (#87): what `更新.bat` starts. It is a
+ * build artifact beside the other two because a shipped package runs no
+ * transpiler, and because the update is the one operation that must be tested
+ * on real folders — a `.bat` cannot be.
+ */
+export const UPDATE_ENTRY_FILE = 'update.js'
+
 /** The page's entry document, inside the page directory Vite writes. */
 export const PAGE_ENTRY_FILE = 'index.html'
 

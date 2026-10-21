@@ -71,6 +71,14 @@ const ARCHIVE_BASE_NAME = 're1999-wallpaper-crawler'
 /** The launcher #85 owns. An archive without it is not a package. */
 const LAUNCHER_FILE = '启动.bat'
 
+/**
+ * The updater entry #87 owns, beside the launcher. An archive without it can
+ * still be run, but the user's only way to move to the next release would be
+ * re-extracting by hand and moving `data\` themselves — exactly what the
+ * updater exists to avoid.
+ */
+const UPDATER_FILE = '更新.bat'
+
 /** The owner's local configuration; the packager must never read it. */
 const OWNER_ENV_FILE = path.join(REPO_ROOT, '.env')
 
@@ -290,8 +298,10 @@ function assertArchivePlan(plan: readonly PlannedFile[], templateFile: string): 
   const present = new Set(plan.map(entry => entry.archivePath))
   const required = [
     LAUNCHER_FILE,
+    UPDATER_FILE,
     'app/server.js',
     'app/run.js',
+    'app/update.js',
     'app/package.json',
     'app/node.exe',
     'app/.env',

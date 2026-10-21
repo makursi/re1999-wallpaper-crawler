@@ -49,7 +49,12 @@ export const SITE_ENV_FILE_NAME = 'site.env'
 export const ROOT_FILE_EXTENSIONS: readonly string[] = ['.bat', '.txt']
 
 /** The files `scripts/build.ts` writes that go straight into `app\`. */
-export const APP_BUILD_FILES: readonly string[] = ['server.js', 'run.js', 'package.json']
+export const APP_BUILD_FILES: readonly string[] = [
+  'server.js',
+  'run.js',
+  'update.js',
+  'package.json',
+]
 
 /**
  * The packages that travel beside the program in `app\node_modules\`, as
