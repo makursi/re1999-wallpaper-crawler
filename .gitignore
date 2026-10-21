@@ -14,6 +14,10 @@ logs/
 # than as a bare `dist/`, because the layer owns it and a stray root-level
 # `dist/` would belong to nobody.
 web/dist/
+# The built tree (#84): the two bundled entries, the copied page and the tree's
+# package metadata. `pnpm build` writes it, a package ships it, and it is never
+# source — `node build/server.js` is how the program runs.
+build/
 # The pre-#80 thumbnail cache; moved to data/cache/ after the first start.
 web/.console-cache/
 *.log

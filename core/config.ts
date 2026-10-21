@@ -49,7 +49,7 @@ for (const [key, value] of Object.entries(layered.env)) {
 
 // ── exports ───────────────────────────────────────────────────────
 
-/** The application root: where `.env`, `node_modules/` and the built page live. */
+/** The application root: where `.env` and the built page live. */
 export { APP_ROOT }
 
 /** The user's data directory: the Mirror, the Run logs, the cache and `user.env`. */

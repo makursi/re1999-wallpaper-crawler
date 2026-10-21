@@ -1,14 +1,22 @@
 // ── The Console's entry point ───────────────────────────────────────
 //
-// The one command: build the page if it is not on disk, start the loopback
-// service, print the URL it bound and open it in the default browser. It
-// resolves the one application root (#78), reads the layered configuration
-// through `core/config-read.ts`'s file-reading predicate — the same schema
-// `core/config.ts` parses eagerly for the pipeline — and injects a configuration
-// value, so nothing under `web/server/` ever reads the environment and
-// `tests/**` keeps needing no `.env` (spec decision 29). A missing or broken
-// layer is not fatal here: the Console boots, says a Run cannot be configured
-// yet, and leaves the failing fast to the Run (#57).
+// The one command: start the loopback service over the built page, print the URL
+// it bound and open it in the default browser. It resolves the one application
+// root (#78), reads the layered configuration through `core/config-read.ts`'s
+// file-reading predicate — the same schema `core/config.ts` parses eagerly for
+// the pipeline — and injects a configuration value, so nothing under
+// `web/server/` ever reads the environment and `tests/**` keeps needing no
+// `.env` (spec decision 29). A missing or broken layer is not fatal here: the
+// Console boots, says a Run cannot be configured yet, and leaves the failing
+// fast to the Run (#57).
+//
+// #84: this file is a build artifact. `scripts/build.ts` bundles it into
+// `build/server.js` beside the Run's `build/run.js` and the prebuilt page, and
+// the Console compiles nothing at boot — no Vite, no transpiler, no
+// `node_modules` in a shipped tree. Both non-Console artifacts are checked
+// before the port is bound (`web/server/build-artifacts.ts`): a tree that lacks
+// one is a broken build or a broken package, and saying so beats serving a blank
+// page and failing a click later.
 //
 // The Console deliberately never loads the files into `process.env`: dotenv does
 // not override, so a value that was wrong at boot would shadow a corrected file
@@ -21,7 +29,6 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import * as fs from 'node:fs'
-import * as path from 'node:path'
 import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
@@ -33,12 +40,13 @@ import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import { applicationVersion } from '../../core/version.js'
 import type { ConsoleRunState } from '../api-types.js'
+import { buildArtifactRefusal, runEntryPath } from './build-artifacts.js'
 import type { ConsoleConfig } from './console-config.js'
 import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
-import { missingPrerequisites, runEnvFileAvailable, tsxEntryPath } from './prerequisites.js'
+import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
 import type { RunLauncher } from './run-control.js'
 import {
   createRunCleaner,
@@ -129,25 +137,6 @@ function consoleOptions(argv: string[]): ConsoleOptions {
 }
 
 /**
- * ADR 0011: the first start pays the build, later starts reuse it. Vite's
- * programmatic API keeps the build in this process — no shell, no `npx`, and no
- * child process of our own — and the import is lazy, so the bundler never
- * enters the service's module graph.
- *
- * The config file is the layer's own (`<appRoot>/web/vite.config.ts`), and Vite
- * resolves the page, the entry document and the output directory from it, so
- * this process names one path and the config owns the rest. The path comes from
- * the injected app root, never from this module's location.
- */
-async function ensureBundle(config: ConsoleConfig): Promise<void> {
-  if (fs.existsSync(path.join(config.distDir, 'index.html'))) return
-
-  process.stdout.write('正在构建页面…\n')
-  const { build } = await import('vite')
-  await build({ configFile: path.join(config.appRoot, 'web', 'vite.config.ts') })
-}
-
-/**
  * Open the page in the default browser.
  *
  * `stdio: 'ignore'` is load-bearing: this repository's notes record that a
@@ -229,7 +218,7 @@ function installStopHandlers(deps: StopDeps): void {
       }
     }
 
-    // The whole tree the launcher started: the tsx loader and its children.
+    // The whole tree the launcher started: the Run and its children.
     deps.launcher.stop()
     await deps.service.close()
     process.exit(0)
@@ -241,8 +230,9 @@ function installStopHandlers(deps: StopDeps): void {
 
 async function main(options: ConsoleOptions): Promise<void> {
   // The one application root, resolved here and passed down (#78): a packaged
-  // launcher names it in `RE1999_APP_ROOT`; a source run falls back to the
-  // process's working directory. Nothing below this point derives it.
+  // launcher names it in `RE1999_APP_ROOT`; otherwise it is the process's
+  // working directory — the repository for `pnpm core:run`, and `build/` itself
+  // for `pnpm webui` (#84). Nothing below this point derives it.
   const appRoot = resolveAppRoot()
   const dataRoot = dataRootOf(appRoot)
 
@@ -284,7 +274,16 @@ async function main(options: ConsoleOptions): Promise<void> {
   const values = layered.values
   const site = siteConfig(appRoot, values, dataRoot)
   const config = consoleConfigOf(appRoot, values, site)
-  await ensureBundle(config)
+
+  // #84: the page and the Run entry are build artifacts, and this start compiles
+  // nothing. A tree without them is a broken build or a broken package; it is
+  // refused here, by name, before the port is bound — the alternative is a page
+  // that opens blank, or a first click that spawns an ENOENT.
+  const missingArtifact = buildArtifactRefusal({ appRoot: config.appRoot, distDir: config.distDir })
+  if (missingArtifact !== null) {
+    process.stderr.write(`${missingArtifact.message}\n`)
+    process.exit(1)
+  }
 
   // One cached read of the Gallery list serves both `/api/status` (its
   // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
@@ -305,8 +304,9 @@ async function main(options: ConsoleOptions): Promise<void> {
   let ownRunLogName: string | null = null
   const launcher = createRunLauncher({
     nodePath: process.execPath,
-    tsxEntry: tsxEntryPath(config.appRoot),
-    mainEntry: path.join(config.appRoot, 'core', 'main.ts'),
+    // The built Run entry, the sibling of this bundle (#84). Nothing under
+    // `node_modules`: a shipped tree has no transpiler to load it with.
+    runEntry: runEntryPath(config.appRoot),
     appRoot: config.appRoot,
     onStarted: () => {
       ownRunLogName = null

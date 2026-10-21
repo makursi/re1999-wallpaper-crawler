@@ -1,8 +1,11 @@
 // ── Run control: starting and owning a Run's process ────────────────
 //
-// A Run is spawned as the current Node binary with the tsx entry as its first
-// argument, in the application root — never through a shell, never through `npx`
-// or `pnpm` (spec decision 6). The root travels in the child's environment
+// A Run is spawned as the current Node binary with the built Run entry as its
+// only argument, in the application root — never through a shell, never through
+// `npx` or `pnpm` (spec decision 6). #84 removed the transpiler from that argv:
+// the entry is `run.js`, a bundle beside the Console's own (`scripts/build.ts`),
+// so a packaged tree starts a Run with the Node runtime it already carries and
+// nothing under `node_modules`. The root travels in the child's environment
 // (`RE1999_APP_ROOT`) as well as in its cwd, so the child receives it as an
 // input rather than deriving it (#78).
 // The Console adds no pipe of its own: the Run's own children need pipes and a
@@ -28,7 +31,7 @@ export interface RunLauncher {
   /** `true` while the child this launcher started is still running. */
   isAlive(): boolean
   /**
-   * Kills the whole tree the launcher started — the tsx loader and whatever it
+   * Kills the whole tree the launcher started — the Run and whatever it
    * spawned — because on Windows a parent's death does not take its children
    * (ADR 0009). A no-op when nothing is alive. #36 completes the tree kill; the
    * seam exists here so no caller has to invent one.
@@ -39,10 +42,12 @@ export interface RunLauncher {
 export interface RunLauncherDeps {
   /** The current Node binary (`process.execPath`). */
   nodePath: string
-  /** `<root>/node_modules/tsx/dist/cli.mjs` — the tsx CLI entry, not `npx`. */
-  tsxEntry: string
-  /** `<appRoot>/core/main.ts` — the same entry `pnpm core:run` runs. */
-  mainEntry: string
+  /**
+   * `<appRoot>/run.js` — the built Run entry, the sibling of the Console's own
+   * (#84; `web/server/build-artifacts.ts` names it). Handed to Node as slot 0
+   * of the argv, so the Run needs no loader of its own.
+   */
+  runEntry: string
   /** The application root: the Run's cwd, and where `.env` and `logs/` live. */
   appRoot: string
   /** Injected so a test can assert the platform's own tree-kill shape. */
@@ -77,7 +82,7 @@ export function createRunLauncher(deps: RunLauncherDeps): RunLauncher {
 
   function start(): void {
     if (alive) throw new Error('a Run is already in flight')
-    const spawned = spawn(deps.nodePath, [deps.tsxEntry, deps.mainEntry], {
+    const spawned = spawn(deps.nodePath, [deps.runEntry], {
       cwd: deps.appRoot,
       shell: false,
       windowsHide: true,
@@ -131,9 +136,9 @@ export interface KillTreeDeps {
 /**
  * The whole-tree kill (ADR 0009; conventions §6). On Windows, `taskkill /T` is
  * the OS's own tree walk: a parent's death does not take its children there, so
- * killing only the launcher's child would leave the tsx loader behind. Elsewhere
- * the Run leads its own process group (`detached: true` at spawn) and a negative
- * pid signals the whole group.
+ * killing only the launcher's child could leave anything the Run spawned behind.
+ * Elsewhere the Run leads its own process group (`detached: true` at spawn) and
+ * a negative pid signals the whole group.
  *
  * The pid is always the one the Console recorded when it started the Run, never
  * an image name: a process the owner started by hand is not ours to kill.
@@ -199,9 +204,11 @@ export interface RunStarterDeps {
  * Run is already in flight, `412` with `missing-prerequisite` and the missing
  * prerequisites' codes when one is absent.
  *
- * The prerequisites are checked here rather than left to the child so a missing
- * configuration or tsx entry is a named code; otherwise the spawn fails with an
- * ENOENT buried in the Console's stderr.
+ * The prerequisites are checked here rather than left to the child so an
+ * unusable configuration is a named code; otherwise the package fails a Run at
+ * its eager parse with a `ZodError` buried in the Console's stderr. The built
+ * Run entry is not one of them: it is a build artifact, and a tree without one
+ * refuses at boot (`web/server/build-artifacts.ts`), before a port is bound.
  */
 export function createRunStarter(deps: RunStarterDeps): RunStarter {
   return async (): Promise<RunStartResult> => {

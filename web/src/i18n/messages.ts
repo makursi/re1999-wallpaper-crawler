@@ -178,7 +178,6 @@ const zhCN = {
   'refusal.missingPrerequisite': '缺少前置条件:{missing}',
 
   'prerequisite.envFile': '.env 配置文件',
-  'prerequisite.tsxEntry': 'tsx 入口(node_modules/tsx/dist/cli.mjs)',
 
   'run.explained.discoveryLeak': '发现泄漏,但全部由站点资源解释:{urls}',
   'run.explained.mirrorGapExtra': '镜像里有 {count} 个文件已不在官方清单中',
@@ -317,7 +316,6 @@ const en = {
   'refusal.missingPrerequisite': 'missing prerequisites: {missing}',
 
   'prerequisite.envFile': 'the .env file',
-  'prerequisite.tsxEntry': 'the tsx entry (node_modules/tsx/dist/cli.mjs)',
 
   'run.explained.discoveryLeak':
     'discovery leak, wholly accounted for by the Site asset list: {urls}',
@@ -352,7 +350,6 @@ export const REFUSAL_MESSAGE_KEYS: Record<RefusalCode, MessageKey> = {
 /** The prerequisite code → message key map (#47), same guarantee as above. */
 export const PREREQUISITE_MESSAGE_KEYS: Record<PrerequisiteCode, MessageKey> = {
   'env-file': 'prerequisite.envFile',
-  'tsx-entry': 'prerequisite.tsxEntry',
 }
 
 /** The explained reason kind → message key map (#47). */

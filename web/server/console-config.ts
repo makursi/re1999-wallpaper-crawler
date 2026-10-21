@@ -16,8 +16,9 @@ import { galleryListUrlOf } from '../../core/config-read.js'
 export interface ConsoleConfig {
   /**
    * The application root, injected by the entry point: a Run's cwd, and where
-   * `.env`, `node_modules/` and the built page live. It is never derived from
-   * this layer's module position (#78).
+   * `.env`, the built page and the built Run entry live. It is never derived
+   * from this layer's module position (#78) — which is also why it survives
+   * bundling, where a module has no meaningful depth (#84).
    */
   appRoot: string
   /**

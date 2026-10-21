@@ -1,15 +1,19 @@
 // ── The pipeline's global prerequisites, checked before a Run starts ─
 //
-// A Run now needs two things a source checkout does not guarantee: a usable
-// layered configuration, and the tsx entry the Console launches it with. A
-// missing `.env` throws a `ZodError` at module load before any record is
-// written; a missing tsx entry makes the spawn fail with an ENOENT nobody sees
-// until the page's start appears to do nothing. Checking the two here turns each
-// into a stable code the page can name in the reader's language (#47).
+// A Run needs one thing a source checkout does not guarantee: a usable layered
+// configuration. A missing `.env` throws a `ZodError` at module load before any
+// record is written, so the start checks it here and turns it into a stable code
+// the page can name in the reader's language (#47).
 //
 // #76 removed the two machine-shaped checks with the browser crawl they served:
 // `@playwright/cli` on `PATH`, and Chrome through the registry's App Paths entry.
 // A Run no longer launches a browser, so neither can be missing.
+//
+// #84 removed `tsx-entry`: the Console no longer starts a Run through a
+// transpiler, so there is no loader to look for. The built Run entry beside the
+// Console entry is a build artifact — a tree without it is a broken build, and
+// the start's own boot refuses that (`web/server/build-artifacts.ts`) instead of
+// letting a click reach an ENOENT nobody sees.
 //
 // Notes on what remains:
 //   - The configuration is the layered pair (the app's `.env` and the user's
@@ -20,13 +24,10 @@
 //     configuration usable here cannot then fail a Run at startup. `core/config.ts`
 //     itself is still not imported: it parses the environment at import time and
 //     would break the test suite's no-`.env` property.
-//   - The tsx entry is a file existence test.
 //
-// Nothing here launches a browser or runs a child process: the checks are a file
-// read and a file existence test.
+// Nothing here launches a browser or runs a child process: the check is a file
+// read.
 
-import * as fs from 'node:fs'
-import * as path from 'node:path'
 import process from 'node:process'
 
 import { dataRootOf } from '../../core/app-root.js'
@@ -36,12 +37,10 @@ import type { PrerequisiteCode } from '../api-types.js'
 export interface PrerequisiteChecks {
   /** The layered configuration is usable: the whole schema a Run parses validates. */
   envFile: () => boolean
-  /** `<appRoot>/node_modules/tsx/dist/cli.mjs`, the Run's loader entry. */
-  tsxEntry: () => boolean
 }
 
 export interface PrerequisiteDeps {
-  /** The application root: where `.env` and `node_modules` are looked for. */
+  /** The application root: where `.env` is looked for. */
   appRoot: string
   /** The data root; defaults to the sibling `data` directory of `appRoot`. */
   dataRoot?: string
@@ -53,13 +52,7 @@ export interface PrerequisiteDeps {
 
 const ORDER: readonly { name: PrerequisiteCode; key: keyof PrerequisiteChecks }[] = [
   { name: 'env-file', key: 'envFile' },
-  { name: 'tsx-entry', key: 'tsxEntry' },
 ]
-
-/** `<appRoot>/node_modules/tsx/dist/cli.mjs` — the Run's argv slot 2. */
-export function tsxEntryPath(appRoot: string): string {
-  return path.join(appRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
-}
 
 /**
  * The codes of the global prerequisites this machine is missing, in the notes'
@@ -70,7 +63,6 @@ export function missingPrerequisites(deps: PrerequisiteDeps): PrerequisiteCode[]
   const env = deps.env ?? process.env
   const real: PrerequisiteChecks = {
     envFile: () => runEnvFileAvailable(deps.appRoot, deps.dataRoot, env),
-    tsxEntry: () => fs.existsSync(tsxEntryPath(deps.appRoot)),
   }
   const checks: PrerequisiteChecks = { ...real, ...deps.checks }
 

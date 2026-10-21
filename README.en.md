@@ -12,7 +12,10 @@ Install Node 22 and pnpm. Open a terminal at the project root (on Windows, Power
 
 ```bash
 pnpm install
+pnpm build
 ```
+
+`pnpm build` produces the program itself (`build/`): the two bundled entries and the prebuilt page. The program runs from that output only and compiles nothing at start, so a fresh checkout has to be built once.
 
 ## Start it
 

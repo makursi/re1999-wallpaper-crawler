@@ -212,7 +212,7 @@ describe('every service code has copy in both locales', () => {
         GALLERY_ROW_STATES.length,
     )
     expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
-    expect([...PREREQUISITE_CODES]).toEqual(['env-file', 'tsx-entry'])
+    expect([...PREREQUISITE_CODES]).toEqual(['env-file'])
     expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
     expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
   })

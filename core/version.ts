@@ -3,8 +3,9 @@
 // A reader reporting a problem in a chat group needs to say which build they
 // run, so exactly one module owns the number (#79). It resolves, in order:
 //
-//   1. the value the build injects — ticket #84 bundles the packaged tree and
-//      points the `define` seam below at the release's version;
+//   1. the value the build injects — `scripts/build.ts` (#84) points the
+//      `define` seam below at `package.json`'s version, so the packaged tree
+//      carries its own number and needs no metadata file beside it;
 //   2. the application's own package metadata, read relative to the application
 //      root. The root is an explicit input, the value `core/app-root.ts`
 //      resolved at the entry point, exactly as `core/config-read.ts` takes it —

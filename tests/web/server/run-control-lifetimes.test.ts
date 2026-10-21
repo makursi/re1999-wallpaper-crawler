@@ -62,8 +62,7 @@ function launcherWith(
 ): RunLauncher {
   return createRunLauncher({
     nodePath: 'C:\\nvm4w\\nodejs\\node.exe',
-    tsxEntry: 'C:\\root\\node_modules\\tsx\\dist\\cli.mjs',
-    mainEntry: 'C:\\root\\core\\main.ts',
+    runEntry: 'C:\\root\\run.js',
     appRoot: 'C:\\root',
     platform,
     ...overrides,

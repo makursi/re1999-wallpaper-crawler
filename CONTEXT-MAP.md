@@ -27,9 +27,10 @@
   dictionary test enumerates, ADR 0014), `web/src/` (the page, in three buckets:
   `components/`, `composables/`, `lib/`), and the page's tooling
   (`web/vite.config.ts`, `web/uno.config.ts`, `web/tsconfig.web.json`, and the
-  built page under `web/dist/`); started by the `webui` script. The thumbnail
-  cache is not a Console artifact any more: it is `<data>/cache/thumbnails/`
-  (ADR 0019).
+  built page under `web/dist/`); bundled into the built tree (`build/`, with
+  `scripts/build.ts` doing the bundling) and started by the `webui` script over
+  that tree. The thumbnail cache is not a Console artifact any more: it is
+  `<data>/cache/thumbnails/` (ADR 0019).
   Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `core/wallpaper-url.ts`; Download's input, the Console's
@@ -52,7 +53,8 @@
 - **Gallery list → Discovery**: one Run's URL set is the list, so
   `discovery.coverage` is `1` or `null` — kept as the gate's archive (ADR 0018).
 - **Console → CLI entries**: the WebUI is the only human entry, and the Console
-  starts a Run as a child process; `core:run` and `check-run` are the
+  starts a Run as a child process — from #84, the built Run entry beside its own
+  (`build/run.js`), never a transpiler; `core:run` and `check-run` are the
   agent-facing entries, with their names, exit codes and contracts unchanged.
 - **Run log → Console**: the Console knows Runs by reading the Run log
   directory, never a handle it holds, so a terminal-started Run is visible and a

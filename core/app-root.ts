@@ -11,10 +11,17 @@
 // receives it: the Console injects it into its configuration value and into the
 // Run child's environment, and the configuration reads take it as a parameter.
 //
-// `RE1999_APP_ROOT` is how a packaged launcher points at itself. A source run
-// (`pnpm core:run`, `pnpm webui`) does not set it, so the entry point's explicit
-// fallback — the process's working directory, which the package scripts set to
-// the repository root — is used instead. Neither source is a module location.
+// `RE1999_APP_ROOT` is how a packaged launcher points at itself. Nothing in the
+// build sets it for you, so both shipped and source starts rely on the entry
+// point's explicit fallback — the process's working directory:
+//
+//   - the package's launcher `cd`s into `app\` and runs `node.exe` (#85);
+//   - `pnpm core:run` (`tsx core/main.ts`) runs at the repository root;
+//   - `pnpm webui` (`cd build && node server.js`) runs in the built tree, which
+//     is itself an application root (#84).
+//
+// Neither source is a module location: `core/version.ts` no longer reads a
+// bundle's own depth, and nothing else may start to.
 //
 // The data directory is a second input rather than a deduction, because the two
 // layouts differ: a source tree keeps its data at `<repo>/data` (a child of the

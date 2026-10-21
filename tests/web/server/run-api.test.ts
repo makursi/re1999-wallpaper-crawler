@@ -180,7 +180,7 @@ describe('POST /api/run', () => {
   })
 
   it('names every missing prerequisite as a code and starts nothing', async () => {
-    const harness = await serve({ prerequisites: ['env-file', 'tsx-entry'] })
+    const harness = await serve({ prerequisites: ['env-file'] })
 
     const response = await postStart(harness)
 
@@ -188,7 +188,7 @@ describe('POST /api/run', () => {
     const body: unknown = await response.json()
     expect(body).toMatchObject({
       started: false,
-      refusal: { code: 'missing-prerequisite', missing: ['env-file', 'tsx-entry'] },
+      refusal: { code: 'missing-prerequisite', missing: ['env-file'] },
     })
     expect(harness.starts()).toBe(0)
   })

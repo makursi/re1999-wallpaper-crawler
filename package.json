@@ -8,8 +8,9 @@
   "scripts": {
     "core:run": "tsx core/main.ts",
     "check-run": "tsx core/check-run.ts",
-    "webui": "tsx web/server/console.ts",
+    "build": "tsx scripts/build.ts",
     "build:web": "vite build --config web/vite.config.ts",
+    "webui": "cd build && node server.js",
     "dev:web": "vite --config web/vite.config.ts",
     "lint": "oxlint --type-aware .",
     "lint:fix": "oxlint --type-aware --fix .",
@@ -37,6 +38,7 @@
     "@iconify-json/ph": "^1.2.2",
     "@types/node": "^25.9.1",
     "@vitejs/plugin-vue": "^6.0.10",
+    "esbuild": "0.28.2",
     "lint-staged": "^17.5.1",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",

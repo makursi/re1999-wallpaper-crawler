@@ -19,12 +19,21 @@ notice says so when it is missing.
 |------|---------|
 | Scrape wallpapers | `pnpm core:run` (`tsx core/main.ts`) |
 | Check the newest Run | `pnpm check-run` (`tsx core/check-run.ts`) |
-| WebUI (local page) | `pnpm webui` (`tsx web/server/console.ts`, flags `--port`, `--no-open`) |
+| Build the program | `pnpm build` (`tsx scripts/build.ts` → `build/`; needed before `webui`) |
+| WebUI (local page) | `pnpm webui` (`cd build && node server.js`, flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
 | Tests | `pnpm test` (`vitest run`) |
 | Typecheck | `pnpm typecheck` (`tsc --noEmit` + `vue-tsc --noEmit -p web/tsconfig.web.json`) |
 | Lint | `pnpm lint` (`oxlint --type-aware .`) |
 | Format | `pnpm fmt` / `pnpm fmt:check` (`oxfmt`) |
+
+`pnpm build` writes `build/` — `server.js`, `run.js`, `package.json` and
+`web/dist/` — and that tree is the program: it runs with no `node_modules`,
+no `tsx` and no `vite` on the machine, and `build/` is a complete application
+root (`node build/server.js` finds its `.env`, its page and its Run entry where
+`web/server/build-artifacts.ts` says they are). `build/` is gitignored; a
+fresh checkout has to be built once, and the Console refuses to boot without the
+artifacts rather than compiling them on the owner's first click (#84).
 
 CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck`, the page
 bundle build and `test` on every PR and on pushes to `main`. `.github/workflows/autofix.yml` runs
@@ -100,7 +109,7 @@ Run never got there".
 
 ## Architecture
 
-Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard.
+Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard and the build.
 
 ```
 core/                        — the crawler
@@ -137,7 +146,8 @@ web/                         — the Console, whole
 │   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
 │   └── console-token.ts     — the token the page was opened with, read from its own URL
 └── server/                  — the service, and the one command that starts it
-    ├── console.ts           — the entry point: resolve the app root, read the layers, build the page if absent, bind loopback, open it
+    ├── console.ts           — the entry point: resolve the app root, read the layers, refuse a tree missing its build artifacts, bind loopback, open it
+    ├── build-artifacts.ts   — what the shipped tree is made of: server.js / run.js / web/dist/index.html, the Run entry's path, and the boot refusal for a tree that lacks one (unit-tested; #84)
     ├── server.ts            — the app: the guard, the routes, the port fallback; re-exports the dependency contract from `http/deps.ts` so the contract keeps its import address
     ├── http/                — the transport's own parts: `deps.ts` (the injected contract), `guard.ts` (token/Host/Origin), `respond.ts` (the four response shapes and their exact headers), `method.ts` (405 + `allow`), `content-types.ts` (the extension→type table both the assets and the image routes read), `token-rewrite.ts` (the page and stylesheet rewrites), `assets.ts` (containment + serving one built asset)
     ├── routes/              — one file per route group (status, gallery, images, run, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
@@ -165,6 +175,8 @@ tests/                       — mirrors the sources it tests
 │       ├── report.test.ts
 │       ├── list-run-report.test.ts
 │       └── run-log.test.ts
+├── scripts/                 — the build's own readings of its metafile
+│   └── bundle-externals.test.ts
 └── web/                     — the Console's tests
     ├── server/              — the service's tests (and their two helpers)
     └── src/                 — the page's tests
@@ -175,10 +187,16 @@ tests/                       — mirrors the sources it tests
         └── i18n/
             └── messages.test.ts
 scripts/
-└── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
+├── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
+├── build.ts          — the build: Vite's page + two esbuild entries into `build/`, one `RE1999_VERSION` define, the tree's package.json, and a refusal when a bundle left an undeclared import
+└── bundle-externals.ts — the build's two pure readings of esbuild's metafile: undeclared externals (`sharp` is the only allowed one) and the packages that did bundle (unit-tested)
 ```
 
-A Run's data lives in the data directory, never in the program directory: `<data>/images` (the Mirror), `<data>/logs` (the Run logs) and `<data>/cache/thumbnails` (the disposable thumbnail cache, outside the Mirror by ADR 0010), with `data/user.env` from #78. `core/data-layout.ts` owns that arrangement and the `layout.json` version marker; a pre-#80 checkout is migrated by a same-volume rename on the first start, and an unrecognised or newer layout refuses to start instead of guessing. The built page (`web/dist/`) is the one thing that still travels with the program; there is no other root directory — the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76). Nothing under the data directory is ever deleted by the program (ADR 0019).
+`build/` itself is generated, never source: `pnpm build` writes it and
+`.gitignore` keeps it out of the tree. It is a complete application root, which
+is what a package ships (#86) and what `pnpm webui` runs.
+
+A Run's data lives in the data directory, never in the program directory: `<data>/images` (the Mirror), `<data>/logs` (the Run logs) and `<data>/cache/thumbnails` (the disposable thumbnail cache, outside the Mirror by ADR 0010), with `data/user.env` from #78. `core/data-layout.ts` owns that arrangement and the `layout.json` version marker; a pre-#80 checkout is migrated by a same-volume rename on the first start, and an unrecognised or newer layout refuses to start instead of guessing. The built tree (`build/`) is what travels with the program — two bundles and the page — and no source file does; there is no other root directory — the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76). Nothing under the data directory is ever deleted by the program (ADR 0019).
 
 Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the six files at `tests/web/server/`, which drive the bound service over a real socket.
 
@@ -223,6 +241,17 @@ same-day `1.83.0`) rather than relaxing the policy.
 `simple-git-hooks`). Without it `pnpm install` exits non-zero with
 `ERR_PNPM_IGNORED_BUILDS`. pnpm 12 reads its settings from that file, **not**
 from a `pnpm` field in `package.json` (which it now warns about and ignores).
+
+### An ESM bundle of CommonJS packages needs `createRequire`
+
+`scripts/build.ts` prepends a banner to both entries:
+`const require = createRequire(import.meta.url)`. It is not decoration. esbuild
+inlines a CommonJS dependency's `require` as its own shim, and in ESM output that
+shim calls a `require` that does not exist — the first bundled CJS package that
+requires a builtin kills the program at import. Measured, not guessed: without
+the banner the built Console died on `dotenv` (`Dynamic require of "fs" is not
+supported`) before it printed a URL, while typecheck, lint and every test passed.
+Only booting the artifact catches this class of failure.
 
 ### Git history is LF, the Windows worktree is CRLF
 
@@ -282,7 +311,9 @@ commit on `main`: it must be refused.
   parameter, 100 columns, LF, sorted imports. Markdown is not formatted yet.
   Formatting is not a matter of taste here — run `pnpm fmt` instead of
   hand-aligning.
-- TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
+- TypeScript strict mode, ESM module system, run via `tsx` at **development**
+  time (ADR 0003) — the shipped tree is a bundle (`pnpm build`), and nothing the
+  owner runs loads a transpiler or a bundler
 - The page's files sort by what they hold, not by feature: reactive state or a
   lifecycle belongs in `web/src/composables/`, a stateless pure function in
   `web/src/lib/`, markup only in `web/src/components/`. The entry and its views

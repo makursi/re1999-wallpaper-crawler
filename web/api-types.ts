@@ -30,9 +30,12 @@ export type RefusalCode = (typeof REFUSAL_CODES)[number]
  * One global prerequisite a Run needs; the names used to be English prose.
  *
  * #76 removed `playwright-cli` and `chrome` with the browser crawl they served:
- * a Run asks the Gallery list and downloads, so neither can be missing.
+ * a Run asks the Gallery list and downloads, so neither can be missing. #84
+ * removed `tsx-entry` with the transpiler itself: the Console spawns the built
+ * Run entry beside its own, and a tree without one is a broken build, refused at
+ * boot (`web/server/build-artifacts.ts`) rather than at the click that needs it.
  */
-export const PREREQUISITE_CODES = ['env-file', 'tsx-entry'] as const
+export const PREREQUISITE_CODES = ['env-file'] as const
 
 /** A prerequisite's stable code. */
 export type PrerequisiteCode = (typeof PREREQUISITE_CODES)[number]

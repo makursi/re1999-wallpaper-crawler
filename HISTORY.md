@@ -620,6 +620,33 @@
 - **静默忽略是数据布局里最危险的失败**。版本标记的价值不在「记录版本」，而在把「不认识」从默认分支变成拒绝分支；拒绝必须发生在第一次 mkdir 之前，否则「原数据不动」就只是句口号。
 - **迁移与更新是两种不同的写**。rename 同卷幂等，复制+删除不是；把跨卷明确设成拒绝分支，比写一个「自动复制」再追加失败回滚要诚实得多。
 
+### 2026-10-21 — 程序以构建产物运行：两个 ESM 入口、预构建页面、去掉 tsx 与首启 Vite（#84 / spec #75）
+
+**触因**：便携包（#75）要发的是一棵树，里面只有 `node.exe`、`sharp` 和程序本身。而当时的程序有三处只在源码树里成立：`pnpm webui` 是 `tsx web/server/console.ts`；Console 启动 Run 走的是 `node <tsx CLI 入口> <core/main.ts>` 这个 argv；首启缺页面时用 Vite 当场编译（`ensureBundle`）。三样都要在用户机器上出现转译器/打包器——正是「拿到 zip 的人不该装开发工具」要消灭的东西。
+
+**决策**：
+- **`build/` 就是程序**：`server.js`（bundled `web/server/console.ts`）、`run.js`（bundled `core/main.ts`）、`package.json`（`type: module` + 版本）、`web/dist/`（Vite 产物原样拷入）。这棵树同时是一个完整的应用根：`node build/server.js` 就地找到 `.env`、页面与 Run 入口。gitignore 掉，`pnpm webui` 改成 `cd build && node server.js`。
+- **除 `sharp` 外全部打进 bundle**：`hono`、`@hono/node-server`、`pino`、`pino-pretty`、`undici`、`zod`、`dotenv` 及其传递依赖共 27 个包进两个文件。`sharp` 是原生插件，`await import('sharp')` 的调用点不变，包随树发布（#86）。这份「只有一个外部」不是声明而是断言：`scripts/bundle-externals.ts` 读 esbuild 的 metafile，任何没被允许的 external 都让 `pnpm build` 以非零码退出并点名是哪个包、哪个产物。
+- **一个 `define`**：`RE1999_VERSION` = `package.json` 的 `version`，`core/version.ts` 里那个 `typeof` 兜底缝因此第一次真正被填上；树里的 `package.json` 只是自描述与源码运行的 fallback。
+- **ESM bundle 的 CJS banner**：两个产物顶部都有 `const require = createRequire(import.meta.url)`。esbuild 把 CJS 依赖的 `require` 内联成自己的 shim，而 ESM 输出里没有 `require`；第一版没有 banner，构建产物在 `import` 第一行就死于 `dotenv` 的 `Dynamic require of "fs"`——typecheck、lint、全部测试却都是绿的。
+- **Run 的启动只用 Node**：launcher argv 变成 `[<appRoot>/run.js]`，`tsxEntry`/`mainEntry` 两个依赖删掉；`tsx-entry` 前置条件连同它的 i18n 文案一起退役（`PREREQUISITE_CODES` 只剩 `env-file`），而不是留一个永远为假的检查。
+- **首启不再编译**：`ensureBundle` 删除。页面与 Run 入口都是构建产物，缺任何一个在绑定端口之前就拒绝启动并点名文件（`web/server/build-artifacts.ts`，中文说明指向 `pnpm build`），因此「页面打开是空白 / 点运行毫无反应」两类故障在构建或打包阶段就暴露。
+- **应用根仍是显式输入**：`RE1999_APP_ROOT` / `RE1999_DATA_ROOT` 一字未改，重新用打包后的入口验证（spec 的「打包会坍缩目录结构」那条）。Console 把 `runEntryPath(appRoot)` 交给子进程，子进程的 cwd 与 `RE1999_APP_ROOT` 都指向同一个根。
+- **开发期才需要 `tsx`/`vite`**：`pnpm build` 自身是 `tsx scripts/build.ts`，`core:run` / `check-run` 仍是源码入口（面向 agent，不进用户包，spec #75 明说）；`dev:web` 的 Vite dev server 保留。运行期一个都不需要。
+
+**验证**：
+- `pnpm build`：页面 112 个文件、`server.js` 923 KiB、`run.js` 2124 KiB、外部依赖只有 `sharp`、打出 27 个已打包的包名。
+- **真的启动构建产物**：把 `build/` 拷到 `%TEMP%` 下（仓库之外，没有 `node_modules`、没有 `.ts`、没有 tsx/vite），写一份 `.env`，`RE1999_APP_ROOT`/`RE1999_DATA_ROOT` 指向它，`node server.js --port 0 --no-open` 起来后：`GET /api/status` → `200`，`{"version":"1.0.0",…,"officialTotal":1052,"listAvailable":true,"runConfigAvailable":true,…}`；`GET /` 返回带 token 的 `index.html`。
+- **Console→Run 的整条链**：同一棵树、`BASE_ORIGIN=http://127.0.0.1:9`（死端口，避免真下 2 GB）下 `POST /api/run` → `202 {"started":true}` → 构建后的 Console 用 `process.execPath` 拉起 `run.js` → 写出 `run-2026-10-21T11-20-15.jsonl`（`run_meta` + `run_report`）→ `/api/status` 把该报告读回来（`reportPresent: true`、`defects.gallerySourceUnavailable: true`）。单独跑 `node run.js` 退出码 0。
+- 删掉 `web/dist` 后再启动：三行中文拒绝 + 退出码 1。
+- 四件套：`tsc --noEmit` 0、`vue-tsc` 0、`oxlint --type-aware .` 0 warning 0 error、`vitest run` **43 文件 / 466 tests**；`oxfmt` 重排。
+- **没有真跑完整 Run**：一次完整 Run 约 2 GB，本沙箱不跑；Run 的下载段（`undici`）与真实站点清单之外的路径仍未在构建产物上验证。CI 也还没跑 `pnpm build`（发布流水线归 #88）。
+
+**教训**：
+- **类型检查、lint、单测全绿，和「这个 bundle 能 import 起来」是两件事**。CJS 互操作 banner 这一类失败只在真启动时出现；打包类改动的最低验证标准必须是「把产物挪到一个干净目录并真的运行它」。
+- **构建期的断言要用构建器自己的数据**。esbuild 的 metafile 直接给出每个产物的 external 与 input，比事后 grep 产物文本诚实得多；「只有一个原生依赖」因此是构建的门，而不是文档里的句子。
+- **删掉一个前置检查，要接住它原本挡住的那种失败**。`tsx-entry` 挡的是「spawn 一个不存在的入口，点下去什么都没发生」；删了它就必须有别的机制（构建产物闸）挡住同一个后果，否则只是把 ENOENT 藏得更深。
+
 ---
 
 ## 已否决方案速查（改动前先看这里）
@@ -691,12 +718,19 @@
 | 旧数据用「复制后删除」或跨卷自动复制 | 复制可能中途失败，随后的删除把失败变成数据丢失；同卷 rename 在失败时原样保留旧目录 | 2026-10-21 / #80 / ADR 0019 |
 | 旧目录与新目标同时存在时自动合并 | 两边都可能是 Mirror，静默并集会让 `mirrorGap` 变成合并动作的产物；改为拒绝并给手工步骤 | 2026-10-21 / #80 / ADR 0019 |
 | 遇到更高/未知 `layout.json` 就回退默认值继续启动 | 这正是「官网 1010 / 本地 0」的静默失败；版本不认识就在第一次写入前拒绝 | 2026-10-21 / #80 / ADR 0019 |
+| Console 继续用 tsx 启动 Run，只在打包时换成另一个入口 | 两套启动路径意味着开发期永远测不到发布形态；「页面能开、点运行就崩」正是 #84 要消灭的故障 | 2026-10-21 / #84 |
+| 保留 `ensureBundle`：缺页面时首启现场用 Vite 编译 | 用户机器上就出现了打包器及其原生绑定，且首次点击要等构建；页面是构建产物，缺了就该在构建/打包阶段响 | 2026-10-21 / #84 |
+| 把 `pino`/`undici`/`hono` 留成外部依赖、随包带 `node_modules` | 便携包承诺只有 `node.exe` + `sharp`；随包 `node_modules` 等于把解析规则、平台二进制和体积一起带进去 | 2026-10-21 / #84 |
+| 把 `tsx-entry` 前置检查改名为 `run-entry` 保留 | 它检查的 `node_modules/tsx` 在打包树里永远不存在；而「缺 `run.js`」是构建/打包错误，属于启动时的构建产物闸，不是每次点运行都要查一遍的运行期前置条件 | 2026-10-21 / #84 |
+| 构建产物继续写在 `web/dist`（与源码混居），只把入口放进仓根 | 应用根必须是显式输入，而源码树里遍地 `.ts`——「从产物运行」就无从演示，也无法阻止运行期解析到源码 | 2026-10-21 / #84 |
+| 用 `RE1999_APP_ROOT=build` 前缀跑 `pnpm webui` | 跨平台 shell 里给 npm script 设环境变量要额外依赖（`cross-env`）；`cd build && node server.js` 在 cmd 与 sh 里都成立，且与包的启动器同形 | 2026-10-21 / #84 |
 
 ## 验证规范（所有迭代通用）
 
 - 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）；格式化改动加 `pnpm fmt:check`，且大范围重排要做 **AST 对比**（忽略 import 顺序与括号）证明“只改了空白”
 - 纯工具链/纯移动类改动不真跑，但要在 PR 里写明「没跑」
 - 行为验证：真跑 `pnpm core:run`，读 `data/logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
+- 构建/打包类改动：`pnpm build` 之后**必须把 `build/` 挪到仓库之外真启动一次**（`/api/status` 有响应、`POST /api/run` 能写出 Run log），类型检查与单测对这一类失败不敏感（#84）
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题
