@@ -108,16 +108,18 @@ describe('readConfig', () => {
 })
 
 describe('configSourcesOf', () => {
-  it('puts the user layer in data/ beside the app directory', () => {
-    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'config-sources-'))
-    roots.push(install)
-    const appRoot = path.join(install, 'app')
+  it('keeps the user layer inside the application root by default', () => {
+    // A source tree's root is the repository, so its data is a child of it. The
+    // package declares its sibling `data` through the environment instead — see
+    // the explicit-data-root case below, which is the packaged shape.
+    const appRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'config-sources-'))
+    roots.push(appRoot)
 
     expect(configSourcesOf(appRoot)).toEqual({
       appRoot,
-      dataRoot: path.join(install, 'data'),
+      dataRoot: path.join(appRoot, 'data'),
       appEnvFile: path.join(appRoot, '.env'),
-      userEnvFile: path.join(install, 'data', 'user.env'),
+      userEnvFile: path.join(appRoot, 'data', 'user.env'),
     })
   })
 

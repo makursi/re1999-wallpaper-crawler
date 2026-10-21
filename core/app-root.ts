@@ -15,12 +15,23 @@
 // (`pnpm core:run`, `pnpm webui`) does not set it, so the entry point's explicit
 // fallback — the process's working directory, which the package scripts set to
 // the repository root — is used instead. Neither source is a module location.
+//
+// The data directory is a second input rather than a deduction, because the two
+// layouts differ: a source tree keeps its data at `<repo>/data` (a child of the
+// root), while the package keeps it beside the program at `<install>/data` (a
+// sibling of `<install>/app`). One rule cannot serve both — "the sibling of the
+// application root" would put a source run's Mirror outside the repository.
+// So `RE1999_DATA_ROOT` is the package's answer, and the child of the root is
+// the source tree's default.
 
 import * as path from 'node:path'
 import process from 'node:process'
 
 /** The environment variable a packaged launcher sets to its own directory. */
 export const APP_ROOT_ENV = 'RE1999_APP_ROOT'
+
+/** The environment variable a packaged launcher sets to the data directory. */
+export const DATA_ROOT_ENV = 'RE1999_DATA_ROOT'
 
 /**
  * Resolve the one application root: the environment's `RE1999_APP_ROOT` when it
@@ -38,11 +49,21 @@ export function resolveAppRoot(env: NodeJS.ProcessEnv = process.env, fallback?: 
 }
 
 /**
- * The data directory that sits beside the application directory: the packaged
- * layout is `<install>\app` and `<install>\data`. The user's own configuration
- * (`data/user.env`) lives there from #78 on; #80 moves the Mirror, the Run logs
- * and the thumbnail cache into the same directory.
+ * The data directory: `RE1999_DATA_ROOT` when the environment names one, which
+ * is how the package's `<install>\data` (a sibling of `<install>\app`) is
+ * declared, otherwise a `data` child of the application root, which is where a
+ * source tree keeps it.
+ *
+ * Never the sibling by deduction: a source run's root *is* the repository, so a
+ * sibling rule would place the Mirror beside the checkout. The packaged tree
+ * must therefore say where its data is; `<app>\data` would be inside the
+ * directory an update replaces, which is the one place it must never be.
+ *
+ * The user's own configuration (`data/user.env`) lives here from #78 on; #80
+ * moves the Mirror, the Run logs and the thumbnail cache into the same place.
  */
-export function dataRootOf(appRoot: string): string {
-  return path.resolve(appRoot, '..', 'data')
+export function dataRootOf(appRoot: string, env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env[DATA_ROOT_ENV]?.trim()
+  if (configured !== undefined && configured.length > 0) return path.resolve(configured)
+  return path.resolve(appRoot, 'data')
 }

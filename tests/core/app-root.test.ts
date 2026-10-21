@@ -4,7 +4,7 @@ import * as path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { APP_ROOT_ENV, dataRootOf, resolveAppRoot } from '../../core/app-root.js'
+import { APP_ROOT_ENV, DATA_ROOT_ENV, dataRootOf, resolveAppRoot } from '../../core/app-root.js'
 
 const roots: string[] = []
 
@@ -54,11 +54,28 @@ describe('resolveAppRoot', () => {
 })
 
 describe('dataRootOf', () => {
-  it('places the data directory beside the application directory', () => {
-    // The package's shape: <install>/app and <install>/data are siblings.
-    const install = temporaryRoot('data-root-')
+  it('places a source run’s data inside the repository root', () => {
+    // A source tree's root *is* the repository, so the data directory is a child
+    // of it. A sibling rule here would write the Mirror beside the checkout.
+    const appRoot = temporaryRoot('data-root-source-')
+
+    expect(dataRootOf(appRoot, {})).toBe(path.join(appRoot, 'data'))
+  })
+
+  it('takes a packaged install’s data directory from the environment', () => {
+    // The package's shape: <install>/app and <install>/data are siblings, and the
+    // launcher says so instead of the code deducing it.
+    const install = temporaryRoot('data-root-install-')
     const appRoot = path.join(install, 'app')
 
-    expect(dataRootOf(appRoot)).toBe(path.join(install, 'data'))
+    expect(dataRootOf(appRoot, { [DATA_ROOT_ENV]: path.join(install, 'data') })).toBe(
+      path.join(install, 'data'),
+    )
+  })
+
+  it.each(['', '   '])('treats an empty data root (%j) as silent', value => {
+    const appRoot = temporaryRoot('data-root-empty-')
+
+    expect(dataRootOf(appRoot, { [DATA_ROOT_ENV]: value })).toBe(path.join(appRoot, 'data'))
   })
 })
