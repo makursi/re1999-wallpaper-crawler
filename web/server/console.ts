@@ -25,6 +25,13 @@
 //
 // ADR 0008: no dispatcher and no CLI framework. The Console takes `--port` and
 // `--no-open` and nothing more; the flags are parsed by Node's own parser.
+//
+// #82: this entry is also what a second double-click runs. Before it resolves
+// any of the boot's work it asks the record the previous start left behind
+// whether that service is still answering (`instance-handshake.ts`); if it is,
+// this start only reopens that page and exits, so one program cannot become two
+// processes writing the same Run log directory. The record it publishes once its
+// port is known is removed when the boot that wrote it exits.
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -46,6 +53,8 @@ import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
+import { runningInstanceUrl } from './instance-handshake.js'
+import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
 import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
 import type { RunLauncher } from './run-control.js'
 import {
@@ -56,7 +65,7 @@ import {
 } from './run-control.js'
 import { createRunLogSource } from './run-log-source.js'
 import { readNewestRunReport } from './run-report-source.js'
-import type { ConsoleService, ThumbnailSource } from './server.js'
+import type { ConsoleServerDeps, ConsoleService, ThumbnailSource } from './server.js'
 import { startConsoleServer } from './server.js'
 import { galleryFactsOf } from './status.js'
 import {
@@ -236,6 +245,20 @@ async function main(options: ConsoleOptions): Promise<void> {
   const appRoot = resolveAppRoot()
   const dataRoot = dataRootOf(appRoot)
 
+  // #82: one program, one service. Before anything is read, written or bound,
+  // ask the record the previous start left behind whether that service is still
+  // answering. If it is, this start is a second double-click: it points the
+  // browser at the page that is already up and exits, so two processes can never
+  // write the same Run log directory. A record that is absent, unreadable or
+  // stale answers `null` and this boot proceeds normally.
+  const runningUrl = await runningInstanceUrl(dataRoot)
+  if (runningUrl !== null) {
+    process.stdout.write(`程序已在运行:${runningUrl}\n`)
+    process.stdout.write('本窗口只是把浏览器指回正在运行的那个页面,随后自动关闭。\n')
+    if (options.open) openInBrowser(runningUrl)
+    process.exit(0)
+  }
+
   // #81: the one outbound request that is not the game's site or its CDN. It is
   // started here, beside the rest of the boot's work, and awaited only where the
   // service needs its answer — so the page's first status read can carry it.
@@ -341,11 +364,13 @@ async function main(options: ConsoleOptions): Promise<void> {
     acknowledgeOrphan: () => runLogSource.acknowledgeOrphan(),
   })
 
-  const service = await startConsoleServer(config, {
-    // #81: the boot check's answer, fixed for this process — one request per
-    // boot, never one per status read. The await is bounded by the check's own
-    // three-second timeout; a failure has already become `null`.
-    updateNotice: await updateCheck,
+  // #82: this boot's token, generated once because it is needed twice — by the
+  // service's guard and by the record the next double-click probes. It stays
+  // random per boot: the record is a handshake, not a credential, and a URL
+  // saved from an earlier run is refused by this one (see `instance-record.ts`).
+  const token = randomBytes(16).toString('hex')
+
+  const deps: ConsoleServerDeps = {
     // The Run half is read from the Run log directory, so a Run started from a
     // terminal appears exactly like one started here (ADR 0009).
     runState: () => runLogSource.facts(),
@@ -373,9 +398,34 @@ async function main(options: ConsoleOptions): Promise<void> {
     imageSizeSource: createImageSizeCache(realImageSizeReader),
     startRun,
     cleanupRun,
-    token: randomBytes(16).toString('hex'),
+    token,
     port: options.port,
+  }
+
+  const service = await startConsoleServer(config, deps)
+
+  // #82: publish this boot's address as soon as the port is known, and before
+  // the boot's one network request is awaited. From here until shutdown a second
+  // double-click reuses this service instead of starting another; the record is
+  // removed on the way out, so a clean shutdown leaves nothing to reconnect to.
+  // A hard kill leaves a stale record, and staleness is proved at read time by
+  // the probe, which is the same "start normally" answer.
+  const recordFile = instanceRecordPath(dataRoot)
+  const identity = { port: service.port, token, pid: process.pid }
+  writeInstanceRecord(recordFile, identity)
+  process.once('exit', () => {
+    // Only this boot's own record: two starts that raced leave the later one's
+    // record in place when the earlier one shuts down.
+    forgetInstanceRecord(recordFile, identity)
   })
+
+  // #81: the boot check's answer, handed to the service the moment it is known —
+  // one request per boot, never one per status read. `checkForUpdate` was started
+  // at the top of `main` and never rejects: an offline machine, a redirect or a
+  // malformed payload is simply "no notice", never a boot failure. A status read
+  // that lands during the check carries no notice yet, and the page's poll picks
+  // it up on the next read.
+  deps.updateNotice = await updateCheck
 
   // Always the port actually bound: the preferred one is only a preference
   // (spec decision 3).
