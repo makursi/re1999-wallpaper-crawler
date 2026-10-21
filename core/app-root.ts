@@ -59,8 +59,9 @@ export function resolveAppRoot(env: NodeJS.ProcessEnv = process.env, fallback?: 
  * must therefore say where its data is; `<app>\data` would be inside the
  * directory an update replaces, which is the one place it must never be.
  *
- * The user's own configuration (`data/user.env`) lives here from #78 on; #80
- * moves the Mirror, the Run logs and the thumbnail cache into the same place.
+ * The user's own configuration (`data/user.env`) has lived here since #78; #80
+ * puts the Mirror, the Run logs and the thumbnail cache in the same place, under
+ * the arrangement `core/data-layout.ts` owns.
  */
 export function dataRootOf(appRoot: string, env: NodeJS.ProcessEnv = process.env): string {
   const configured = env[DATA_ROOT_ENV]?.trim()

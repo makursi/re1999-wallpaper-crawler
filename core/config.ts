@@ -1,8 +1,10 @@
+import * as path from 'node:path'
 import process from 'node:process'
 
 import { dataRootOf, resolveAppRoot } from './app-root.js'
 import type { ConfigValues } from './config-read.js'
 import { galleryListUrlOf, parseConfig, readLayeredConfig, siteConfig } from './config-read.js'
+import { DATA_LAYOUT_FILE_NAME, DataLayoutError, layoutRefusalOf } from './data-layout.js'
 
 // ── the eager configuration ───────────────────────────────────────
 //
@@ -12,19 +14,28 @@ import { galleryListUrlOf, parseConfig, readLayeredConfig, siteConfig } from './
 // `core/config-read.ts`, which is also what the Console reads without throwing —
 // importing *this* module is the strict parse, deliberately (#57).
 //
-// The root is an input: `resolveAppRoot` reads the environment a packaged
+// The two roots are inputs: `resolveAppRoot` reads the environment a packaged
 // launcher sets (`RE1999_APP_ROOT`) and falls back to the process's working
-// directory for a source run. Nothing here looks at its own module's location
-// (#78).
+// directory for a source run; `dataRootOf` reads `RE1999_DATA_ROOT` or the
+// source tree's `<root>/data`. Nothing here looks at its own module's location
+// (#78), and no data path is a child of the app root (#80).
 
 const APP_ROOT = resolveAppRoot()
-const layered = readLayeredConfig({ appRoot: APP_ROOT, dataRoot: dataRootOf(APP_ROOT) })
+const DATA_ROOT = dataRootOf(APP_ROOT)
+const layered = readLayeredConfig({ appRoot: APP_ROOT, dataRoot: DATA_ROOT })
 
 // Re-parse the merged environment when the tolerant read found nothing usable:
 // this is what keeps the pipeline's failure a `ZodError` with the exact key,
 // exactly as `dotenv/config` + `parseConfig` gave it before #78.
 const parsed: ConfigValues = layered.values ?? parseConfig(layered.env)
-const site = siteConfig(APP_ROOT, parsed)
+const site = siteConfig(APP_ROOT, parsed, DATA_ROOT)
+
+// An unrecognised (usually newer) data layout must stop a Run before it can
+// write into data it does not understand. This is a read-only check: the
+// migration itself is `ensureDataLayout`, called by the entry points — never at
+// module load, because merely importing this module must not touch the disk.
+const layoutRefusal = layoutRefusalOf(path.join(DATA_ROOT, DATA_LAYOUT_FILE_NAME))
+if (layoutRefusal !== null) throw new DataLayoutError(layoutRefusal)
 
 // `dotenv/config` used to put every file key into `process.env`, so a key the
 // schema does not carry (the logger's `LOG_LEVEL`, `USER_AGENT`) was visible to
@@ -38,13 +49,23 @@ for (const [key, value] of Object.entries(layered.env)) {
 
 // ── exports ───────────────────────────────────────────────────────
 
-/** The application root: where `.env`, `node_modules/` and the Run's data live. */
+/** The application root: where `.env`, `node_modules/` and the built page live. */
 export { APP_ROOT }
+
+/** The user's data directory: the Mirror, the Run logs, the cache and `user.env`. */
+export { DATA_ROOT }
 
 /** The one startup line saying the user's overrides were loaded, or `null`. */
 export const USER_CONFIG_NOTICE = layered.notice
 
 export const BASE_ORIGIN = parsed.BASE_ORIGIN
+/**
+ * The schema's raw `IMAGES_DIR` / `LOG_DIR`. They are what the legacy-layout
+ * migration compares against the old checkout's directories, so a custom mirror
+ * path is recognised too and not stranded in the program directory.
+ */
+export const IMAGES_DIR_SETTING = parsed.IMAGES_DIR
+export const LOG_DIR_SETTING = parsed.LOG_DIR
 export const IMAGES_DIR = site.imagesDir
 export const BATCH_SIZE = parsed.BATCH_SIZE
 export const LOG_DIR = site.logDir

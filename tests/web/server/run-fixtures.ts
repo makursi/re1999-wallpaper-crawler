@@ -146,16 +146,17 @@ export function runLog(...records: string[]): string {
 }
 
 /**
- * A fixture repository root: a fresh temporary directory holding an empty Mirror
- * (`images/`) and an empty Run log directory (`logs/`).
+ * A fixture repository root: a fresh temporary directory whose `data/` holds an
+ * empty Mirror (`<root>/data/images`) and an empty Run log directory
+ * (`<root>/data/logs`), exactly the source-checkout layout #80 introduced.
  *
  * The caller owns the directory — push it onto its own `roots` array so its
  * `afterEach` can remove it — and seeds whatever its test needs.
  */
 export function fixtureAppRoot(prefix: string): string {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
-  fs.mkdirSync(path.join(projectRoot, 'images'))
-  fs.mkdirSync(path.join(projectRoot, 'logs'))
+  fs.mkdirSync(path.join(projectRoot, 'data', 'images'), { recursive: true })
+  fs.mkdirSync(path.join(projectRoot, 'data', 'logs'), { recursive: true })
   // A checkout carries its package metadata, and the Console's version is read
   // from it relative to the app root (#79). Copied verbatim so the fixture's
   // version is the repository's, never a second number written here.
@@ -163,14 +164,22 @@ export function fixtureAppRoot(prefix: string): string {
   return projectRoot
 }
 
+/** The user's data directory under a fixture root, as `dataRootOf` resolves it. */
+export function fixtureDataRoot(appRoot: string): string {
+  return path.join(appRoot, 'data')
+}
+
 /** The Console's configuration over a fixture app root. */
 export function consoleConfigIn(appRoot: string): ConsoleConfig {
-  const imagesDir = path.join(appRoot, 'images')
+  const dataRoot = fixtureDataRoot(appRoot)
+  const imagesDir = path.join(dataRoot, 'images')
   return {
     appRoot,
+    dataRoot,
     imagesDir,
-    logDir: path.join(appRoot, 'logs'),
+    logDir: path.join(dataRoot, 'logs'),
     galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
+    cacheDir: path.join(dataRoot, 'cache', 'thumbnails'),
     // The built page lives under the app root's web layer — `web/dist` in the
     // real repository. Mirrored here so a fixture's layout is the production
     // one, one level deeper than the fixture app root.

@@ -104,9 +104,10 @@ Two layers, one directory each at the root: `core/` is the crawler, `web/` is th
 
 ```
 core/                        — the crawler
-├── app-root.ts              — the one application root: RE1999_APP_ROOT or the caller's fallback, plus the sibling data directory; nothing derives it from module position (unit-tested)
+├── app-root.ts              — the two injected roots: RE1999_APP_ROOT / RE1999_DATA_ROOT or their caller fallbacks; nothing derives either from module position (unit-tested)
 ├── config.ts                — the pipeline's eager configuration: reads the two layers at import (an unusable pair fails a Run before it starts) and exports the constants the pipeline imports
-├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the tree-relative defaults, the Gallery list URL (unit-tested)
+├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the data-relative defaults, the Gallery list URL (unit-tested)
+├── data-layout.ts           — the arrangement inside the data directory: images/, logs/, cache/thumbnails/, the layout.json version marker, and the forward-only same-volume rename of a pre-#80 checkout (unit-tested; never deletes)
 ├── version.ts               — the one current version: the build-injected constant (`RE1999_VERSION`, ticket #84's define seam) with the app root's package metadata as the source run's fallback (unit-tested)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: ask the gallery list → download its URLs → check the list → report
@@ -119,7 +120,7 @@ core/                        — the crawler
 │   └── download.ts          — parallel batch downloads via undici (injected client), no session, 403 retry (unit-tested)
 ├── gallery/
 │   ├── gallery-source.ts    — the site's gallery list endpoint: fetch + validate (unit-tested)
-│   └── gallery-state.ts     — cross-run id set + mirror check, writes images/.gallery-state.json (unit-tested)
+│   └── gallery-state.ts     — cross-run id set + mirror check, writes <data>/images/.gallery-state.json (unit-tested)
 └── report/
     ├── report.ts            — pure analysis: detectLeaks, classifyOutcomes, buildRunReport (unit-tested)
     └── run-log.ts           — the reverse: parseRunReport + assessRun, the three-state verdict (unit-tested)
@@ -146,6 +147,8 @@ web/                         — the Console, whole
 tests/                       — mirrors the sources it tests
 ├── core/                    — the crawler's tests
 │   ├── app-root.test.ts
+│   ├── data-layout.test.ts
+│   ├── data-cycle-survival.test.ts
 │   ├── logger.test.ts
 │   ├── config-read.test.ts
 │   ├── version.test.ts
@@ -175,7 +178,7 @@ scripts/
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ```
 
-A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010). There is no other root directory: the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76).
+A Run's data lives in the data directory, never in the program directory: `<data>/images` (the Mirror), `<data>/logs` (the Run logs) and `<data>/cache/thumbnails` (the disposable thumbnail cache, outside the Mirror by ADR 0010), with `data/user.env` from #78. `core/data-layout.ts` owns that arrangement and the `layout.json` version marker; a pre-#80 checkout is migrated by a same-volume rename on the first start, and an unrecognised or newer layout refuses to start instead of guessing. The built page (`web/dist/`) is the one thing that still travels with the program; there is no other root directory — the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76). Nothing under the data directory is ever deleted by the program (ADR 0019).
 
 Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the six files at `tests/web/server/`, which drive the bound service over a real socket.
 

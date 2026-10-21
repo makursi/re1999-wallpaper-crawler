@@ -53,7 +53,7 @@ Run's first call is ready to send._
 WebUI (`pnpm webui`), which starts and watches the same pipeline from the
 page, so send a user there rather than to this command. One request to the
 gallery list (about a second) and the download batches stream into
-`logs/run-<ts>.jsonl` — in the log, since a background job has no terminal to
+`data/logs/run-<ts>.jsonl` — in the log, since a background job has no terminal to
 watch. The Run has no browser child to outlive it, so the wrapper exits with the
 Run; the proof is still the state, never the process exit code.
 
@@ -62,7 +62,7 @@ finished and are checked by one command, **`pnpm check-run`** (exit 0 for
 `clean`/`explained`, 1 for `defect`): the Run log carries a `run_report`, the
 Gallery state carries that report's `runId`, and the report's claimed new files
 are on disk. A Run log that stops before its `run_report` is a defect in the
-log, not evidence the Run failed — read `images/.gallery-state.json` first, as
+log, not evidence the Run failed — read `data/images/.gallery-state.json` first, as
 the missing-report trap below says, which separates "finished, log lost" from
 "never got there".
 
@@ -90,7 +90,7 @@ routine classes from the rest:
 Gate on the exit code when you only need the verdict; read the output when you
 need the numbers. It is `tsx core/check-run.ts` underneath, so it needs the same
 sandbox access as the Run. When the output is not enough, read the log by hand:
-each Run writes one JSONL file in `logs/` (`run-<runId>.jsonl`; Runs from before
+each Run writes one JSONL file in `data/logs/` (`run-<runId>.jsonl`; Runs from before
 the rename wrote `save-wallpapers-<runId>.jsonl`, and both count as a Run log);
 read the newest. Grep `"type":"run_report"` — one structured record with all
 metrics and the detected defects, the basis for judging stability, finding
@@ -123,7 +123,7 @@ Judge the report block by block:
     there is no earlier record to compare against (`firstRun: true`), which is
     **not** the same as 0.
   - `gallery.newFiles` — which entries those are.
-  - `gallery.mirror` — the list against `images/`: `missingFromDisk`
+  - `gallery.mirror` — the list against `data/images/`: `missingFromDisk`
     (`count`/`files`: Wallpapers we do not have) and `extraOnDisk`
     (`count`/`files`: files the list does not contain). Both 0 means the copy
     matches; `null` means it could not be checked.
@@ -169,10 +169,10 @@ Reading traps — the numbers that get misread:
   stop while the pipeline keeps going, and that is now gone (the Run log is
   written synchronously on the main thread, ADR 0007). A missing report still
   happens if the Run is killed or dies before its last step. When the report is
-  missing, read `images/.gallery-state.json` **first**: its `runId` and
+  missing, read `data/images/.gallery-state.json` **first**: its `runId` and
   `updatedAt` are written at the end of a Run, which separates "the Run
   finished, the log is gone" from "the Run never got that far". Then verify the
-  outcome directly — fetch the official list and diff it against `images/` —
+  outcome directly — fetch the official list and diff it against `data/images/` —
   rather than accepting the Run as clean on an exit code.
 - **Cross-run trends**: compare `gallery.officialTotal` /
   `gallery.newSinceLastRun` / `download.successRate` / `defects` across files.

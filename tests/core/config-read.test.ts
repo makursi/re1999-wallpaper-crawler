@@ -279,30 +279,46 @@ describe('parseConfig', () => {
 })
 
 describe('siteConfig', () => {
-  const projectRoot = path.resolve('/srv/re1999')
-  const defaultImagesDir = path.join(projectRoot, 'images')
+  // The packaged shape: the program directory and the user's data are siblings.
+  const projectRoot = path.resolve('/srv/re1999/app')
+  const dataRoot = path.resolve('/srv/re1999/data')
+  const defaultImagesDir = path.join(dataRoot, 'images')
 
   it('reads the same Mirror and Run log directory a Run would when .env supplies nothing', () => {
     // The Console's defaults are the schema's: the page degrades to "not read",
     // never to a different Mirror than the Run writes into.
-    expect(siteConfig(projectRoot, null)).toEqual({
+    expect(siteConfig(projectRoot, null, dataRoot)).toEqual({
+      dataRoot,
       imagesDir: defaultImagesDir,
-      logDir: path.join(projectRoot, 'logs'),
+      logDir: path.join(dataRoot, 'logs'),
+      cacheDir: path.join(dataRoot, 'cache', 'thumbnails'),
       galleryStateFile: path.join(defaultImagesDir, '.gallery-state.json'),
     })
   })
 
-  it('follows the environment’s own directories when it has them', () => {
+  it('follows the environment’s own directories when it has them, under the data root', () => {
     const site = siteConfig(
       projectRoot,
       valuesOf({ ...REQUIRED_ENV, IMAGES_DIR: 'mirror', LOG_DIR: 'runs' }),
+      dataRoot,
     )
 
-    expect(site.imagesDir).toBe(path.join(projectRoot, 'mirror'))
+    expect(site.imagesDir).toBe(path.join(dataRoot, 'mirror'))
     // The Gallery state stays beside the Mirror it describes (ADR 0006).
     expect(site.galleryStateFile).toBe(
-      path.join(path.join(projectRoot, 'mirror'), '.gallery-state.json'),
+      path.join(path.join(dataRoot, 'mirror'), '.gallery-state.json'),
     )
-    expect(site.logDir).toBe(path.join(projectRoot, 'runs'))
+    expect(site.logDir).toBe(path.join(dataRoot, 'runs'))
+  })
+
+  it('never places the user’s data under the program directory it was given', () => {
+    // A packaged root and its data are siblings. Deriving either from the other
+    // is the failure #80 is about: the program directory is replaced on update.
+    const site = siteConfig(projectRoot, null, dataRoot)
+
+    expect(site.imagesDir.startsWith(projectRoot)).toBe(false)
+    expect(site.logDir.startsWith(projectRoot)).toBe(false)
+    expect(site.cacheDir.startsWith(projectRoot)).toBe(false)
+    expect(site.cacheDir.startsWith(site.imagesDir)).toBe(false)
   })
 })

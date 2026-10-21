@@ -11,10 +11,10 @@
   Owns: `core/download/download.ts`; orchestrated by `core/main.ts` (step 2).
   Vocabulary in CONTEXT.md → Download.
 - **Gallery tracking** — the site's own inventory of the gallery, the mirror
-  check against `images/`, and the cross-run memory of which entries have been
-  seen.
+  check against the data directory's `images/`, and the cross-run memory of
+  which entries have been seen.
   Owns: `core/gallery/gallery-source.ts` (the list endpoint),
-  `core/gallery/gallery-state.ts` (`images/.gallery-state.json`); `core/main.ts`
+  `core/gallery/gallery-state.ts` (`<data>/images/.gallery-state.json`); `core/main.ts`
   fetches the list once as the Run's Discovery (step 1) and writes the state at
   the end of the Run (step 3). Vocabulary in CONTEXT.md → Gallery tracking.
 - **Console** — the human entry point: a local service started by one command
@@ -27,8 +27,9 @@
   dictionary test enumerates, ADR 0014), `web/src/` (the page, in three buckets:
   `components/`, `composables/`, `lib/`), and the page's tooling
   (`web/vite.config.ts`, `web/uno.config.ts`, `web/tsconfig.web.json`, and the
-  artifacts they produce: `web/dist/`, the thumbnail cache under
-  `web/.console-cache/`); started by the `webui` script.
+  built page under `web/dist/`); started by the `webui` script. The thumbnail
+  cache is not a Console artifact any more: it is `<data>/cache/thumbnails/`
+  (ADR 0019).
   Vocabulary in CONTEXT.md → Console.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `core/wallpaper-url.ts`; Download's input, the Console's
@@ -39,7 +40,7 @@
 
 - **Gallery list → Discovery → Download**: the list is the Run's URL set
   (ADR 0018), so Download consumes exactly what the site lists and writes it to
-  `images/`.
+  the data directory's `images/` (ADR 0019).
 - **Gallery list → Site asset filter (vocabulary)**: the rules in
   `core/wallpaper-url.ts` still decide what a Wallpaper is for the Console's
   tile check, but nothing on the Run's path drops a URL any more, so the

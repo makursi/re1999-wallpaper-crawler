@@ -598,6 +598,30 @@
 
 ---
 
+### 2026-10-21 — 用户数据搬进 data 目录：镜像、Run log、缩略图缓存与数据版本闸（#80 / ADR 0019）
+
+**触因**：便携包的更新故事是「整体替换 `app\`」，而用户的东西当时住在程序目录里——仓根的 `images/`、`logs/`，以及 `web/.console-cache/`。替换 `app\`（或重新 clone）与丢掉这些是同一个动作。更隐蔽的失败是「静默忽略」：旧程序遇到新版本写下的状态文件会 `safeParse` 成 `null`，把 Run 当成首轮，页面上出现「官网 1010 / 本地 0」，用户只看到「这软件坏了」。
+
+**决策**：
+- **数据目录是一个注入的根**：源码树解析 `<repo>/data`，包由启动器用 `RE1999_DATA_ROOT` 指向 `<install>/data`（与 `app/` 平级，`core/app-root.ts` #78 已提供）。`core/data-layout.ts` 是唯一命名 `<data>/images`、`<data>/logs`、`<data>/cache/thumbnails`、`<data>/layout.json` 的模块；`IMAGES_DIR` 仍可配置，但相对数据根解析。
+- **缩略图缓存搬出程序目录**，但仍不在 Mirror 内：`<data>/cache` 是 `<data>/images` 的兄弟，ADR 0010 的算术前提不变；缓存本可丢弃，但留着就等于每次更新白掉 1000+ 张。
+- **版本标记 + 拒绝启动**：`layout.json` 写 `{"version": 1}`。更高或无法识别的版本在**任何写入之前**拒绝，中文说明点名标记文件与两个版本号；`images/.gallery-state.json` 的 `version: 1` 原样随镜像移动、原样读取，没有重新解释。
+- **前向迁移只做同卷 rename，且幂等**：首次启动（Run、`check-run`、Console 三处入口）识别旧位置并逐个改名，然后写标记；目标已存在就拒绝并给出手工合并步骤（不猜、不并、不覆盖）；跨盘拒绝并说明先手动移动（不静默复制，避免复制到一半失败）。中断的迁移下一次启动接着做，已经写好的标记让第二次启动不碰任何文件。
+- **「程序永不删除数据」用测试证明**：`tests/core/data-layout.test.ts` 在临时树上覆盖迁移、冲突、跨卷、更高版本；`tests/core/data-cycle-survival.test.ts` 跑一轮 Run 的整条数据层（logger、Mirror mkdir、下载、Gallery state 写入与读取），断言迁移前存在的每个文件仍在、逐字节相同（Gallery state 是允许改写的状态文件，只要求仍在）；`tests/web/server/data-survival.test.ts` 用真实 socket 驱动 Console 的 status / gallery / image / thumbnail 与被拒绝的 start，断言同一件事。真仓的 2.1 GB `images/` 全程未被测试读写。
+- **文档与 ADR 同轮**：ADR 0019 记录布局、标记、迁移与「不删除」；ADR 0016 的「Console 不向仓根写任何东西」字面被取代（现在会创建 `<data>/layout.json`），但其约束本意更强：程序不写自己的程序目录，用户数据在更新替换的目录之外。AGENTS 架构树、`data/user.env` 路径、`.gitignore` 与 runbook 的读取路径同步。
+
+**验证**：
+- 四件套（sandbox 直跑二进制）：`tsc --noEmit` 0、`vue-tsc --noEmit -p web/tsconfig.web.json` 0、`oxlint --type-aware .` 0 warning 0 error、`vitest run` **40 文件 / 409 tests 通过**；改动过的 `.ts`/`.json` 用 `oxfmt --threads=1`（`.vue` 在本沙箱无法 spawn，未改）。
+- 新增测试 25 条：`data-layout.test.ts` 21（路径来自数据根、缓存不在 Mirror 内、标记读取、更高/未知版本拒绝且数据逐字节不变、旧布局 rename、自定义镜像/日志名、幂等、目标冲突、跨卷、更高标记不动任何文件）；两条 survival 测试各 1（Run 数据层与 Console socket 周期）；`config-read.test.ts` 的 `siteConfig` 改为数据根下的镜像/日志/缓存并新增 1 条「数据不在程序目录」断言；`console-config.test.ts` 新增 1 条路径断言（原 3 条改写）。
+- **没有真跑**：迁移会移动真仓的 2.1 GB `images/`，这是本票明令禁止的操作；所有迁移与周期证据都来自 `%TEMP%` 下的临时安装。
+
+**教训**：
+- **「不要删」是一条可以被行为测试证明的约束**。只写注释或只 code review 都挡不住未来某个 `rm -rf`；把「迁移前快照 ⊆ 迁移后快照且逐字节相同」写成断言，才让下一个人删数据时先看到红灯。
+- **静默忽略是数据布局里最危险的失败**。版本标记的价值不在「记录版本」，而在把「不认识」从默认分支变成拒绝分支；拒绝必须发生在第一次 mkdir 之前，否则「原数据不动」就只是句口号。
+- **迁移与更新是两种不同的写**。rename 同卷幂等，复制+删除不是；把跨卷明确设成拒绝分支，比写一个「自动复制」再追加失败回滚要诚实得多。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -662,12 +686,17 @@
 | 因为「没有丢东西」就把 `siteAssetFalsePositive` 写成 `null` | `null` 在这个块里的既有含义是「清单不可用、未检查」，且 run-log 读取器把它与 `mirrorGap` 的 null 绑定；写错会让每份新报告整份不可读、每轮判缺陷。读清单时用 `{count: 0, urls: []}` | 2026-10-21 / #76 / ADR 0018 |
 | 删掉 `scripts/run-discovery.js` 但保留 loader / `.run-cache/` | 它们只为 `run-code` 存在；留着会继续维护两个工具排除项和一个根目录，还诱导别人把爬取恢复回来。连引用一起删 | 2026-10-21 / #76 / ADR 0018 |
 | 保留 cookie 头以防万一 | CDN 与清单都匿名可用（2026-09-15 的 12/12 抽样），会话是 Run 已不再拥有的状态；Download 的第一个单测就断言请求里没有 `Cookie`，403 重试保留 | 2026-10-21 / #76 / ADR 0018 |
+| 把用户数据留在程序目录，只用文档叮嘱「别删」 | 便携包的更新是整体替换 `app/`；文档拦不住被替换掉的 `images/` | 2026-10-21 / #80 / ADR 0019 |
+| 缩略图缓存继续留在 `web/.console-cache/` | 可丢弃不等于值得丢：每次更新白掉 1000+ 张，首次打开重新变慢；移出后仍在 Mirror 之外 | 2026-10-21 / #80 / ADR 0019 |
+| 旧数据用「复制后删除」或跨卷自动复制 | 复制可能中途失败，随后的删除把失败变成数据丢失；同卷 rename 在失败时原样保留旧目录 | 2026-10-21 / #80 / ADR 0019 |
+| 旧目录与新目标同时存在时自动合并 | 两边都可能是 Mirror，静默并集会让 `mirrorGap` 变成合并动作的产物；改为拒绝并给手工步骤 | 2026-10-21 / #80 / ADR 0019 |
+| 遇到更高/未知 `layout.json` 就回退默认值继续启动 | 这正是「官网 1010 / 本地 0」的静默失败；版本不认识就在第一次写入前拒绝 | 2026-10-21 / #80 / ADR 0019 |
 
 ## 验证规范（所有迭代通用）
 
 - 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）；格式化改动加 `pnpm fmt:check`，且大范围重排要做 **AST 对比**（忽略 import 顺序与括号）证明“只改了空白”
 - 纯工具链/纯移动类改动不真跑，但要在 PR 里写明「没跑」
-- 行为验证：真跑 `pnpm core:run`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
+- 行为验证：真跑 `pnpm core:run`，读 `data/logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题
@@ -679,10 +708,10 @@
 - ~~**(C) 整体坍缩成「接口客户端 + 下载器」**~~ **已完成（2026-10-21，#76 / ADR 0018）**：门槛 `discovery.coverage` 的实测值 0.1798 / 0.4496 / 29.7% 与清单的 1001 条 / 160 ms 一起作为证据，浏览器、会话、滚动稳定性循环、cookie 提取、Site asset 过滤、`@playwright/cli` 与 Chrome 全部退出运行期。`coverage` 保留在报告里、恒为 1（读不到清单时为 null），作为那道门槛的存档。
 - **单轮覆盖全清单的跨轮稳定性未验证（2026-10-21 记录）**：票的验收要求「连续两轮真实运行证明条目数不随机波动」，而一轮真下载约 2 GB，本沙箱不跑。逻辑上 URL 集逐条来自清单、无随机性，但站点侧是否稳定（`pageSize` 被截断、WAF、合集变化）只有真跑能证；首轮真跑后应对比两轮 `gallery.officialTotal` 与 `discovery.combinedCount`。
 - **清单接口的稳定性未验证**：未公开文档，`pageSize` 上限、WAF/限流、`collectionId` 是否会随新合集变化都未知。失败模式是响的（`gallerySourceUnavailable` defect + `officialTotal: null`），但 `pageSize: 2000` 一旦被服务端悄悄截断，`parseGalleryList` 会直接拒收而不是把缺的那半报成「新增」。
-- **镜像缺口只报警、不自动补**：`missingFromDisk` 现在能把缺的条目列出来，而清单里带着它们的 URL——自动补下是可行的（且不受 `images/` 文件名不含批次日期的限制），留给后续一轮。
+- **镜像缺口只报警、不自动补**：`missingFromDisk` 现在能把缺的条目列出来，而清单里带着它们的 URL——自动补下是可行的（且不受 `data/images/` 文件名不含批次日期的限制），留给后续一轮。
 - ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化。原先对 `scripts/run-discovery.js` 的永久排除随 #76 删除该载荷一并移除。
 - ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
 - ~~**`autofix.yml` 未接**~~ **已接（2026-09-15 晚）**：`.github/workflows/autofix.yml` 在 PR 上跑 `pnpm lint:fix && pnpm fmt`，再由 `autofix-ci/action@v1.3.4` 把结果提交回 PR 分支（App 已由用户安装）。之所以手写而不是用 `sxzz/workflows` 的 autofix reusable：它的默认命令只有 `pnpm run lint --fix`（不含格式化），且与 `ci.yml` 的 setup 写法保持一致更好读。注意：机器人会往你的分支推提交，改完先 `git pull`，别用 `--force-with-lease` 把它的提交打掉。
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（#76 之前还有 `--filename` 那段 Windows 专属坑，现在已随载荷删除），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
-- ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
+- ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `data/images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

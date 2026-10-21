@@ -66,7 +66,7 @@ _Avoid_: image count, total images, 图片总数
 
 **Gallery state**:
 The persisted record of the entry ids previous Runs have seen
-(`images/.gallery-state.json`), which is what lets a Run report
+(`<data>/images/.gallery-state.json`), which is what lets a Run report
 `newSinceLastRun`. Ids are never forgotten: the site can retire an entry and
 put it back, and forgetting it would report the re-appearance as new twice.
 It lives beside the Mirror it describes and is deleted with it.
@@ -79,7 +79,8 @@ nothing to compare against.
 _Avoid_: delta, growth, 新增
 
 **Mirror (镜像)**:
-The local copy of the gallery — the Wallpaper files in `images/`.
+The local copy of the gallery — the Wallpaper files in `<data>/images/`, under
+the user's data directory rather than the program's (ADR 0019).
 _Avoid_: library, collection, dataset
 
 **Mirror gap (镜像缺口)**:

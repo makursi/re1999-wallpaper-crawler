@@ -22,9 +22,10 @@
 // `core/config.ts` *is* the parse — so the Console imports this module instead
 // (#57).
 //
-// The schema lives here and only here. So do the tree-relative defaults
+// The schema lives here and only here. So do the data-relative defaults
 // (`siteConfig`), because a Console booting without any configuration still has
-// to read the same Mirror and Run log directory a Run would.
+// to read the same Mirror and Run log directory a Run would — both under the
+// injected data root (#80).
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -34,15 +35,15 @@ import { parse as parseDotenv } from 'dotenv'
 import { z } from 'zod'
 
 import { dataRootOf } from './app-root.js'
+import { dataLayoutOf, IMAGES_DIR_NAME, LOG_DIR_NAME } from './data-layout.js'
 
 // ── configuration schema ──────────────────────────────────────────
 
 // The schema's defaults, named: `siteConfig` has to resolve the same directories
 // for a Console that never read a `.env`, so the fallbacks cannot be two literals.
-const DEFAULT_IMAGES_DIR = 'images'
-const DEFAULT_LOG_DIR = 'logs'
+const DEFAULT_IMAGES_DIR = IMAGES_DIR_NAME
+const DEFAULT_LOG_DIR = LOG_DIR_NAME
 const DEFAULT_BATCH_SIZE = 4
-const GALLERY_STATE_FILE_NAME = '.gallery-state.json'
 const APP_ENV_FILE_NAME = '.env'
 const USER_ENV_FILE_NAME = 'user.env'
 // The site's own gallery list path, relative to BASE_ORIGIN (docs/adr/0006).
@@ -201,30 +202,51 @@ export function readLayeredConfig(options: LayeredConfigOptions): LayeredConfigR
  * Where a Run's data lives. Everything here has a default, which is what lets
  * the Console serve the Mirror, the Run log directory and the Gallery state
  * without any configuration.
+ *
+ * All of it is under the data directory, never the program directory: the
+ * program is what an update replaces (#80). The data root itself is an injected
+ * input from `core/app-root.ts`, not derived here.
  */
 export interface SiteConfig {
+  /** The user's data directory every other path is under. */
+  dataRoot: string
   imagesDir: string
   logDir: string
+  /** `<data>/cache/thumbnails`; disposable, and outside the Mirror (ADR 0010). */
+  cacheDir: string
   galleryStateFile: string
 }
 
 /**
- * Resolve a configuration against an application root. `values === null` keeps
- * the schema's defaults, so a Console with no usable configuration still reads
- * exactly the Mirror and log directory the Run would write into, and never
- * invents a second set of locations.
+ * Resolve a configuration against the application root and the data root.
+ * `values === null` keeps the schema's defaults, so a Console with no usable
+ * configuration still reads exactly the Mirror and log directory the Run would
+ * write into, and never invents a second set of locations.
  *
- * The paths stay under the application root until #80 moves the user's data to
- * the sibling `data` directory; the user layer's own location is already there.
+ * `dataRoot` is an explicit parameter for the reason `core/app-root.ts` gives:
+ * a source tree keeps its data at `<repo>/data`, the package beside `<app>/`;
+ * the two layouts cannot be told apart by one rule, so the entry point says
+ * which one it is (#78, #80).
  */
-export function siteConfig(appRoot: string, values: ConfigValues | null): SiteConfig {
-  const imagesDir = path.resolve(appRoot, values?.IMAGES_DIR ?? DEFAULT_IMAGES_DIR)
+export function siteConfig(
+  appRoot: string,
+  values: ConfigValues | null,
+  dataRoot: string,
+): SiteConfig {
+  const layout = dataLayoutOf({
+    appRoot,
+    dataRoot,
+    configuredImagesDir: values?.IMAGES_DIR,
+    configuredLogDir: values?.LOG_DIR,
+  })
   return {
-    imagesDir,
-    logDir: path.resolve(appRoot, values?.LOG_DIR ?? DEFAULT_LOG_DIR),
+    dataRoot: layout.dataRoot,
+    imagesDir: layout.imagesDir,
+    logDir: layout.logDir,
+    cacheDir: layout.cacheDir,
     // The cross-run memory of the list, kept beside the mirror it describes
     // (docs/adr/0006); not a log, and deleted together with `images/`.
-    galleryStateFile: path.join(imagesDir, GALLERY_STATE_FILE_NAME),
+    galleryStateFile: layout.galleryStateFile,
   }
 }
 

@@ -16,16 +16,24 @@ import { galleryListUrlOf } from '../../core/config-read.js'
 export interface ConsoleConfig {
   /**
    * The application root, injected by the entry point: a Run's cwd, and where
-   * `.env`, `node_modules/`, the Mirror and the Run log directory live. It is
-   * never derived from this layer's module position (#78).
+   * `.env`, `node_modules/` and the built page live. It is never derived from
+   * this layer's module position (#78).
    */
   appRoot: string
-  /** The Mirror (`images/`). The Console reads its names and writes nothing. */
+  /**
+   * The user's data directory, injected by the entry point and never the app
+   * root's child by deduction: the package's `<install>/data` is a sibling of
+   * `<install>/app`, so replacing the program leaves the data alone (#80).
+   */
+  dataRoot: string
+  /** The Mirror (`<data>/images`). The Console reads its names and writes nothing. */
   imagesDir: string
   /** The Run log directory — the Console's only source of truth about Runs. */
   logDir: string
   /** `images/.gallery-state.json`; read by later tickets, never written. */
   galleryStateFile: string
+  /** `<data>/cache/thumbnails`; disposable, outside the Mirror (ADR 0010, #80). */
+  cacheDir: string
   /** The built page's root: the app root's `web/dist` (ADR 0011). */
   distDir: string
   /**
@@ -63,9 +71,11 @@ export function consoleConfigOf(
 ): ConsoleConfig {
   return {
     appRoot,
+    dataRoot: site.dataRoot,
     imagesDir: site.imagesDir,
     logDir: site.logDir,
     galleryStateFile: site.galleryStateFile,
+    cacheDir: site.cacheDir,
     distDir: path.join(appRoot, 'web', DIST_DIR_NAME),
     // Absent when there is no usable configuration: the Gallery list is then
     // "not read" and `/api/status` reports that a Run cannot be configured yet

@@ -28,6 +28,7 @@ import { parseArgs } from 'node:util'
 
 import { dataRootOf, resolveAppRoot } from '../../core/app-root.js'
 import { readLayeredConfig, siteConfig } from '../../core/config-read.js'
+import { ensureDataLayout } from '../../core/data-layout.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import type { ConsoleRunState } from '../api-types.js'
@@ -54,7 +55,6 @@ import {
   realImageSizeReader,
   realThumbnailCache,
   realThumbnailGenerator,
-  THUMBNAIL_CACHE_DIR_NAME,
 } from './thumbnails.js'
 
 interface ConsoleOptions {
@@ -78,24 +78,26 @@ function galleryListSource(endpoint: string | null): GalleryListSource {
 
 /**
  * The thumbnail source the service is given (#35; spec decision 29). This is the
- * composition root, so it is the one place that knows the web layer's root, the
- * real filesystem and the image library: `web/server/server.ts` receives the
- * source whole and never reaches for `sharp` or for a cache path itself.
+ * composition root, so it is the one place that knows the data directory's cache
+ * path, the real filesystem and the image library: `web/server/server.ts`
+ * receives the source whole and never reaches for `sharp` or for a cache path
+ * itself.
  *
- * The cache lives under the app root's web layer — never inside the Mirror
- * (ADR 0010) — and the name that keys it is the Wallpaper's own, which embeds a
- * content hash, so a hit needs no invalidation. `web/server/thumbnails.ts` is the
- * image library's only import site, and the import is dynamic on purpose: a
- * broken or absent native addon arrives as a rejected `await import('sharp')` — a
- * named 500 at the request site, never a crashed process and never a failed Run.
+ * The cache lives under `<data>/cache/thumbnails` — never inside the Mirror
+ * (ADR 0010), and no longer under the program directory, which an update
+ * replaces (#80) — and the name that keys it is the Wallpaper's own, which
+ * embeds a content hash, so a hit needs no invalidation.
+ * `web/server/thumbnails.ts` is the image library's only import site, and the
+ * import is dynamic on purpose: a broken or absent native addon arrives as a
+ * rejected `await import('sharp')` — a named 500 at the request site, never a
+ * crashed process and never a failed Run.
  */
-function realThumbnailSource(appRoot: string): ThumbnailSource {
-  const cacheDir = path.join(appRoot, 'web', THUMBNAIL_CACHE_DIR_NAME)
+function realThumbnailSource(config: ConsoleConfig): ThumbnailSource {
   return {
-    thumbnail: async (name, sourceFile) => {
+    thumbnail: async name => {
       const file = await ensureThumbnail(name, {
-        imagesDir: path.dirname(sourceFile),
-        cacheDir,
+        imagesDir: config.imagesDir,
+        cacheDir: config.cacheDir,
         generate: realThumbnailGenerator,
         cache: realThumbnailCache,
       })
@@ -251,8 +253,26 @@ async function main(options: ConsoleOptions): Promise<void> {
   const layered = readLayeredConfig({ appRoot, dataRoot })
   if (layered.notice !== null) process.stdout.write(`${layered.notice}\n`)
 
+  // The data directory is the one thing an update must never touch, so it is
+  // brought to the current layout (a pre-#80 checkout by rename) before the
+  // Console reads or writes anything in it. An unrecognised or newer layout
+  // refuses here, with the Chinese explanation, and changes nothing.
+  const layout = ensureDataLayout({
+    appRoot,
+    dataRoot,
+    configuredImagesDir: layered.values?.IMAGES_DIR,
+    configuredLogDir: layered.values?.LOG_DIR,
+  })
+  if (!layout.ok) {
+    process.stderr.write(`${layout.refusal.message}\n`)
+    process.exit(1)
+  }
+  for (const move of layout.ready.migrated) {
+    process.stdout.write(`数据已搬迁：${move.source} → ${move.target}\n`)
+  }
+
   const values = layered.values
-  const site = siteConfig(appRoot, values)
+  const site = siteConfig(appRoot, values, dataRoot)
   const config = consoleConfigOf(appRoot, values, site)
   await ensureBundle(config)
 
@@ -330,7 +350,7 @@ async function main(options: ConsoleOptions): Promise<void> {
     // The image library's one call site (#35). Its import is dynamic and lives
     // inside `web/server/thumbnails.ts`, so a broken native binary is a 500 on
     // one tile — never a crash, and never a failed Run.
-    thumbnailSource: realThumbnailSource(config.appRoot),
+    thumbnailSource: realThumbnailSource(config),
     // The wall's second input (#48): each Wallpaper's own pixel size, so the
     // masonry can place a tile before its lazy thumbnail arrives. Memoised here
     // rather than in the route, because the measurement has to outlive a

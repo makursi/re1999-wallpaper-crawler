@@ -3,15 +3,20 @@ import * as path from 'node:path'
 import process from 'node:process'
 
 import {
+  APP_ROOT,
   BASE_ORIGIN,
   BATCH_SIZE,
+  DATA_ROOT,
   GALLERY_LIST_URL,
   GALLERY_STATE_FILE,
   IMAGES_DIR,
+  IMAGES_DIR_SETTING,
   LOG_DIR,
+  LOG_DIR_SETTING,
   USER_AGENT,
   USER_CONFIG_NOTICE,
 } from './config.js'
+import { ensureDataLayout } from './data-layout.js'
 import type { DiscoveryResult } from './discovery/discovery.js'
 import { discoverFromList } from './discovery/discovery.js'
 import { downloadBatch } from './download/download.js'
@@ -211,7 +216,30 @@ function finishRun(
 
 // ── main ────────────────────────────────────────────────────────────
 
+/**
+ * Bring the data directory to the current layout before anything writes into
+ * it. This is the one place a Run can move the pre-#80 checkout's data (by
+ * rename); an unrecognised or newer layout refuses here, before the logger, so
+ * the data is exactly as it was found.
+ */
+function ensureUsableDataLayout(): void {
+  const result = ensureDataLayout({
+    appRoot: APP_ROOT,
+    dataRoot: DATA_ROOT,
+    configuredImagesDir: IMAGES_DIR_SETTING,
+    configuredLogDir: LOG_DIR_SETTING,
+  })
+  if (!result.ok) {
+    console.error(result.refusal.message)
+    process.exit(1)
+  }
+  for (const move of result.ready.migrated) {
+    process.stdout.write(`数据已搬迁：${move.source} → ${move.target}\n`)
+  }
+}
+
 async function main() {
+  ensureUsableDataLayout()
   const logger = createLogger(LOG_DIR)
 
   const { meta, config } = newRunMeta()
