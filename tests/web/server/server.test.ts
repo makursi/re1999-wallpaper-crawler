@@ -8,7 +8,7 @@ import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
-import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
+import { consoleConfigIn, fixtureAppRoot, TOKEN } from './run-fixtures.js'
 
 /** The names Vite emits: one content hash per asset, referenced relatively. */
 const ASSET_JS = 'assets/index-BO_xJMyK.js'
@@ -70,7 +70,7 @@ afterEach(async () => {
  * directory, and a built page.
  */
 function fixture(): ConsoleConfig {
-  const projectRoot = fixtureProjectRoot('console-test-')
+  const projectRoot = fixtureAppRoot('console-test-')
   roots.push(projectRoot)
   const config = consoleConfigIn(projectRoot)
 

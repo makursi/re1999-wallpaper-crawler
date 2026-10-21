@@ -10,13 +10,14 @@
 //   - Chrome is looked up through the registry's App Paths entry, because the
 //     Playwright config asks for the `chrome` channel: the `ms-playwright`
 //     chromium under `%LOCALAPPDATA%` is present but is not what a Run uses.
-//   - `.env` is the project's, read through `core/config-read.ts`'s
-//     file-reading predicate: dotenv's own parser, the process environment
-//     merged over the file's values (shell env wins, as `dotenv/config` gives a
-//     Run), and the whole schema a Run parses — defaulted keys included — so a
-//     file usable here cannot then fail a Run at startup. `core/config.ts` itself
-//     is still not imported: it parses the environment at import time and would
-//     break the test suite's no-`.env` property.
+//   - The configuration is the layered pair (the app's `.env` and the user's
+//     `data/user.env`), read through `core/config-read.ts`'s file-reading
+//     predicate: dotenv's own parser, the process environment merged over the
+//     files' values (shell env wins, as `dotenv/config` gave a Run), and the
+//     whole schema a Run parses — defaulted keys included — so a layered
+//     configuration usable here cannot then fail a Run at startup. `core/config.ts`
+//     itself is still not imported: it parses the environment at import time and
+//     would break the test suite's no-`.env` property.
 //
 // Nothing here launches a browser or runs `playwright-cli`: the checks are a
 // PATH scan, a registry read, a file read and a file existence test.
@@ -26,7 +27,8 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import process from 'node:process'
 
-import { readProjectConfig } from '../../core/config-read.js'
+import { dataRootOf } from '../../core/app-root.js'
+import { readLayeredConfig } from '../../core/config-read.js'
 import type { PrerequisiteCode } from '../api-types.js'
 
 export interface PrerequisiteChecks {
@@ -34,15 +36,17 @@ export interface PrerequisiteChecks {
   playwrightCli: () => boolean
   /** Real Chrome, via the registry's App Paths entry (the `chrome` channel). */
   chrome: () => boolean
-  /** `.env` present and usable: the whole configuration schema a Run parses validates. */
+  /** The layered configuration is usable: the whole schema a Run parses validates. */
   envFile: () => boolean
-  /** `<root>/node_modules/tsx/dist/cli.mjs`, the Run's loader entry. */
+  /** `<appRoot>/node_modules/tsx/dist/cli.mjs`, the Run's loader entry. */
   tsxEntry: () => boolean
 }
 
 export interface PrerequisiteDeps {
-  /** The repository root: where `.env` and `node_modules` are looked for. */
-  projectRoot: string
+  /** The application root: where `.env` and `node_modules` are looked for. */
+  appRoot: string
+  /** The data root; defaults to the sibling `data` directory of `appRoot`. */
+  dataRoot?: string
   /** Injected so a test can satisfy the checks without a real machine. */
   checks?: Partial<PrerequisiteChecks>
   /** The environment whose `PATH` and `PATHEXT` are read. */
@@ -57,9 +61,9 @@ const ORDER: readonly { name: PrerequisiteCode; key: keyof PrerequisiteChecks }[
   { name: 'tsx-entry', key: 'tsxEntry' },
 ]
 
-/** `<root>/node_modules/tsx/dist/cli.mjs` — the Run's argv slot 2. */
-export function tsxEntryPath(projectRoot: string): string {
-  return path.join(projectRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+/** `<appRoot>/node_modules/tsx/dist/cli.mjs` — the Run's argv slot 2. */
+export function tsxEntryPath(appRoot: string): string {
+  return path.join(appRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 }
 
 /**
@@ -73,8 +77,8 @@ export function missingPrerequisites(deps: PrerequisiteDeps): PrerequisiteCode[]
   const real: PrerequisiteChecks = {
     playwrightCli: () => onPath(['playwright-cli'], env, platform),
     chrome: () => realChrome(env, platform),
-    envFile: () => runEnvFileAvailable(deps.projectRoot, env),
-    tsxEntry: () => fs.existsSync(tsxEntryPath(deps.projectRoot)),
+    envFile: () => runEnvFileAvailable(deps.appRoot, deps.dataRoot, env),
+    tsxEntry: () => fs.existsSync(tsxEntryPath(deps.appRoot)),
   }
   const checks: PrerequisiteChecks = { ...real, ...deps.checks }
 
@@ -144,18 +148,29 @@ function registryDefaultValue(key: string): string | null {
 }
 
 /**
- * Whether the repository root's `.env` is usable *now*: present, and satisfying
- * the whole configuration schema a Run parses, defaulted keys included.
+ * Whether the layered configuration is usable *now*: some combination of the
+ * app's `.env`, the user's `data/user.env` and the process environment satisfies
+ * the whole schema a Run parses, defaulted keys included.
  *
  * Exported because two surfaces ask this one question (#60): the start refuses
  * with the `env-file` prerequisite when it is `false`, and `/api/status` reports
  * it as `runConfigAvailable` so the page's setup notice clears on the next
  * status read — without a Console restart, and without the ambient notice and
  * the click path ever reaching different answers.
+ *
+ * `dataRoot` is optional so a caller that names only the app root still gets the
+ * packaged sibling layout; the Console passes the root it resolved explicitly.
  */
 export function runEnvFileAvailable(
-  projectRoot: string,
+  appRoot: string,
+  dataRoot?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return readProjectConfig(projectRoot, env) !== null
+  return (
+    readLayeredConfig({
+      appRoot,
+      dataRoot: dataRoot ?? dataRootOf(appRoot),
+      env,
+    }).values !== null
+  )
 }

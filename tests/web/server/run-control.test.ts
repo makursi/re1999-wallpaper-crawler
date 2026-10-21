@@ -5,6 +5,7 @@ import process from 'node:process'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { APP_ROOT_ENV } from '../../../core/app-root.js'
 import type { PrerequisiteChecks } from '../../../web/server/prerequisites.js'
 import { missingPrerequisites } from '../../../web/server/prerequisites.js'
 import type { RunLauncher } from '../../../web/server/run-control.js'
@@ -75,7 +76,7 @@ function launcherWith(
     nodePath: 'C:\\nvm4w\\nodejs\\node.exe',
     tsxEntry: path.join('C:\\root', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
     mainEntry: path.join('C:\\root', 'core', 'main.ts'),
-    projectRoot: 'C:\\root',
+    appRoot: 'C:\\root',
     ...overrides,
   })
 }
@@ -95,12 +96,20 @@ afterEach(() => {
 })
 
 describe('missingPrerequisites', () => {
-  /** A temporary project root with a `.env` the test writes, and the other three checks present. */
-  function rootWithEnv(envText: string): string {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'prerequisites-'))
-    roots.push(root)
-    fs.writeFileSync(path.join(root, '.env'), envText, 'utf8')
-    return root
+  /** A temporary packaged layout: `app/.env` and/or `data/user.env`, both optional. */
+  function installationWith(files: { app?: string | null; user?: string | null }): {
+    appRoot: string
+    dataRoot: string
+  } {
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'prerequisites-'))
+    roots.push(install)
+    const appRoot = path.join(install, 'app')
+    const dataRoot = path.join(install, 'data')
+    fs.mkdirSync(appRoot)
+    fs.mkdirSync(dataRoot)
+    if (files.app != null) fs.writeFileSync(path.join(appRoot, '.env'), files.app, 'utf8')
+    if (files.user != null) fs.writeFileSync(path.join(dataRoot, 'user.env'), files.user, 'utf8')
+    return { appRoot, dataRoot }
   }
 
   const otherChecks: Partial<PrerequisiteChecks> = {
@@ -113,7 +122,7 @@ describe('missingPrerequisites', () => {
 
   it('names what is absent, in the order the notes list it', () => {
     const missing = missingPrerequisites({
-      projectRoot: 'C:\\root',
+      appRoot: 'C:\\root',
       checks: { ...ALL_PRESENT, playwrightCli: () => false, tsxEntry: () => false },
     })
 
@@ -122,7 +131,7 @@ describe('missingPrerequisites', () => {
 
   it('names the whole gap rather than the first thing it finds', () => {
     const missing = missingPrerequisites({
-      projectRoot: 'C:\\root',
+      appRoot: 'C:\\root',
       checks: {
         playwrightCli: () => false,
         chrome: () => false,
@@ -135,21 +144,42 @@ describe('missingPrerequisites', () => {
   })
 
   it('names nothing when the machine has all four', () => {
-    expect(missingPrerequisites({ projectRoot: 'C:\\root', checks: ALL_PRESENT })).toEqual([])
+    expect(missingPrerequisites({ appRoot: 'C:\\root', checks: ALL_PRESENT })).toEqual([])
   })
 
-  it('accepts a valid .env file', () => {
-    const root = rootWithEnv(requiredLines)
+  it('accepts a valid app .env file', () => {
+    const { appRoot, dataRoot } = installationWith({ app: requiredLines })
 
-    expect(missingPrerequisites({ projectRoot: root, checks: otherChecks, env: {} })).toEqual([])
+    expect(missingPrerequisites({ appRoot, dataRoot, checks: otherChecks, env: {} })).toEqual([])
   })
 
   it('refuses a .env whose defaulted value the Run would reject', () => {
     // The two required keys are present; `BATCH_SIZE=abc` fails the full schema
     // the Run parses, so the start refuses what the setup notice warns about.
-    const root = rootWithEnv(`${requiredLines}\nBATCH_SIZE=abc`)
+    const { appRoot, dataRoot } = installationWith({
+      app: `${requiredLines}\nBATCH_SIZE=abc`,
+    })
 
-    expect(missingPrerequisites({ projectRoot: root, checks: otherChecks, env: {} })).toEqual([
+    expect(missingPrerequisites({ appRoot, dataRoot, checks: otherChecks, env: {} })).toEqual([
+      'env-file',
+    ])
+  })
+
+  it('accepts the user layer as the source of the required keys', () => {
+    // The same merged schema the Run parses decides usability; the user layer is
+    // a real layer, not a decoration on the app layer (#78).
+    const { appRoot, dataRoot } = installationWith({ user: requiredLines })
+
+    expect(missingPrerequisites({ appRoot, dataRoot, checks: otherChecks, env: {} })).toEqual([])
+  })
+
+  it('refuses when a user override makes the layered configuration unusable', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: requiredLines,
+      user: 'BATCH_SIZE=abc',
+    })
+
+    expect(missingPrerequisites({ appRoot, dataRoot, checks: otherChecks, env: {} })).toEqual([
       'env-file',
     ])
   })
@@ -257,7 +287,7 @@ describe('createRunLauncher', () => {
     expect(options.windowsHide).toBe(true)
   })
 
-  it('adds no pipe of the Console\u2019s own to the child', () => {
+  it('adds no pipe of the Console\u2019s own to the child, and hands it the app root', () => {
     const child = new FakeChild()
     const { spawn, calls } = spawner(child)
 
@@ -265,7 +295,12 @@ describe('createRunLauncher', () => {
 
     const options = calls[0][2]
     expect(options.stdio).toEqual(['ignore', 'inherit', 'inherit'])
-    expect(options.env).toBe(process.env)
+    // The child inherits the Console's machine, but the root is passed down
+    // explicitly: the Run never has to guess where it was installed.
+    expect(options.env).toMatchObject({
+      [APP_ROOT_ENV]: 'C:\\root',
+      PATH: process.env.PATH,
+    })
   })
 
   it('reads a live child as alive and a child that exited as dead', () => {

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import { PAGE_HASH, PROJECT_ROOT, RUN_CACHE_DIR } from '../config.js'
+import { APP_ROOT, PAGE_HASH, RUN_CACHE_DIR } from '../config.js'
 
 // ── the Discovery script copy ──────────────────────────────────────
 //
@@ -36,7 +36,7 @@ export interface MaterializeOptions {
 // The payload is a bare expression (see AGENTS.md › "The run-code script is a
 // protocol payload"), so the only transformation is its one placeholder.
 function buildRunCodeScript(options: MaterializeOptions): string {
-  const source = options.source ?? path.join(PROJECT_ROOT, 'scripts', 'run-discovery.js')
+  const source = options.source ?? path.join(APP_ROOT, 'scripts', 'run-discovery.js')
   const hash = options.hash ?? PAGE_HASH
   return fs.readFileSync(source, 'utf8').replace('__PAGE_HASH__', hash)
 }

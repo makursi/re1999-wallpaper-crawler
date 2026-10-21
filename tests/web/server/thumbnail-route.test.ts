@@ -10,7 +10,7 @@ import type { ThumbnailSource } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
 import { THUMBNAIL_CACHE_DIR_NAME } from '../../../web/server/thumbnails.js'
-import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
+import { consoleConfigIn, fixtureAppRoot, TOKEN } from './run-fixtures.js'
 import { writeTestImage } from './test-image.js'
 
 const ON_DISK = '1013_8dee54e8bf644722981751524fb54356.png'
@@ -48,7 +48,7 @@ interface Fixture {
  * The real `images/` is never read or written.
  */
 async function fixture(): Promise<Fixture> {
-  const root = fixtureProjectRoot('console-thumbnail-route-test-')
+  const root = fixtureAppRoot('console-thumbnail-route-test-')
   roots.push(root)
   const config = consoleConfigIn(root)
 

@@ -20,7 +20,7 @@ import type { ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import {
   consoleConfigIn,
-  fixtureProjectRoot,
+  fixtureAppRoot,
   LOG_NAME,
   plainLine,
   runLog,
@@ -63,7 +63,7 @@ function logPath(config: ConsoleConfig): string {
  * than a Run that appeared while the Console was open (§6a's `seenAtStartup`).
  */
 async function serve(seed: (config: ConsoleConfig) => void = () => {}): Promise<Harness> {
-  const projectRoot = fixtureProjectRoot('console-cleanup-')
+  const projectRoot = fixtureAppRoot('console-cleanup-')
   roots.push(projectRoot)
   const config = consoleConfigIn(projectRoot)
   seed(config)

@@ -13,7 +13,7 @@ import type { ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import {
   consoleConfigIn,
-  fixtureProjectRoot,
+  fixtureAppRoot,
   galleryState,
   LOG_NAME,
   NEW_FILES,
@@ -51,7 +51,7 @@ interface ServeOptions {
  * injected so nothing is ever spawned.
  */
 async function serve(options: ServeOptions = {}): Promise<Harness> {
-  const projectRoot = fixtureProjectRoot('console-run-api-')
+  const projectRoot = fixtureAppRoot('console-run-api-')
   roots.push(projectRoot)
   const config = consoleConfigIn(projectRoot)
 
@@ -274,7 +274,7 @@ describe('the status view over HTTP', () => {
   it('works with no .env present', async () => {
     const harness = await serve()
 
-    expect(fs.existsSync(path.join(harness.config.projectRoot, '.env'))).toBe(false)
+    expect(fs.existsSync(path.join(harness.config.appRoot, '.env'))).toBe(false)
     expect(await getStatus(harness)).toMatchObject({ state: 'idle' })
   })
 

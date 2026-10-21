@@ -6,7 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { ZodError } from 'zod'
 
 import type { ConfigValues } from '../../core/config-read.js'
-import { parseConfig, readConfig, readProjectConfig, siteConfig } from '../../core/config-read.js'
+import {
+  configSourcesOf,
+  parseConfig,
+  readConfig,
+  readLayeredConfig,
+  siteConfig,
+} from '../../core/config-read.js'
 
 /** The two keys a Run's `.env` must supply; every other key has a default. */
 const REQUIRED_ENV: NodeJS.ProcessEnv = {
@@ -27,12 +33,26 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
-/** A temporary project root holding the given `.env` text, or none at all. */
-function projectRootWith(envText: string | null): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'config-read-'))
-  roots.push(root)
-  if (envText !== null) fs.writeFileSync(path.join(root, '.env'), envText, 'utf8')
-  return root
+/**
+ * A temporary installation in the packaged shape: `app/` holds the site
+ * constants and `data/` sits beside it, exactly where the user layer lives.
+ * Either file may be absent (`null`).
+ */
+interface Installation {
+  appRoot: string
+  dataRoot: string
+}
+
+function installationWith(files: { app?: string | null; user?: string | null } = {}): Installation {
+  const install = fs.mkdtempSync(path.join(os.tmpdir(), 'config-layers-'))
+  roots.push(install)
+  const appRoot = path.join(install, 'app')
+  const dataRoot = path.join(install, 'data')
+  fs.mkdirSync(appRoot, { recursive: true })
+  fs.mkdirSync(dataRoot, { recursive: true })
+  if (files.app != null) fs.writeFileSync(path.join(appRoot, '.env'), files.app, 'utf8')
+  if (files.user != null) fs.writeFileSync(path.join(dataRoot, 'user.env'), files.user, 'utf8')
+  return { appRoot, dataRoot }
 }
 
 /** The two lines a minimal usable `.env` carries. */
@@ -87,44 +107,159 @@ describe('readConfig', () => {
   })
 })
 
-describe('readProjectConfig', () => {
-  it('reads a valid .env through the whole schema, defaults included', () => {
-    const root = projectRootWith(REQUIRED_LINES)
+describe('configSourcesOf', () => {
+  it('puts the user layer in data/ beside the app directory', () => {
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'config-sources-'))
+    roots.push(install)
+    const appRoot = path.join(install, 'app')
 
-    expect(readProjectConfig(root, {})).toEqual(valuesOf())
+    expect(configSourcesOf(appRoot)).toEqual({
+      appRoot,
+      dataRoot: path.join(install, 'data'),
+      appEnvFile: path.join(appRoot, '.env'),
+      userEnvFile: path.join(install, 'data', 'user.env'),
+    })
   })
 
-  it('answers null for an absent .env rather than throwing', () => {
+  it('accepts a data directory the caller names explicitly', () => {
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'config-sources-'))
+    roots.push(install)
+    const dataRoot = path.join(install, 'elsewhere')
+
+    expect(configSourcesOf(path.join(install, 'app'), dataRoot).userEnvFile).toBe(
+      path.join(dataRoot, 'user.env'),
+    )
+  })
+})
+
+describe('readLayeredConfig', () => {
+  it('reads a valid app .env through the whole schema, defaults included', () => {
+    const { appRoot, dataRoot } = installationWith({ app: REQUIRED_LINES })
+
+    expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toEqual(valuesOf())
+  })
+
+  it('answers null for an absent app .env rather than throwing', () => {
     // The fresh clone the Console has to boot on: no file, no throw.
-    expect(readProjectConfig(projectRootWith(null), {})).toBeNull()
+    expect(readLayeredConfig({ ...installationWith(), env: {} }).values).toBeNull()
   })
 
   it.each(['abc', '0'])(
-    'answers null when a defaulted key in the file is malformed (BATCH_SIZE=%s)',
+    'answers null when a defaulted key in the app file is malformed (BATCH_SIZE=%s)',
     batchSize => {
       // The two required keys are fine; this is the file that used to pass the
       // two-key check and then die in the Run's own parse (#60).
-      const root = projectRootWith(`${REQUIRED_LINES}\nBATCH_SIZE=${batchSize}`)
+      const { appRoot, dataRoot } = installationWith({
+        app: `${REQUIRED_LINES}\nBATCH_SIZE=${batchSize}`,
+      })
 
-      expect(readProjectConfig(root, {})).toBeNull()
+      expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toBeNull()
     },
   )
 
-  it('lets the real environment win over the file, as dotenv/config does', () => {
-    const root = projectRootWith(
-      `BASE_ORIGIN=https://file.example\nPAGE_PATH=/file.html\nBATCH_SIZE=2`,
-    )
-
-    const values = readProjectConfig(root, {
-      BASE_ORIGIN: 'https://shell.example',
-      BATCH_SIZE: '8',
+  it('answers null when the app file is missing a required key', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: `BASE_ORIGIN=${REQUIRED_ENV.BASE_ORIGIN}`,
     })
 
-    expect(values).toMatchObject({
-      BASE_ORIGIN: 'https://shell.example',
-      PAGE_PATH: '/file.html',
+    expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toBeNull()
+  })
+
+  it('answers null when a required value is malformed', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: `BASE_ORIGIN=not-a-url\nPAGE_PATH=${REQUIRED_ENV.PAGE_PATH}`,
+    })
+
+    expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toBeNull()
+  })
+
+  it('lets the user layer win over the app layer', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: `${REQUIRED_LINES}\nBATCH_SIZE=2\nIMAGES_DIR=shipped-images`,
+      user: 'BATCH_SIZE=8\nIMAGES_DIR=my-images',
+    })
+
+    expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toMatchObject({
       BATCH_SIZE: 8,
+      IMAGES_DIR: 'my-images',
     })
+  })
+
+  it('lets the app layer win over the schema defaults', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: `${REQUIRED_LINES}\nIMAGES_DIR=shipped-images`,
+    })
+
+    expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toMatchObject({
+      IMAGES_DIR: 'shipped-images',
+      // A key neither file supplies still gets the schema's default.
+      LOG_DIR: 'logs',
+    })
+  })
+
+  it('lets the process environment win over both files, as dotenv/config does', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: `${REQUIRED_LINES}\nBATCH_SIZE=2\nIMAGES_DIR=shipped-images`,
+      user: 'BATCH_SIZE=8\nIMAGES_DIR=my-images',
+    })
+
+    const values = readLayeredConfig({
+      appRoot,
+      dataRoot,
+      env: { BATCH_SIZE: '6', IMAGES_DIR: 'shell-images' },
+    }).values
+
+    expect(values).toMatchObject({ BATCH_SIZE: 6, IMAGES_DIR: 'shell-images' })
+  })
+
+  it('lets the user layer supply the required keys the app file lacks', () => {
+    // Precedence is about values, not about which file is allowed to hold them:
+    // the schema is what decides usability, and the user layer is a real layer.
+    const { appRoot, dataRoot } = installationWith({ app: null, user: REQUIRED_LINES })
+
+    expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toEqual(valuesOf())
+  })
+
+  it('names the user file and its keys in one startup line when it contributes', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: `${REQUIRED_LINES}\nBATCH_SIZE=2`,
+      user: 'BATCH_SIZE=8\nIMAGES_DIR=my-images',
+    })
+
+    const read = readLayeredConfig({ appRoot, dataRoot, env: {} })
+
+    expect(read.notice).toContain(path.join(dataRoot, 'user.env'))
+    expect(read.notice).toContain('IMAGES_DIR')
+    expect(read.notice).toContain('BATCH_SIZE')
+    // One line: the log record is the point, and a multi-line notice would be
+    // read as several records.
+    expect(read.notice).not.toContain('\n')
+  })
+
+  it.each([null, '', '# only a comment\n'])(
+    'says nothing when the user layer contributes nothing (%j)',
+    user => {
+      const { appRoot, dataRoot } = installationWith({ app: REQUIRED_LINES, user })
+
+      const read = readLayeredConfig({ appRoot, dataRoot, env: {} })
+
+      expect(read.values).not.toBeNull()
+      expect(read.notice).toBeNull()
+    },
+  )
+
+  it('says nothing when the layered configuration as a whole is unusable', () => {
+    // A malformed user override does not "load" a configuration; the setup
+    // notice (or the Run's own throw) is what has to explain it.
+    const { appRoot, dataRoot } = installationWith({
+      app: REQUIRED_LINES,
+      user: 'BATCH_SIZE=abc',
+    })
+
+    const read = readLayeredConfig({ appRoot, dataRoot, env: {} })
+
+    expect(read.values).toBeNull()
+    expect(read.notice).toBeNull()
   })
 })
 

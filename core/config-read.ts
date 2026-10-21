@@ -4,21 +4,27 @@
 //
 //   - `parseConfig` is the strict read. `core/config.ts` calls it at module load
 //     and re-exports the values as the eager constants the pipeline imports, so
-//     an absent or invalid `.env` still throws before a Run starts.
+//     an absent or invalid configuration still throws before a Run starts.
 //   - `readConfig` is the tolerant read of an environment object: the validated
 //     values, or `null` for "no usable configuration".
-//   - `readProjectConfig` is the file-reading read: `<projectRoot>/.env` parsed
-//     with dotenv's own parser, the process environment merged over it and the
-//     whole schema applied. It is the one answer to "is `.env` usable now",
-//     shared by the start's `env-file` refusal and the page's setup notice.
+//   - `readLayeredConfig` is the file-reading read. It takes the application
+//     root as an explicit input (never derives it from this module's location),
+//     reads the two layers and merges the process environment over them:
+//
+//       1. `<appRoot>/.env`      — the site constants shipped with the version
+//       2. `<dataRoot>/user.env` — the user's personal overrides, optional
+//       3. the schema's defaults
+//
+//     Precedence is user > app > defaults, and the process environment still
+//     wins over every file, exactly as `dotenv/config` gave a Run before #78.
 //
 // The Console has to reach its page with no `.env` at all, and importing
 // `core/config.ts` *is* the parse — so the Console imports this module instead
 // (#57).
 //
 // The schema lives here and only here. So do the tree-relative defaults
-// (`siteConfig`), because a Console booting without `.env` still has to read the
-// same Mirror and Run log directory a Run would.
+// (`siteConfig`), because a Console booting without any configuration still has
+// to read the same Mirror and Run log directory a Run would.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -27,10 +33,7 @@ import process from 'node:process'
 import { parse as parseDotenv } from 'dotenv'
 import { z } from 'zod'
 
-// ── the tree ──────────────────────────────────────────────────────
-
-/** The repository root: this module sits one level below it. */
-export const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
+import { dataRootOf } from './app-root.js'
 
 // ── configuration schema ──────────────────────────────────────────
 
@@ -43,6 +46,8 @@ const DEFAULT_PLAYWRIGHT_CONFIG = '.playwright/config.json'
 const DEFAULT_BATCH_SIZE = 4
 const RUN_CACHE_DIR_NAME = '.run-cache'
 const GALLERY_STATE_FILE_NAME = '.gallery-state.json'
+const APP_ENV_FILE_NAME = '.env'
+const USER_ENV_FILE_NAME = 'user.env'
 // The site's own gallery list path, relative to BASE_ORIGIN (docs/adr/0006).
 const GALLERY_LIST_PATH = '/activity/official/websites/picture/query'
 
@@ -61,7 +66,8 @@ export type ConfigValues = z.infer<typeof configSchema>
 
 /**
  * The strict read: the validated values, or a thrown `ZodError`. This is the
- * pipeline's path, and the reason a broken `.env` still fails a Run at startup.
+ * pipeline's path, and the reason a broken configuration still fails a Run at
+ * startup.
  */
 export function parseConfig(env: NodeJS.ProcessEnv): ConfigValues {
   return configSchema.parse(env)
@@ -71,36 +77,128 @@ export function parseConfig(env: NodeJS.ProcessEnv): ConfigValues {
  * The tolerant read of an environment object: the validated values, or `null`
  * for "no usable configuration". Never throws, and never returns a half-filled
  * configuration — a missing or malformed key is the same outcome as an absent
- * `.env`.
+ * file.
  */
 export function readConfig(env: NodeJS.ProcessEnv): ConfigValues | null {
   const result = configSchema.safeParse(env)
   return result.success ? result.data : null
 }
 
+// ── the configuration files ───────────────────────────────────────
+
+/** The two files a layered read consults, and the roots they sit under. */
+export interface ConfigSources {
+  /** The application root: the directory that holds `.env`, `core/` and `web/`. */
+  appRoot: string
+  /** The user's data directory, beside the application directory. */
+  dataRoot: string
+  /** The site constants shipped with the version. */
+  appEnvFile: string
+  /** The user's personal overrides; absent on a fresh install. */
+  userEnvFile: string
+}
+
 /**
- * The project's `.env` read through the whole schema: the validated values, or
- * `null` when the file is missing, unreadable or does not satisfy the schema.
- *
- * This is the one answer to "is `.env` usable now". The process environment is
- * merged over the file's values — shell env wins, exactly the precedence
- * `dotenv/config` gives a Run — and every key is validated, defaulted ones
- * included, so a file that passes here cannot then throw in the Run's own parse.
- *
- * The file is only parsed here, never loaded into `process.env`: a Console that
- * pre-loaded it once at boot could not see a correction without a restart (#60).
+ * Name the two configuration files under one application root. The data root
+ * is an explicit parameter so a caller (the Console's entry, a test) can point
+ * at a different layout; without one it is the sibling `data` directory the
+ * package ships (#78; #80 moves the rest of the user's data there).
  */
-export function readProjectConfig(
-  projectRoot: string,
-  env: NodeJS.ProcessEnv = process.env,
-): ConfigValues | null {
+export function configSourcesOf(appRoot: string, dataRoot?: string): ConfigSources {
+  const resolvedAppRoot = path.resolve(appRoot)
+  const resolvedDataRoot = path.resolve(dataRoot ?? dataRootOf(resolvedAppRoot))
+  return {
+    appRoot: resolvedAppRoot,
+    dataRoot: resolvedDataRoot,
+    appEnvFile: path.join(resolvedAppRoot, APP_ENV_FILE_NAME),
+    userEnvFile: path.join(resolvedDataRoot, USER_ENV_FILE_NAME),
+  }
+}
+
+/** One file's parsed values, or `null` when it is absent or cannot be read. */
+function readEnvFile(file: string): NodeJS.ProcessEnv | null {
   let text: string
   try {
-    text = fs.readFileSync(path.join(projectRoot, '.env'), 'utf8')
+    text = fs.readFileSync(file, 'utf8')
   } catch {
     return null
   }
-  return readConfig({ ...parseDotenv(text), ...env })
+  try {
+    return parseDotenv(text)
+  } catch {
+    return null
+  }
+}
+
+/** The one startup line that says the user's overrides were accepted. */
+function userLayerNotice(file: string, keys: readonly string[]): string {
+  return `config: user overrides loaded from ${file} (${keys.join(', ')})`
+}
+
+/** Everything a layered read found, usable or not. */
+export interface LayeredConfigRead {
+  /** The validated values, or `null` when no combination of layers is usable. */
+  values: ConfigValues | null
+  /**
+   * The file values and the process environment merged in dotenv's precedence,
+   * before the schema fills defaults. `core/config.ts` re-parses this object to
+   * keep the pipeline's eager `ZodError` for an unusable configuration.
+   */
+  env: NodeJS.ProcessEnv
+  /** Where the two files were looked for. */
+  sources: ConfigSources
+  /** The keys the user layer supplied, sorted; empty when it contributed nothing. */
+  userKeys: readonly string[]
+  /**
+   * One line for the startup log when the user layer contributed to a usable
+   * configuration, or `null`. A user file that is missing, empty or malformed
+   * says nothing here: the Console's setup notice and the Run's own refusal are
+   * what explain an unusable configuration.
+   */
+  notice: string | null
+}
+
+export interface LayeredConfigOptions {
+  /** The application root. Required: this read never derives it. */
+  appRoot: string
+  /** The data root; defaults to the sibling `data` directory of `appRoot`. */
+  dataRoot?: string
+  /** The process environment, which wins over both files. */
+  env?: NodeJS.ProcessEnv
+}
+
+/**
+ * Read the two configuration layers through the whole schema.
+ *
+ * Degradation is deliberate and uniform: a missing file, an unreadable or
+ * unparsable file, and a file that is missing a required key all come out as
+ * `values: null`. The Console still boots and shows its setup notice; a Run
+ * still fails at its own eager parse before it starts.
+ *
+ * The files are only parsed here, never loaded into `process.env`: a Console
+ * that pre-loaded them once at boot could not see a correction without a
+ * restart (#60).
+ */
+export function readLayeredConfig(options: LayeredConfigOptions): LayeredConfigRead {
+  const sources = configSourcesOf(options.appRoot, options.dataRoot)
+  const appValues = readEnvFile(sources.appEnvFile) ?? {}
+  const userValues = readEnvFile(sources.userEnvFile) ?? {}
+  const env: NodeJS.ProcessEnv = { ...appValues, ...userValues, ...(options.env ?? process.env) }
+  const values = readConfig(env)
+  const userKeys = Object.keys(userValues).toSorted()
+
+  return {
+    values,
+    env,
+    sources,
+    userKeys,
+    // "Loaded" means it contributed to a configuration the schema accepts; a
+    // broken override must not be announced as if it had taken effect.
+    notice:
+      values !== null && userKeys.length > 0
+        ? userLayerNotice(sources.userEnvFile, userKeys)
+        : null,
+  }
 }
 
 // ── the tree-relative values ──────────────────────────────────────
@@ -108,7 +206,7 @@ export function readProjectConfig(
 /**
  * Where a Run's data lives and the Browser session it reuses. Everything here
  * has a default, which is what lets the Console serve the Mirror, the Run log
- * directory and the Gallery state without a `.env`.
+ * directory and the Gallery state without any configuration.
  */
 export interface SiteConfig {
   sessionName: string
@@ -119,17 +217,20 @@ export interface SiteConfig {
 }
 
 /**
- * Resolve a configuration against a repository root. `values === null` keeps the
- * schema's defaults, so a Console with no usable `.env` still reads exactly the
- * Mirror and log directory the Run would write into, and never invents a second
- * set of locations.
+ * Resolve a configuration against an application root. `values === null` keeps
+ * the schema's defaults, so a Console with no usable configuration still reads
+ * exactly the Mirror and log directory the Run would write into, and never
+ * invents a second set of locations.
+ *
+ * The paths stay under the application root until #80 moves the user's data to
+ * the sibling `data` directory; the user layer's own location is already there.
  */
-export function siteConfig(projectRoot: string, values: ConfigValues | null): SiteConfig {
-  const imagesDir = path.resolve(projectRoot, values?.IMAGES_DIR ?? DEFAULT_IMAGES_DIR)
+export function siteConfig(appRoot: string, values: ConfigValues | null): SiteConfig {
+  const imagesDir = path.resolve(appRoot, values?.IMAGES_DIR ?? DEFAULT_IMAGES_DIR)
   return {
     sessionName: values?.SESSION_NAME ?? DEFAULT_SESSION_NAME,
     imagesDir,
-    logDir: path.resolve(projectRoot, values?.LOG_DIR ?? DEFAULT_LOG_DIR),
+    logDir: path.resolve(appRoot, values?.LOG_DIR ?? DEFAULT_LOG_DIR),
     // The cross-run memory of the list, kept beside the mirror it describes
     // (docs/adr/0006); not a log, and deleted together with `images/`.
     galleryStateFile: path.join(imagesDir, GALLERY_STATE_FILE_NAME),
@@ -137,13 +238,13 @@ export function siteConfig(projectRoot: string, values: ConfigValues | null): Si
     // --filename` needs. Gitignored, and the one directory in this tree that
     // only the crawler reads: the copy is written when its content changes and
     // never deleted.
-    runCacheDir: path.resolve(projectRoot, RUN_CACHE_DIR_NAME),
+    runCacheDir: path.resolve(appRoot, RUN_CACHE_DIR_NAME),
   }
 }
 
 /**
  * The site's own Gallery list endpoint, derived from the origin so the two
- * cannot drift (docs/adr/0006). `readProjectConfig`'s `null` is what makes the
+ * cannot drift (docs/adr/0006). A `null` configuration is what makes the
  * Console's endpoint absent — there is no URL to build without an origin.
  */
 export function galleryListUrlOf(baseOrigin: string): string {

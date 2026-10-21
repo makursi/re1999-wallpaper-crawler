@@ -132,32 +132,32 @@ export function runLog(...records: string[]): string {
  * The caller owns the directory — push it onto its own `roots` array so its
  * `afterEach` can remove it — and seeds whatever its test needs.
  */
-export function fixtureProjectRoot(prefix: string): string {
+export function fixtureAppRoot(prefix: string): string {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
   fs.mkdirSync(path.join(projectRoot, 'images'))
   fs.mkdirSync(path.join(projectRoot, 'logs'))
   return projectRoot
 }
 
-/** The Console's configuration over a fixture project root. */
-export function consoleConfigIn(projectRoot: string): ConsoleConfig {
-  const imagesDir = path.join(projectRoot, 'images')
+/** The Console's configuration over a fixture app root. */
+export function consoleConfigIn(appRoot: string): ConsoleConfig {
+  const imagesDir = path.join(appRoot, 'images')
   return {
-    projectRoot,
+    appRoot,
     imagesDir,
-    logDir: path.join(projectRoot, 'logs'),
+    logDir: path.join(appRoot, 'logs'),
     galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    // The built page lives under the web layer's root, beside its config —
-    // `web/dist` in the real repository. Mirrored here so a fixture's layout is
-    // the production one, one level deeper than the fixture project root.
-    distDir: path.join(projectRoot, 'web', 'dist'),
+    // The built page lives under the app root's web layer — `web/dist` in the
+    // real repository. Mirrored here so a fixture's layout is the production
+    // one, one level deeper than the fixture app root.
+    distDir: path.join(appRoot, 'web', 'dist'),
     galleryListEndpoint: 'https://gallery.test/query',
   }
 }
 
 /**
  * A Run log source's options over a fixture project root: the Mirror and the log
- * directory `fixtureProjectRoot` created, and the Gallery state file inside the
+ * directory `fixtureAppRoot` created, and the Gallery state file inside the
  * Mirror.
  */
 export function runLogSourceOptionsIn(projectRoot: string): RunLogSourceOptions {

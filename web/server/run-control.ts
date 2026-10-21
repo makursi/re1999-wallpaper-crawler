@@ -1,8 +1,10 @@
 // ── Run control: starting and owning a Run's process ────────────────
 //
 // A Run is spawned as the current Node binary with the tsx entry as its first
-// argument, in the repository root — never through a shell, never through `npx`
-// or `pnpm` (spec decision 6).
+// argument, in the application root — never through a shell, never through `npx`
+// or `pnpm` (spec decision 6). The root travels in the child's environment
+// (`RE1999_APP_ROOT`) as well as in its cwd, so the child receives it as an
+// input rather than deriving it (#78).
 // The Console adds no pipe of its own: the Run's own children need pipes and a
 // confined host refuses a second one, so the child inherits the Console's
 // stdout/stderr (`stdio: ['ignore', 'inherit', 'inherit']`). Its output is
@@ -11,6 +13,7 @@
 import { spawn as defaultSpawn } from 'node:child_process'
 import process from 'node:process'
 
+import { APP_ROOT_ENV } from '../../core/app-root.js'
 import type {
   ConsoleRefusal,
   ConsoleRunState,
@@ -38,10 +41,10 @@ export interface RunLauncherDeps {
   nodePath: string
   /** `<root>/node_modules/tsx/dist/cli.mjs` — the tsx CLI entry, not `npx`. */
   tsxEntry: string
-  /** `<root>/core/main.ts` — the same entry `pnpm core:run` runs. */
+  /** `<appRoot>/core/main.ts` — the same entry `pnpm core:run` runs. */
   mainEntry: string
-  /** The repository root: the Run's cwd, and where `.env` and `logs/` live. */
-  projectRoot: string
+  /** The application root: the Run's cwd, and where `.env` and `logs/` live. */
+  appRoot: string
   /** Injected so a test can assert the platform's own tree-kill shape. */
   platform?: NodeJS.Platform
   /** Injected so a test can watch the argv without spawning anything. */
@@ -75,7 +78,7 @@ export function createRunLauncher(deps: RunLauncherDeps): RunLauncher {
   function start(): void {
     if (alive) throw new Error('a Run is already in flight')
     const spawned = spawn(deps.nodePath, [deps.tsxEntry, deps.mainEntry], {
-      cwd: deps.projectRoot,
+      cwd: deps.appRoot,
       shell: false,
       windowsHide: true,
       // Off Windows the child has to lead its own process group, because that
@@ -84,7 +87,10 @@ export function createRunLauncher(deps: RunLauncherDeps): RunLauncher {
       // on it.
       detached: platform !== 'win32',
       stdio: ['ignore', 'inherit', 'inherit'],
-      env: process.env,
+      // The app root is passed down explicitly (#78): the Run never has to
+      // derive it, and the Console's own resolution — environment or source
+      // fallback — is the only one that happens.
+      env: { ...process.env, [APP_ROOT_ENV]: deps.appRoot },
     })
     child = spawned
     alive = true

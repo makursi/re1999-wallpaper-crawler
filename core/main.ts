@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 
 import {
+  APP_ROOT,
   BASE_ORIGIN,
   BATCH_SIZE,
   GALLERY_LIST_URL,
@@ -14,9 +15,9 @@ import {
   PAGE_PATH,
   PAGE_URL,
   PLAYWRIGHT_CONFIG,
-  PROJECT_ROOT,
   SESSION,
   USER_AGENT,
+  USER_CONFIG_NOTICE,
 } from './config.js'
 import type { DiscoveryScriptCopy } from './discovery/discovery-loader.js'
 import { materializeDiscoveryScript } from './discovery/discovery-loader.js'
@@ -360,6 +361,12 @@ async function main() {
     { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
     'run started',
   )
+  // The user layer's one line, after `run_meta` and before the Run's first
+  // event: a user who edited `data/user.env` can see in the terminal and in the
+  // Run log that it was accepted, and which keys it contributed (#78). It must
+  // not precede `run_meta` — that record opens the log, and the Orphaned Run
+  // reader takes the first line as the Run's identity.
+  if (USER_CONFIG_NOTICE !== null) logger.info(USER_CONFIG_NOTICE)
   // A separate record because this is an event, not configuration: the Run's
   // `run_meta` says *which* payload ran, this says whether it had to be written.
   logger.info(
@@ -379,7 +386,7 @@ async function main() {
 
   // 1. Open browser with real Chrome, 2560x1440 window, persistent
   logger.info('1. Opening browser...')
-  const configPath = path.resolve(PROJECT_ROOT, PLAYWRIGHT_CONFIG)
+  const configPath = path.resolve(APP_ROOT, PLAYWRIGHT_CONFIG)
   pwc(`open --persistent --config=${configPath}`)
 
   // Navigate to the page and wait for it to load

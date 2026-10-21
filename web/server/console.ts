@@ -1,18 +1,19 @@
 // ── The Console's entry point ───────────────────────────────────────
 //
 // The one command: build the page if it is not on disk, start the loopback
-// service, print the URL it bound and open it in the default browser. It reads
-// the project's `.env` through `core/config-read.ts`'s file-reading predicate —
-// the same schema `core/config.ts` parses eagerly for the pipeline — and injects
-// a configuration value, so nothing under `web/server/` ever reads the
-// environment and `tests/**` keeps needing no `.env` (spec decision 29). A
-// missing or broken `.env` is not fatal here: the Console boots, says a Run
-// cannot be configured yet, and leaves the failing fast to the Run (#57).
+// service, print the URL it bound and open it in the default browser. It
+// resolves the one application root (#78), reads the layered configuration
+// through `core/config-read.ts`'s file-reading predicate — the same schema
+// `core/config.ts` parses eagerly for the pipeline — and injects a configuration
+// value, so nothing under `web/server/` ever reads the environment and
+// `tests/**` keeps needing no `.env` (spec decision 29). A missing or broken
+// layer is not fatal here: the Console boots, says a Run cannot be configured
+// yet, and leaves the failing fast to the Run (#57).
 //
-// The Console deliberately never loads `.env` into `process.env`: dotenv does
+// The Console deliberately never loads the files into `process.env`: dotenv does
 // not override, so a value that was wrong at boot would shadow a corrected file
 // forever and the setup notice could never clear without a restart (#60). The
-// Run is unaffected — it reads its own `.env` from its working directory.
+// Run is unaffected — it reads the same layers through its own root.
 //
 // ADR 0008: no dispatcher and no CLI framework. The Console takes `--port` and
 // `--no-open` and nothing more; the flags are parsed by Node's own parser.
@@ -25,18 +26,13 @@ import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
 
-import type { ConfigValues, SiteConfig } from '../../core/config-read.js'
-import {
-  galleryListUrlOf,
-  PROJECT_ROOT,
-  readProjectConfig,
-  siteConfig,
-} from '../../core/config-read.js'
+import { dataRootOf, resolveAppRoot } from '../../core/app-root.js'
+import { readLayeredConfig, siteConfig } from '../../core/config-read.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import type { ConsoleRunState } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
-import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console-config.js'
+import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
@@ -68,32 +64,6 @@ interface ConsoleOptions {
 }
 
 /**
- * The web layer's own anchor: this entry point is the only thing that knows
- * where the layer starts. It is derived from this module's own depth — the file
- * sits in `web/server/`, so its parent is the layer root, where the page's build
- * config, the built page and the thumbnail cache live.
- *
- * It is deliberately NOT derived from `PROJECT_ROOT`: the two answer different
- * questions (a Run's cwd and the layer's own artifacts) and are never conflated
- * (spec decision 7).
- */
-const WEB_ROOT = path.resolve(import.meta.dirname, '..')
-
-/** The Console's configuration, built here and injected into the service. */
-function consoleConfig(values: ConfigValues | null, site: SiteConfig): ConsoleConfig {
-  return {
-    projectRoot: PROJECT_ROOT,
-    imagesDir: site.imagesDir,
-    logDir: site.logDir,
-    galleryStateFile: site.galleryStateFile,
-    distDir: path.join(WEB_ROOT, DIST_DIR_NAME),
-    // Absent when there is no usable `.env`: the Gallery list is then "not read"
-    // and `/api/status` reports that a Run cannot be configured yet (#57).
-    galleryListEndpoint: values === null ? null : galleryListUrlOf(values.BASE_ORIGIN),
-  }
-}
-
-/**
  * The Gallery list source for the injected configuration.
  *
  * With no endpoint there is nothing to ask: the source answers the contract's
@@ -113,15 +83,15 @@ function galleryListSource(endpoint: string | null): GalleryListSource {
  * real filesystem and the image library: `web/server/server.ts` receives the
  * source whole and never reaches for `sharp` or for a cache path itself.
  *
- * The cache lives under the web layer's root — never inside the Mirror
+ * The cache lives under the app root's web layer — never inside the Mirror
  * (ADR 0010) — and the name that keys it is the Wallpaper's own, which embeds a
  * content hash, so a hit needs no invalidation. `web/server/thumbnails.ts` is the
  * image library's only import site, and the import is dynamic on purpose: a
  * broken or absent native addon arrives as a rejected `await import('sharp')` — a
  * named 500 at the request site, never a crashed process and never a failed Run.
  */
-function realThumbnailSource(): ThumbnailSource {
-  const cacheDir = path.join(WEB_ROOT, THUMBNAIL_CACHE_DIR_NAME)
+function realThumbnailSource(appRoot: string): ThumbnailSource {
+  const cacheDir = path.join(appRoot, 'web', THUMBNAIL_CACHE_DIR_NAME)
   return {
     thumbnail: async (name, sourceFile) => {
       const file = await ensureThumbnail(name, {
@@ -161,16 +131,17 @@ function consoleOptions(argv: string[]): ConsoleOptions {
  * child process of our own — and the import is lazy, so the bundler never
  * enters the service's module graph.
  *
- * The config file is the layer's own (`web/vite.config.ts`), and Vite resolves
- * the page, the entry document and the output directory from it, so this process
- * names one path and the config owns the rest.
+ * The config file is the layer's own (`<appRoot>/web/vite.config.ts`), and Vite
+ * resolves the page, the entry document and the output directory from it, so
+ * this process names one path and the config owns the rest. The path comes from
+ * the injected app root, never from this module's location.
  */
 async function ensureBundle(config: ConsoleConfig): Promise<void> {
   if (fs.existsSync(path.join(config.distDir, 'index.html'))) return
 
   process.stdout.write('正在构建页面…\n')
   const { build } = await import('vite')
-  await build({ configFile: path.join(WEB_ROOT, 'vite.config.ts') })
+  await build({ configFile: path.join(config.appRoot, 'web', 'vite.config.ts') })
 }
 
 /**
@@ -266,15 +237,24 @@ function installStopHandlers(deps: StopDeps): void {
 }
 
 async function main(options: ConsoleOptions): Promise<void> {
-  // The tolerant, file-reading read (#57, #60): the project's `.env`, parsed and
-  // validated through the full schema with the process environment merged over
-  // it. An absent file, an unparsable one or a malformed value all come out as
-  // `null`, and everything below still has the defaults it needs. The file is
-  // deliberately not loaded into `process.env` — dotenv does not override, so a
-  // boot-time load would freeze a wrong value over a corrected file.
-  const values = readProjectConfig(PROJECT_ROOT)
-  const site = siteConfig(PROJECT_ROOT, values)
-  const config = consoleConfig(values, site)
+  // The one application root, resolved here and passed down (#78): a packaged
+  // launcher names it in `RE1999_APP_ROOT`; a source run falls back to the
+  // process's working directory. Nothing below this point derives it.
+  const appRoot = resolveAppRoot()
+  const dataRoot = dataRootOf(appRoot)
+
+  // The tolerant, layered read (#57, #60, #78): the shipped `app/.env` and the
+  // optional `data/user.env`, validated through the full schema with the process
+  // environment merged over both. An absent file, an unparsable one or a
+  // malformed value all come out as `null`, and everything below still has the
+  // defaults it needs. The files are deliberately not loaded into `process.env` —
+  // a boot-time load would freeze a wrong value over a corrected file.
+  const layered = readLayeredConfig({ appRoot, dataRoot })
+  if (layered.notice !== null) process.stdout.write(`${layered.notice}\n`)
+
+  const values = layered.values
+  const site = siteConfig(appRoot, values)
+  const config = consoleConfigOf(appRoot, values, site)
   await ensureBundle(config)
 
   // One cached read of the Gallery list serves both `/api/status` (its
@@ -296,9 +276,9 @@ async function main(options: ConsoleOptions): Promise<void> {
   let ownRunLogName: string | null = null
   const launcher = createRunLauncher({
     nodePath: process.execPath,
-    tsxEntry: tsxEntryPath(config.projectRoot),
-    mainEntry: path.join(config.projectRoot, 'core', 'main.ts'),
-    projectRoot: config.projectRoot,
+    tsxEntry: tsxEntryPath(config.appRoot),
+    mainEntry: path.join(config.appRoot, 'core', 'main.ts'),
+    appRoot: config.appRoot,
     onStarted: () => {
       ownRunLogName = null
       newestBeforeSpawn = newestRunLogName(config.logDir)
@@ -324,7 +304,7 @@ async function main(options: ConsoleOptions): Promise<void> {
     // the page shows differs, because the actions differ.
     isRunInFlight: () => runLogSource.facts().state !== 'idle',
     refusalCode: () => (runLogSource.facts().state === 'orphaned' ? 'orphaned-run' : null),
-    missingPrerequisites: () => missingPrerequisites({ projectRoot: config.projectRoot }),
+    missingPrerequisites: () => missingPrerequisites({ appRoot: config.appRoot, dataRoot }),
   })
   const cleanupRun = createRunCleaner({
     // Never clean under a live Run; that is the one refusal (ADR 0009).
@@ -339,11 +319,12 @@ async function main(options: ConsoleOptions): Promise<void> {
     runState: () => runLogSource.facts(),
     galleryFacts: async () => galleryFactsOf(await galleryList.get()),
     galleryList,
-    // #60: the page's setup notice has to clear on the next status read once
-    // `.env` exists, so this is the `.env` half of `missingPrerequisites` read
-    // again per request — one file, no `PATH` scan and no registry lookup — and
-    // the same predicate the start refuses on, so notice and refusal agree.
-    runConfigAvailable: () => runEnvFileAvailable(config.projectRoot),
+    // #60: the page's setup notice has to clear on the next status read once a
+    // usable layer exists, so this is the configuration half of
+    // `missingPrerequisites` read again per request — two small files, no `PATH`
+    // scan and no registry lookup — and the same predicate the start refuses on,
+    // so notice and refusal agree.
+    runConfigAvailable: () => runEnvFileAvailable(config.appRoot, dataRoot),
     // The one Run number the gallery view needs (#33), read from the newest Run
     // log exactly as `check-run` reads it — never recomputed from the Gallery
     // state, which would give 0.
@@ -351,7 +332,7 @@ async function main(options: ConsoleOptions): Promise<void> {
     // The image library's one call site (#35). Its import is dynamic and lives
     // inside `web/server/thumbnails.ts`, so a broken native binary is a 500 on
     // one tile — never a crash, and never a failed Run.
-    thumbnailSource: realThumbnailSource(),
+    thumbnailSource: realThumbnailSource(config.appRoot),
     // The wall's second input (#48): each Wallpaper's own pixel size, so the
     // masonry can place a tile before its lazy thumbnail arrives. Memoised here
     // rather than in the route, because the measurement has to outlive a

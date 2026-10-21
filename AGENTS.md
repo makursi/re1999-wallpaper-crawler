@@ -106,8 +106,9 @@ Two layers, one directory each at the root: `core/` is the crawler, `web/` is th
 
 ```
 core/                        — the crawler
-├── config.ts                — the pipeline's eager configuration: parses .env at import (a broken file fails a Run before it starts) and exports the constants the pipeline imports
-├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readConfig (the Console's non-throwing read), the tree-relative defaults, the Gallery list URL (unit-tested)
+├── app-root.ts              — the one application root: RE1999_APP_ROOT or the caller's fallback, plus the sibling data directory; nothing derives it from module position (unit-tested)
+├── config.ts                — the pipeline's eager configuration: reads the two layers at import (an unusable pair fails a Run before it starts) and exports the constants the pipeline imports
+├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the tree-relative defaults, the Gallery list URL (unit-tested)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
 ├── check-run.ts             — the verdict CLI: newest Run log + Gallery state + file probe → print, exit 0/1
@@ -136,7 +137,7 @@ web/                         — the Console, whole
 │   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
 │   └── console-token.ts     — the token the page was opened with, read from its own URL
 └── server/                  — the service, and the one command that starts it
-    ├── console.ts           — the entry point: build the page if absent, bind loopback, open it
+    ├── console.ts           — the entry point: resolve the app root, read the layers, build the page if absent, bind loopback, open it
     ├── server.ts            — the app: the guard, the routes, the port fallback; re-exports the dependency contract from `http/deps.ts` so the contract keeps its import address
     ├── http/                — the transport's own parts: `deps.ts` (the injected contract), `guard.ts` (token/Host/Origin), `respond.ts` (the four response shapes and their exact headers), `method.ts` (405 + `allow`), `content-types.ts` (the extension→type table both the assets and the image routes read), `token-rewrite.ts` (the page and stylesheet rewrites), `assets.ts` (containment + serving one built asset)
     ├── routes/              — one file per route group (status, gallery, images, run, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
@@ -145,6 +146,7 @@ web/                         — the Console, whole
     └── …                    — the readers (Run log, Gallery list, Mirror, thumbnails)
 tests/                       — mirrors the sources it tests
 ├── core/                    — the crawler's tests
+│   ├── app-root.test.ts
 │   ├── logger.test.ts
 │   ├── config-read.test.ts
 │   ├── discovery-loader.test.ts

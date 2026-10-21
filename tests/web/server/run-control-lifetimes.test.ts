@@ -65,7 +65,7 @@ function launcherWith(
     nodePath: 'C:\\nvm4w\\nodejs\\node.exe',
     tsxEntry: 'C:\\root\\node_modules\\tsx\\dist\\cli.mjs',
     mainEntry: 'C:\\root\\core\\main.ts',
-    projectRoot: 'C:\\root',
+    appRoot: 'C:\\root',
     platform,
     ...overrides,
   })
