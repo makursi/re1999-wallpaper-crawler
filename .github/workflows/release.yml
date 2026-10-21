@@ -62,7 +62,6 @@ jobs:
         with:
           runtime: node@24
           cache: true
-          require-lockfile: true
 
       # The checks below are functions with tests, not conditions inside this
       # file: `scripts/release-tag.ts` owns tag/version agreement and
