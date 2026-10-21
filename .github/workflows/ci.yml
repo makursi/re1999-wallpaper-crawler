@@ -25,13 +25,16 @@ jobs:
       # no `devEngines.runtime` for the action to read, and pnpm's own binary
       # does not bring Node.js with it — every step below needs it on PATH.
       # CI matches local development on Node 24; `engines` only sets the floor.
+      #
+      # The lockfile is enforced by pnpm itself: under CI it installs frozen, so
+      # a lockfile that disagrees with `package.json` fails the job rather than
+      # resolving from the registry. There is no action input for that — the
+      # `require-lockfile` this file used to carry is not one of pnpm/setup's,
+      # and the action warned about it on every run while doing nothing.
       - uses: pnpm/setup@v2
         with:
           runtime: node@24
           cache: true
-          # Fail on a missing lockfile instead of silently resolving from the
-          # registry: the committed lockfile is what makes the run reproducible.
-          require-lockfile: true
 
       # No `.env` is needed: the unit tests cover pure logic (report, gallery,
       # wallpaper URL set, Console service) and never import `core/config.ts`.

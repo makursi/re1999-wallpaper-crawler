@@ -23,7 +23,6 @@ jobs:
         with:
           runtime: node@24
           cache: true
-          require-lockfile: true
 
       # Fix what is mechanically fixable. The action below commits the result to
       # the PR branch, so ci.yml's format and lint gates pass without the author
