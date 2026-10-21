@@ -51,7 +51,7 @@ afterEach(() => {
 
 describe('instanceRecordPath', () => {
   it('names one JSON file directly under the data directory', () => {
-    const dataRoot = path.join('C:\\', 'install', 'data')
+    const dataRoot = path.resolve('install', 'data')
 
     // The data directory, never the program directory: an update replaces
     // `app\` wholesale, and a handshake file is not the user's data either.

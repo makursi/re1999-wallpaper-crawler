@@ -71,7 +71,7 @@ describe('installRootOf', () => {
 
 describe('installPointerFile', () => {
   it('is one file inside an app-named directory under LOCALAPPDATA', () => {
-    const localAppData = path.join('C:\\', 'Users', 'someone', 'AppData', 'Local')
+    const localAppData = path.resolve('Users', 'someone', 'AppData', 'Local')
 
     expect(installPointerFile(localAppData)).toBe(
       path.join(localAppData, INSTALL_POINTER_DIR_NAME, INSTALL_POINTER_FILE_NAME),
