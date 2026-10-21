@@ -82,13 +82,14 @@ export function readConfig(env: NodeJS.ProcessEnv): ConfigValues | null {
 // ── the download's User-Agent ─────────────────────────────────────
 //
 // Not a schema key: it is a pure default with an environment override, so
-// reading it cannot fail and it needs no eager parse. It lives in this module
-// rather than `core/config.ts` so the download layer can take it as an injected
-// value — and a test can import it without a usable configuration. The pipeline
-// re-exports it from `core/config.ts`, so a Run sees one constant, not a copy.
+// reading it cannot fail and it needs no eager parse. Only the *literal* lives
+// here — this module must not consult the process environment at import, because
+// a `USER_AGENT` written in a configuration file is merged into the environment
+// later, by `core/config.ts`. The pipeline composes the two there, so a `.env`
+// override still reaches a Run, and a test can still import the default without a
+// usable configuration.
 
-export const USER_AGENT =
-  process.env.USER_AGENT ??
+export const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 // ── the configuration files ───────────────────────────────────────

@@ -4,11 +4,11 @@ import process from 'node:process'
 import { dataRootOf, resolveAppRoot } from './app-root.js'
 import type { ConfigValues } from './config-read.js'
 import {
+  DEFAULT_USER_AGENT,
   galleryListUrlOf,
   parseConfig,
   readLayeredConfig,
   siteConfig,
-  USER_AGENT,
 } from './config-read.js'
 import { DATA_LAYOUT_FILE_NAME, DataLayoutError, layoutRefusalOf } from './data-layout.js'
 
@@ -48,9 +48,7 @@ if (layoutRefusal !== null) throw new DataLayoutError(layoutRefusal)
 // the environment. Keep that half of dotenv's semantics for the pipeline,
 // without overriding a real environment variable: this is a fresh process per
 // Run, and the Console — which deliberately never loads the files — imports
-// `core/config-read.ts`, not this module. `USER_AGENT` is the one key outside
-// the schema that does not need this pass: it is a pure default, read where it
-// is defined in `core/config-read.ts`.
+// `core/config-read.ts`, not this module.
 for (const [key, value] of Object.entries(layered.env)) {
   if (value !== undefined && process.env[key] === undefined) process.env[key] = value
 }
@@ -81,9 +79,10 @@ export const GALLERY_LIST_URL = galleryListUrlOf(BASE_ORIGIN)
 export const GALLERY_STATE_FILE = site.galleryStateFile
 
 /**
- * The download's `User-Agent`, re-exported from the module that never parses
- * eagerly. The literal and its `USER_AGENT` override live there because the
- * value needs no configuration, and `core/download/download.ts` takes it as an
- * injected input rather than importing this module.
+ * The download's `User-Agent`: the literal from the module that never parses
+ * eagerly, with whatever the environment says winning — and the layered files
+ * count, because a `.env` line is merged into the environment above. Composed
+ * here rather than there, because that module cannot see a configuration file
+ * without parsing it eagerly at import.
  */
-export { USER_AGENT }
+export const USER_AGENT = layered.env.USER_AGENT ?? DEFAULT_USER_AGENT
