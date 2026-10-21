@@ -109,7 +109,7 @@ Run never got there".
 
 ## Architecture
 
-Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard and the build.
+Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard and the build, and `packaging/` holds the one file the portable package places at its archive root (the launcher, #85).
 
 ```
 core/                        — the crawler
@@ -150,8 +150,12 @@ web/                         — the Console, whole
     ├── build-artifacts.ts   — what the shipped tree is made of: server.js / run.js / web/dist/index.html, the Run entry's path, and the boot refusal for a tree that lacks one (unit-tested; #84)
     ├── server.ts            — the app: the guard, the routes, the port fallback; re-exports the dependency contract from `http/deps.ts` so the contract keeps its import address
     ├── http/                — the transport's own parts: `deps.ts` (the injected contract), `guard.ts` (token/Host/Origin), `respond.ts` (the four response shapes and their exact headers), `method.ts` (405 + `allow`), `content-types.ts` (the extension→type table both the assets and the image routes read), `token-rewrite.ts` (the page and stylesheet rewrites), `assets.ts` (containment + serving one built asset)
-    ├── routes/              — one file per route group (status, gallery, images, run, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
+    ├── routes/              — one file per route group (status, gallery, images, run, instance, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
     ├── run-control.ts       — the Run launcher, the one-at-a-time rule, the stop decision
+    ├── instance-record.ts   — the handshake's file: the bound port + this boot's token in `<data>/instance.json`, its shape version and its ownership check (unit-tested; #82)
+    ├── instance-handshake.ts — the second double-click's question: ask the record's address whether that service still answers, and hand back its page URL or `null` (socket-tested; #82)
+    ├── installation.ts      — where the package is installed (`<install>\app` beside `<install>\data`), and the `%LOCALAPPDATA%` pointer the updater reads (unit-tested; #85)
+    ├── unsafe-download.ts   — the `:Zone.Identifier` check and the Chinese unblock instruction a marked download prints (unit-tested; #85)
     ├── image-sizes.ts       — the Wallpapers' own pixel sizes, read for the masonry (unit-tested)
     └── …                    — the readers (Run log, Gallery list, Mirror, thumbnails)
 tests/                       — mirrors the sources it tests
@@ -190,6 +194,8 @@ scripts/
 ├── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ├── build.ts          — the build: Vite's page + two esbuild entries into `build/`, one `RE1999_VERSION` define, the tree's package.json, and a refusal when a bundle left an undeclared import
 └── bundle-externals.ts — the build's two pure readings of esbuild's metafile: undeclared externals (`sharp` is the only allowed one) and the packages that did bundle (unit-tested)
+packaging/
+└── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, `pause` on failure. #86 copies it to the archive root verbatim
 ```
 
 `build/` itself is generated, never source: `pnpm build` writes it and
@@ -252,6 +258,21 @@ requires a builtin kills the program at import. Measured, not guessed: without
 the banner the built Console died on `dotenv` (`Dynamic require of "fs" is not
 supported`) before it printed a URL, while typecheck, lint and every test passed.
 Only booting the artifact catches this class of failure.
+
+### The launcher is ASCII, and the program prints the Chinese
+
+A `.bat` with Chinese text is not reliable on Windows, and `chcp 65001` is not a
+universal fix. Measured on a real Chinese Windows 11 in fresh console windows
+(936): a UTF-8 no-BOM script shows the line as mojibake; UTF-8 + `chcp 65001`
+shows it correctly but only while the file stays BOM-less (and turns cmd's own
+messages English); a UTF-8 **BOM** makes the first line run as
+`'锘緻echo' 不是内部或外部命令`, so `@echo off` never happens; GBK is correct on
+that machine and on no other. So `packaging/启动.bat` is pure ASCII — `cd`, the
+two root variables, `app\node.exe app\server.js`, `if errorlevel 1 pause` — and
+every Chinese line (the window title, the "do not close" line, the
+Mark-of-the-Web steps) is Node's, which writes Unicode to the console. Do not
+add Chinese to the script, and do not let its line endings be normalized: it is
+stored with CRLF, and `.gitattributes` marks `*.bat -text`.
 
 ### Git history is LF, the Windows worktree is CRLF
 
