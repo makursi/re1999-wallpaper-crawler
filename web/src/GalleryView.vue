@@ -25,12 +25,15 @@ import { computed, ref } from 'vue'
 
 import type { ConsoleGalleryRow, ConsoleImageSize } from '../api-types.js'
 import WallHeader from './components/WallHeader.vue'
+import WallStart from './components/WallStart.vue'
 import WallTile from './components/WallTile.vue'
+import { useConsoleStatus } from './composables/useConsoleStatus'
 import { useGallery } from './composables/useGallery'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
 import { withQueryToken } from './lib/console-api'
 import { columnsOf } from './lib/masonry'
+import { wallBandOf, type WallFacts } from './lib/wall-state'
 
 /**
  * The wall's columns. Five is the gallery's own measurement (spec #43: about
@@ -47,8 +50,55 @@ const PLACEHOLDER_BOX = '3 / 4'
 const PLACEHOLDER_HEIGHT_RATIO = 4 / 3
 
 // `/api/gallery` is read once, by the wall's own composable; the client it uses
-// is the page's only place a request carries this start's token.
-const { gallery, failure } = useGallery()
+// is the page's only place a request carries this start's token. The status is
+// read beside it because the wall's band (#83) speaks in the live Mirror count
+// and the list's total — the two numbers the Run poll keeps current.
+const { gallery, failure, load } = useGallery()
+const { status, refresh } = useConsoleStatus()
+
+/**
+ * The wall's band facts. The status is the freshest answer while it is there —
+ * its Mirror count updates as a Run writes, and its Gallery total is the same
+ * list the wall read — and the wall's own read stands in between the two.
+ *
+ * `null` until one of them has landed: "not read yet" is not an empty wall, and
+ * a cold page that flashed "the wall is empty" before its first read would be
+ * the exact broken look #83 exists to prevent. The caption above already says
+ * what is being read.
+ */
+const wallFacts = computed<WallFacts | null>(() => {
+  const current = status.value
+  if (current !== null) {
+    return {
+      mirrorCount: current.mirrorCount,
+      officialTotal: current.officialTotal,
+      running: current.state === 'running',
+      orphaned: current.state === 'orphaned',
+    }
+  }
+  if (gallery.value === null) return null
+  return {
+    mirrorCount: gallery.value.mirrorCount,
+    officialTotal: gallery.value.officialTotal,
+    running: false,
+    orphaned: false,
+  }
+})
+
+/** Which of the wall's bands (empty / fetching / interrupted / resuming) is showing. */
+const wallBand = computed(() => (wallFacts.value === null ? 'none' : wallBandOf(wallFacts.value)))
+
+/** A Run that ended in a problem re-words the start control as another try. */
+const lastRunFailed = computed(() => status.value?.verdict === 'defect')
+
+/**
+ * Re-read the wall and the status — the retry a failed read or an unread list
+ * offers. Both reads are cheap and the service owns the list's own cache, so
+ * the answer may still be the cached one; the reader can try again.
+ */
+async function retryRead(): Promise<void> {
+  await Promise.all([load(), refresh()])
+}
 
 /** The tile the viewer is showing; kept after a close so the exit can finish. */
 const shown = ref<ConsoleGalleryRow | null>(null)
@@ -111,7 +161,17 @@ function onViewerOpenChange(open: boolean): void {
 
 <template>
   <section class="pb-24">
-    <WallHeader :gallery="gallery" :failure="failure" />
+    <WallHeader :gallery="gallery" :failure="failure" @retry="retryRead" />
+
+    <!-- The wall's own band (#83): an empty wall explains itself and offers the
+         one action; a Run in flight shows "downloaded N of M"; a wall caught
+         mid-way says another start continues. Nothing starts on its own. -->
+    <WallStart
+      v-if="wallFacts !== null"
+      :band="wallBand"
+      :facts="wallFacts"
+      :last-run-failed="lastRunFailed"
+    />
 
     <!-- One `DialogRoot` for the wall, so each tile can be the trigger. -->
     <DialogRoot :open="viewerOpen" @update:open="onViewerOpenChange">

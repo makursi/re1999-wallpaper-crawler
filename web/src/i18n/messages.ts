@@ -49,8 +49,6 @@ const zhCN = {
   // The page itself.
   'app.title': '壁纸图鉴',
   'app.readingMirror': '正在读取镜像……',
-  'app.wallpapersInMirror': '镜像中有 {count} 张壁纸',
-  'app.mirrorAgainstTotal': '镜像中有 {count} 张壁纸,官方总数为 {total}',
 
   // The language switch. The two language names are written in their own
   // language — a switch that says 中文 only in Chinese is unusable to the
@@ -83,27 +81,25 @@ const zhCN = {
   // at the bottom of this file hold each service code to its copy.
   'run.heading': '运行',
   'run.readingLog': '正在读取运行日志……',
-  'run.inFlight': '有一个运行正在进行:{progress}。',
   'run.noLog': '尚未读取到任何运行日志。',
   'run.line': '运行 {runId} — 结论:{verdict}',
   'run.why': '原因:{causes}',
   'run.causeSeparator': ';',
-  'run.cause.stateNamesAnotherRun': '官方状态指向另一个运行',
-  'run.cause.stateUnreadable': '官方状态读取失败,无法与报告比对',
-  'run.cause.missingOnDisk': '报告声称的新文件在磁盘上缺失:{files}',
-  'run.explained': '已解释(常规情形,记录在案而非判为失败):',
+  'run.cause.stateNamesAnotherRun': '官网记录和这次运行对不上(可能来自另一次运行)',
+  'run.cause.stateUnreadable': '官网记录没读到,没法核对这次运行',
+  'run.cause.missingOnDisk': '记录里说新下载了这些文件,磁盘上却找不到:{files}',
+  'run.explained': '这几处是常规情况,已经记下来了,不算失败:',
   'run.gallery': '官方清单:{line}',
   'run.galleryReport':
     '官方总数 {officialTotal} · 上次运行后新增 {newSinceLastRun} · 新增文件 {newFiles}',
   'run.download': '下载:{line}',
   'run.downloadReport': '成功 {ok} · 跳过 {skipped} · 失败 {failed} · 成功率 {successRate}',
   'run.unknown': '未知',
-  'run.defects': '缺陷:',
-  'run.reportMissing': '运行日志停在运行报告之前 — 这是日志的缺陷,不是运行失败的证据。',
-  'run.reportUnreadable':
-    '运行日志带有本控制台读不懂的运行报告 — 旧版运行契约?这既不是报告缺失,也不证明运行失败。',
-  'run.start': '开始运行',
-  'run.refusedStart': '本地控制台拒绝启动(HTTP {status})',
+  'run.defects': '发现的问题:',
+  'run.reportMissing': '这次运行的记录没有写完,所以得不出结论。可以再抓一次;已经下载好的会跳过。',
+  'run.reportUnreadable': '这次运行的记录是旧格式,这个页面读不懂,所以得不出结论。',
+  'run.refusedStart': '没能开始抓取:本地控制台没有接受这次请求。刷新页面后再试一次。',
+  'run.siteUnreachable': '连不上官网,这次一张也没能拿到。检查网络后再抓一次。',
   // The setup notice (#60): with no usable `.env` the panel says what to create
   // before the reader clicks start. The file name is a data cell, so it travels
   // as a parameter; the line is the site's constant, not translatable prose, and
@@ -116,10 +112,12 @@ const zhCN = {
   'run.setup.note': '保存后刷新页面,提示就会消失,就可以开始运行了。',
 
   // The verdict is `check-run`'s three-state enum, mapped here because the page
-  // owns every word the reader sees (docs/adr/0014).
-  'verdict.clean': '干净',
-  'verdict.explained': '已解释',
-  'verdict.defect': '缺陷',
+  // owns every word the reader sees (docs/adr/0014). #83 puts them in a
+  // player's words: the service code and the old internal labels (干净 / 已解释 /
+  // 缺陷) are gone from the page, and each line says what it means for the wall.
+  'verdict.clean': '全部完成,没有发现问题',
+  'verdict.explained': '完成,有几处常规情况已记录,不算失败',
+  'verdict.defect': '出现了问题',
 
   // The Orphaned Run panel: the one state with an action, so its copy has to
   // explain both what cleaning up does and what it refuses to do.
@@ -128,7 +126,7 @@ const zhCN = {
   'orphan.explanation':
     '清理是可选项,不是强制项:它可能仍是一个正在写入的运行,而仅凭日志目录分不清这两种情况。清理会撤回这条提示;运行日志本身永不修改、也不删除,因为它是这次运行的审计轨迹。',
   'orphan.clean': '清理',
-  'orphan.refusedCleanup': '本地控制台拒绝清理(HTTP {status})',
+  'orphan.refusedCleanup': '本地控制台没有接受这次清理。刷新页面后再试一次。',
 
   // The gallery: the official list read against the Mirror, and the three
   // states a row can be in.
@@ -140,8 +138,7 @@ const zhCN = {
   'gallery.counts': '官方清单有 {officialTotal} 条;镜像有 {mirrorCount} 个文件。',
   'gallery.notRead': '未读取到',
   'gallery.newestRunAdded': '最近一次运行新增了 {newSinceLastRun} 条。',
-  'gallery.listUnavailable':
-    '官方清单没有读到,所以这里只显示镜像里的文件:哪些壁纸缺失无从判断,这里的数字也不是缺失的数量。',
+  'gallery.listUnavailable': '暂时连不上官网,所以不知道还有哪些壁纸没下载。检查网络后再试一次。',
   'gallery.mirrorGap':
     '官方清单中列出、镜像里却没有的壁纸有 {missing} 张;镜像里有 {extra} 个文件已不在官方清单中。',
   'gallery.tileShow': '全尺寸查看 {name}',
@@ -150,6 +147,38 @@ const zhCN = {
   'gallery.state.onDisk': '已落盘',
   'gallery.state.missing': '缺失',
   'gallery.state.notInGallery': '已不在官方清单',
+
+  // ── The wall's own band (#83) ─────────────────────────────────────
+  //
+  // An empty wall explains itself and hands the reader the one action that
+  // matters; a wall with downloads speaks in counts, and says an interruption
+  // continues rather than restarts. The scale of the first fetch is numbers,
+  // not adjectives: about 1000+ Wallpapers, about 2 GB, 10–40 minutes. Nothing
+  // here offers a way to start automatically — the button is the only start.
+  'wall.start': '开始抓取',
+  'wall.continue': '继续抓取',
+  'wall.retryStart': '再抓一次',
+  'wall.emptyHeading': '墙上还没有壁纸',
+  'wall.emptyBody': '点下面的按钮开始抓取:只有你点下去,它才会开始,程序不会自己动。',
+  'wall.emptyScale': '首次大约要下载 1000 多张壁纸,合计约 2 GB;按常见网速,大概 10–40 分钟。',
+  'wall.progress': '已下载 {done} / 共 {total} 张',
+  'wall.progressUnknownTotal': '已下载 {done} 张(官网总数还没读到)',
+  'wall.emptyResumeHint': '以后中途关掉窗口也没关系:下次打开点「继续抓取」,已经下载好的会跳过。',
+  'wall.resumeBody':
+    '还差 {remaining} 张。再点「继续抓取」会从上次停下的地方接着下载:已经下载好的会跳过,不会从头再来。',
+  'wall.runningHeading': '正在抓取壁纸…',
+  'wall.runningHint': '关闭窗口即停止;下次打开点「继续抓取」,已经下载好的会跳过。',
+  'wall.interruptedHeading': '上次抓取中断了',
+  'wall.interruptedBody':
+    '先打开导航上的「运行」面板,清理上次中断留下的记录,然后就能接着抓;已经下载好的会跳过。',
+  'wall.readFailed': '没能读到本地控制台的数据。',
+
+  // A failure, in one human sentence (#83): no stack, no HTTP status, no
+  // transport message ever reaches the reader. Each line says what happened and
+  // what to do next, and the retry control beside it does that action.
+  'action.retry': '重试',
+  'console.readFailed': '没读到本地控制台的数据。确认程序还在运行,然后重试。',
+  'error.connection': '和本地控制台的连接断了。刷新页面后再试一次。',
 
   // The fullscreen viewer.
   'viewer.galleryId': '官方 id {id}',
@@ -179,23 +208,24 @@ const zhCN = {
 
   'prerequisite.envFile': '.env 配置文件',
 
-  'run.explained.discoveryLeak': '发现泄漏,但全部由站点资源解释:{urls}',
-  'run.explained.mirrorGapExtra': '镜像里有 {count} 个文件已不在官方清单中',
+  'run.explained.discoveryLeak': '有几个不是壁纸的链接混了进来,都已确认来自站点本身:{urls}',
+  'run.explained.mirrorGapExtra': '本地有 {count} 个文件已不在官网清单里',
 
   // The Run report's defect block, as rows: the page names each class and lays
-  // the values out, instead of printing the raw record.
-  'defect.none': '未发现缺陷。',
-  'defect.discoveryLeak': '发现泄漏:{count} 个 URL',
-  'defect.nonConverged': '发现未完成:官网清单没有回答',
-  'defect.emptyResult': '没有可下载的壁纸',
-  'defect.persistentFailures': '持续失败:{count} 个',
-  'defect.emptyFiles': '空文件:{files}',
-  'defect.siteAssetNotChecked': '站点资源误报检查:未检查',
-  'defect.siteAssetFalsePositive': '站点资源被误判为壁纸:{count} 个',
-  'defect.gallerySourceUnavailable': '官方清单读取失败',
-  'defect.mirrorGapNotChecked': '镜像缺口:未检查',
-  'defect.mirrorGapMissing': '镜像缺口:官方清单中有 {count} 张壁纸不在镜像里',
-  'defect.mirrorGapExtra': '镜像缺口:镜像里有 {count} 个文件已不在官方清单中',
+  // the values out, instead of printing the raw record. The words are the
+  // wall's, not the report's: "发现了什么" rather than the field's own name.
+  'defect.none': '没有发现问题。',
+  'defect.discoveryLeak': '抓到了 {count} 个不是壁纸的链接',
+  'defect.nonConverged': '没有拿到官网的完整清单',
+  'defect.emptyResult': '一张壁纸也没找到',
+  'defect.persistentFailures': '{count} 张反复下载失败',
+  'defect.emptyFiles': '有文件是空的:{files}',
+  'defect.siteAssetNotChecked': '没有核对哪些链接不是壁纸',
+  'defect.siteAssetFalsePositive': '把 {count} 个不是壁纸的链接当成了壁纸',
+  'defect.gallerySourceUnavailable': '没能连上官网,没拿到清单',
+  'defect.mirrorGapNotChecked': '没有核对本地和官网的数量',
+  'defect.mirrorGapMissing': '官网列出的 {count} 张壁纸还没下载',
+  'defect.mirrorGapExtra': '本地有 {count} 个文件已不在官网清单里',
 } as const
 
 /**
@@ -225,8 +255,6 @@ export interface MessageRow {
 const en = {
   'app.title': 'Wallpaper Gallery',
   'app.readingMirror': 'Reading the Mirror…',
-  'app.wallpapersInMirror': '{count} Wallpapers in the Mirror',
-  'app.mirrorAgainstTotal': '{count} Wallpapers in the Mirror against a Gallery total of {total}',
 
   'language.label': 'Interface language',
   'language.chinese': '中文',
@@ -242,38 +270,41 @@ const en = {
 
   'run.heading': 'Run',
   'run.readingLog': 'Reading the Run log…',
-  'run.inFlight': 'A Run is in flight: {progress}.',
   'run.noLog': 'No Run log has been read.',
   'run.line': 'Run {runId} — verdict: {verdict}',
   'run.why': 'Why: {causes}',
   'run.causeSeparator': '; ',
-  'run.cause.stateNamesAnotherRun': 'the Gallery state names another Run',
+  'run.cause.stateNamesAnotherRun':
+    'the site record does not match this Run (it may belong to another Run)',
   'run.cause.stateUnreadable':
-    'the Gallery state could not be read, so the report was not matched against it',
-  'run.cause.missingOnDisk': 'claimed new files missing on disk: {files}',
-  'run.explained': 'Explained (routine, recorded rather than failed):',
+    'the site record could not be read, so this Run was not cross-checked',
+  'run.cause.missingOnDisk':
+    'the log says these files were downloaded, but they are not on disk: {files}',
+  'run.explained': 'These are routine — recorded, not counted as failures:',
   'run.gallery': 'Gallery: {line}',
   'run.galleryReport':
     'officialTotal {officialTotal}, newSinceLastRun {newSinceLastRun}, newFiles {newFiles}',
   'run.download': 'Download: {line}',
   'run.downloadReport': 'ok {ok}, skipped {skipped}, failed {failed}, successRate {successRate}',
   'run.unknown': 'unknown',
-  'run.defects': 'Defects:',
+  'run.defects': 'Problems found:',
   'run.reportMissing':
-    'The Run log stops before its Run report — a defect in the log, not proof the Run failed.',
+    'This Run’s log stops before its report, so there is no verdict. You can fetch again; wallpapers already downloaded are skipped.',
   'run.reportUnreadable':
-    'The Run log carries a Run report this Console cannot read — an older Run contract? Not a missing report, and not proof the Run failed.',
-  'run.start': 'Start a Run',
-  'run.refusedStart': 'the Console refused the start (HTTP {status})',
+    'This Run’s log uses an older format this page cannot read, so there is no verdict.',
+  'run.refusedStart':
+    'The fetch did not start: the Console did not accept the request. Refresh the page and try again.',
+  'run.siteUnreachable':
+    'The site could not be reached, so nothing was downloaded. Check the connection and fetch again.',
   'run.setup.heading': 'Set up the site first',
   'run.setup.body': 'This Console has no usable site configuration yet, so a Run cannot start.',
   'run.setup.file': 'Create the {file} file at the repository root with this line:',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
   'run.setup.note': 'After saving it, refresh the page: the notice goes away and a Run can start.',
 
-  'verdict.clean': 'clean',
-  'verdict.explained': 'explained',
-  'verdict.defect': 'defect',
+  'verdict.clean': 'Finished — nothing wrong',
+  'verdict.explained': 'Finished — a few routine notes, not failures',
+  'verdict.defect': 'Something went wrong',
 
   'orphan.line':
     'Orphaned Run {runId} — the Run log {logName} has no Run report and was written recently.',
@@ -281,7 +312,8 @@ const en = {
   'orphan.explanation':
     "Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log directory alone cannot tell the two apart. The cleanup withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's audit trail.",
   'orphan.clean': 'Clean up',
-  'orphan.refusedCleanup': 'the Console refused the cleanup (HTTP {status})',
+  'orphan.refusedCleanup':
+    'The Console did not accept the cleanup. Refresh the page and try again.',
 
   'gallery.heading': 'Gallery list',
   'wall.mark': 'WALLPAPER',
@@ -291,7 +323,7 @@ const en = {
   'gallery.notRead': 'not read',
   'gallery.newestRunAdded': 'The newest Run added {newSinceLastRun}.',
   'gallery.listUnavailable':
-    "The Gallery list was not read, so this view shows the Mirror's files alone: nothing can be said about which Wallpapers are missing, and nothing here is a count of them.",
+    'The site cannot be reached right now, so it is unknown which wallpapers are still missing. Check the connection and try again.',
   'gallery.mirrorGap':
     '{missing} listed Wallpapers are missing from the Mirror; {extra} Mirror files are not in the gallery any more.',
   'gallery.tileShow': 'Show {name} at full size',
@@ -300,6 +332,33 @@ const en = {
   'gallery.state.onDisk': 'on disk',
   'gallery.state.missing': 'missing',
   'gallery.state.notInGallery': 'not in the gallery',
+
+  'wall.start': 'Start the fetch',
+  'wall.continue': 'Continue the fetch',
+  'wall.retryStart': 'Fetch again',
+  'wall.emptyHeading': 'The wall is empty for now',
+  'wall.emptyBody':
+    'Click the button below to start the fetch: nothing begins until you do — the program never starts on its own.',
+  'wall.emptyScale':
+    'The first fetch is about 1,000+ wallpapers and roughly 2 GB — 10–40 minutes at typical speeds.',
+  'wall.progress': '{done} of {total} wallpapers downloaded',
+  'wall.progressUnknownTotal': '{done} wallpapers downloaded (the Gallery total is not read yet)',
+  'wall.emptyResumeHint':
+    'If you close the window mid-fetch, open it again and continue — what is already downloaded is skipped.',
+  'wall.resumeBody':
+    '{remaining} wallpapers are still missing. “Continue the fetch” picks up where it stopped: what is already downloaded is skipped, not fetched twice.',
+  'wall.runningHeading': 'Fetching wallpapers…',
+  'wall.runningHint':
+    'Closing the window stops the fetch; open it again and continue — what is already downloaded is skipped.',
+  'wall.interruptedHeading': 'The last fetch was interrupted',
+  'wall.interruptedBody':
+    'Open the “Run” panel in the navigation, clear the record the interrupted fetch left behind, then continue — what is already downloaded is skipped.',
+  'wall.readFailed': 'The Console data could not be read.',
+
+  'action.retry': 'Try again',
+  'console.readFailed':
+    'The Console data could not be read. Check that the program is still running, then try again.',
+  'error.connection': 'The connection to the Console was lost. Refresh the page and try again.',
 
   'viewer.galleryId': 'Gallery id {id}',
   'viewer.close': 'Close (Esc)',
@@ -318,21 +377,21 @@ const en = {
   'prerequisite.envFile': 'the .env file',
 
   'run.explained.discoveryLeak':
-    'discovery leak, wholly accounted for by the Site asset list: {urls}',
-  'run.explained.mirrorGapExtra': 'mirror gap: {count} extra files not in the gallery any more',
+    'a few links that are not wallpapers came along; they are the site’s own assets: {urls}',
+  'run.explained.mirrorGapExtra': '{count} local files are no longer in the Gallery list',
 
-  'defect.none': 'No defects found.',
-  'defect.discoveryLeak': 'discovery leak: {count} URLs',
-  'defect.nonConverged': 'Discovery did not finish: the Gallery list did not answer',
-  'defect.emptyResult': 'nothing to download',
-  'defect.persistentFailures': 'persistent failures: {count}',
-  'defect.emptyFiles': 'empty files: {files}',
-  'defect.siteAssetNotChecked': 'Site asset false-positive check: not checked',
-  'defect.siteAssetFalsePositive': 'Site assets mistaken for Wallpapers: {count}',
-  'defect.gallerySourceUnavailable': 'the Gallery list could not be read',
-  'defect.mirrorGapNotChecked': 'Mirror gap: not checked',
-  'defect.mirrorGapMissing': 'Mirror gap: {count} listed Wallpapers missing from the Mirror',
-  'defect.mirrorGapExtra': 'Mirror gap: {count} extra Mirror files not in the gallery any more',
+  'defect.none': 'Nothing went wrong.',
+  'defect.discoveryLeak': '{count} links that are not wallpapers were picked up',
+  'defect.nonConverged': 'the Gallery list did not answer',
+  'defect.emptyResult': 'no wallpapers were found',
+  'defect.persistentFailures': '{count} wallpapers kept failing to download',
+  'defect.emptyFiles': 'files downloaded empty: {files}',
+  'defect.siteAssetNotChecked': 'the non-wallpaper links were not checked',
+  'defect.siteAssetFalsePositive': '{count} non-wallpaper links were taken for wallpapers',
+  'defect.gallerySourceUnavailable': 'the site could not be reached, so there was no list',
+  'defect.mirrorGapNotChecked': 'the local and official counts were not compared',
+  'defect.mirrorGapMissing': '{count} listed wallpapers are not downloaded yet',
+  'defect.mirrorGapExtra': '{count} local files are no longer in the Gallery list',
 } satisfies Record<MessageKey, string>
 
 /**

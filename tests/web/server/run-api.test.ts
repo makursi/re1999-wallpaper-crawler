@@ -271,6 +271,30 @@ describe('the status view over HTTP', () => {
     })
   })
 
+  it('moves the progress numbers while a Run is in flight', async () => {
+    // The page's "downloaded N of M" (#83) rides on these two fields, so the
+    // contract is what the wall shows: an unfinished Run, then files landing
+    // between two reads, and the Mirror count moving while the total stands
+    // still.
+    const harness = await serve({ officialTotal: 1010 })
+    writeLog(harness.config, runLog(plainLine('2. Downloading images...')))
+
+    expect(await getStatus(harness)).toMatchObject({
+      state: 'running',
+      mirrorCount: 0,
+      officialTotal: 1010,
+    })
+
+    fs.writeFileSync(path.join(harness.config.imagesDir, '1013_a.png'), 'a')
+    fs.writeFileSync(path.join(harness.config.imagesDir, '1014_b.jpg'), 'b')
+
+    expect(await getStatus(harness)).toMatchObject({
+      state: 'running',
+      mirrorCount: 2,
+      officialTotal: 1010,
+    })
+  })
+
   it('works with no .env present', async () => {
     const harness = await serve()
 
