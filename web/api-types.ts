@@ -219,6 +219,22 @@ export interface ConsoleVerdictReasons {
   explained: ConsoleExplainedReason[]
 }
 
+/**
+ * A newer release the page may mention (#81).
+ *
+ * The service decides whether one exists — `web/server/update-check.ts` owns the
+ * whole decision — and the page only lays it out: one discreet line naming the
+ * version and linking to the project's Releases page. There is deliberately no
+ * download URL and no mirror: the project ships on GitHub only, and clicking is
+ * the reader's action, not the Console's.
+ */
+export interface ConsoleUpdateNotice {
+  /** The newer version, as the page writes one: `1.2.3`, without the tag's `v`. */
+  version: string
+  /** The project's Releases page — the notice's only link. */
+  releasesUrl: string
+}
+
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
 export interface ConsoleStatusPayload {
   /**
@@ -232,6 +248,12 @@ export interface ConsoleStatusPayload {
    * number and not a second copy here.
    */
   version: string | null
+  /**
+   * The boot's update check (#81): a newer release to mention, or `null` for
+   * "say nothing". A failed check is this same `null` — the payload has no
+   * error channel for it, because an offline machine is not a Console problem.
+   */
+  updateNotice: ConsoleUpdateNotice | null
   /** The Run the verdict is about; `null` when no Run log names one. */
   runId: string | null
   state: ConsoleRunState

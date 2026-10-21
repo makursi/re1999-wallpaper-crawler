@@ -29,6 +29,9 @@ export function registerStatusRoute(app: Hono, runtime: ServiceRuntime): void {
         // #79: the application's own version, resolved for this Console's
         // injected app root — the entry point resolved it via app-root.ts.
         version: applicationVersion(config.appRoot),
+        // #81: resolved once per boot by the entry point; the route only carries
+        // it, so the decision stays in `web/server/update-check.ts`.
+        update: deps.updateNotice ?? null,
         run: deps.runState(),
         mirrorCount: countMirrorWallpapers(config.imagesDir),
         gallery: await deps.galleryFacts(),

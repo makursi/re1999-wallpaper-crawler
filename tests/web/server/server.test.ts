@@ -8,6 +8,7 @@ import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
+import { checkForUpdate, RELEASES_PAGE_URL } from '../../../web/server/update-check.js'
 import { consoleConfigIn, fixtureAppRoot, packageVersion, TOKEN } from './run-fixtures.js'
 
 /** The version the repository's package metadata declares (#79). */
@@ -185,6 +186,8 @@ describe('GET /api/status', () => {
       // #79: the one version, read from the application root's package
       // metadata — this fixture copies the repository's own file.
       version: PACKAGE_VERSION,
+      // #81: this service was given no update check, which is "no notice".
+      updateNotice: null,
       runId: null,
       state: 'idle',
       startedAt: null,
@@ -250,6 +253,37 @@ describe('GET /api/status', () => {
     available = true
 
     expect(await read()).toMatchObject({ runConfigAvailable: true })
+  })
+
+  it('carries a newer release the boot check found, and links to the Releases page', async () => {
+    const notice = await checkForUpdate({
+      currentVersion: '1.0.0',
+      fetchRelease: async () => ({ tagName: 'v1.2.3', draft: false, prerelease: false }),
+    })
+    const service = await serve({ updateNotice: notice })
+
+    const body: unknown = await (await fetch(`${service.origin}/api/status?token=${TOKEN}`)).json()
+
+    expect(body).toMatchObject({
+      updateNotice: { version: '1.2.3', releasesUrl: RELEASES_PAGE_URL },
+    })
+  })
+
+  it('answers a failed update check as no notice, not as a status error', async () => {
+    // Offline, timed out, malformed: every one of them became the check's `null`
+    // before the service saw it, so the read is a plain 200 with no error field.
+    const notice = await checkForUpdate({
+      currentVersion: '1.0.0',
+      fetchRelease: async () => null,
+    })
+    const service = await serve({ updateNotice: notice })
+
+    const response = await fetch(`${service.origin}/api/status?token=${TOKEN}`)
+    const body: unknown = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({ updateNotice: null })
+    expect(body).not.toHaveProperty('error')
   })
 
   it('takes the Run and Gallery halves from the injected readers', async () => {

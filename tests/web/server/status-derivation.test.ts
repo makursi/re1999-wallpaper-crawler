@@ -5,6 +5,7 @@ import { assessRun, logRunIdOf, parseRunReport } from '../../../core/report/run-
 import type { ConsoleExplainedReason, ConsoleStatusPayload } from '../../../web/api-types.js'
 import type { ConsoleRunLogFacts } from '../../../web/server/status.js'
 import { buildStatus, deriveRunFacts } from '../../../web/server/status.js'
+import type { UpdateNotice } from '../../../web/server/update-check.js'
 import {
   defects,
   galleryState,
@@ -21,6 +22,7 @@ import {
 /** The raw Run facts plus the facts the assembly takes from the service. */
 type RawStatusFacts = ConsoleRunLogFacts & {
   version: string | null
+  update: UpdateNotice | null
   mirrorCount: number
   officialTotal: number | null
   listAvailable: boolean
@@ -37,6 +39,7 @@ function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
   const {
     logText,
     version = packageVersion(),
+    update = null,
     mirrorCount = 1013,
     officialTotal = 1010,
     listAvailable = true,
@@ -45,6 +48,7 @@ function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
   } = over
   return buildStatus({
     version,
+    update,
     run: deriveRunFacts({
       logName: LOG_NAME,
       reportPresent: true,
@@ -264,5 +268,17 @@ describe('deriveStatus', () => {
     expect(status.runConfigAvailable).toBe(true)
     expect(status.officialTotal).toBe(1010)
     expect(status.listAvailable).toBe(true)
+  })
+})
+
+describe('the update notice', () => {
+  it('carries the boot’s notice verbatim, and none when there is nothing to say', () => {
+    // #81: the decision is the update module's; the assembly moves the answer
+    // through untouched, so the page can never read a version the check did not
+    // name.
+    const notice = { version: '1.2.3', releasesUrl: 'https://github.com/o/r/releases' }
+
+    expect(statusOf({ update: notice }).updateNotice).toEqual(notice)
+    expect(statusOf({ update: null }).updateNotice).toBeNull()
   })
 })

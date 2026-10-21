@@ -15,6 +15,7 @@ import type { ConsoleConfig } from '../console-config.js'
 import type { GalleryListSource } from '../gallery-list-source.js'
 import type { ImageSizeReader } from '../image-sizes.js'
 import type { ConsoleGalleryFacts, ConsoleRunFacts } from '../status.js'
+import type { UpdateNotice } from '../update-check.js'
 
 /**
  * What a start request answers. Declared here so #34 implements one shape: the
@@ -57,6 +58,13 @@ export interface ThumbnailSource {
 export interface ConsoleServerDeps {
   /** The status's Run half. #32 injects the idle state; #34/#36 read the log. */
   runState: () => ConsoleRunFacts
+  /**
+   * The boot's update check (#81), fixed for the process because it is one
+   * network request per boot rather than a per-request read. `null` — or absent
+   * — is the only failure signal: a failed check is "no notice", never a status
+   * error.
+   */
+  updateNotice?: UpdateNotice | null
   /** The status's Gallery half. #32 injects "not read"; #33 fetches the list. */
   galleryFacts: () => ConsoleGalleryFacts | Promise<ConsoleGalleryFacts>
   /** The Run starter (`createRunStarter`): `POST /api/run`'s whole answer. */

@@ -70,6 +70,11 @@ const zhCN = {
   // is a data cell, so the sentence takes it as a `{version}` parameter and
   // `Message.vue` renders it in the numeral role.
   'nav.version': '版本 {version}',
+  // The update notice (#81): one discreet line, one link to the project's
+  // Releases page. There is no download and no mirror, so the copy names the
+  // version and where to read about it — never an action the Console takes.
+  'update.available': '有新版本 {version}',
+  'update.releases': 'Releases 页面',
   'drawer.title': '运行面板',
   'drawer.close': '关闭(Esc)',
 
@@ -231,6 +236,8 @@ const en = {
   'nav.mirrorCount': 'Mirror {count}',
   'nav.run': 'Run',
   'nav.version': 'version {version}',
+  'update.available': 'Version {version} is available',
+  'update.releases': 'Releases page',
   'drawer.title': 'Run panel',
   'drawer.close': 'Close (Esc)',
 

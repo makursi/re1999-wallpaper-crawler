@@ -144,6 +144,30 @@ describe('the setup notice', () => {
 })
 
 /**
+ * The update notice (#81): one line and one link, in both languages. The
+ * service sends a version and a Releases URL and no sentence, so the two pieces
+ * of copy below are all the reader sees; the parity tests above already make a
+ * locale that forgot one of them a failure.
+ */
+describe('the update notice', () => {
+  it('names the newer version in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'update.available', { version: '1.2.3' })).toContain('1.2.3')
+    }
+  })
+
+  it('offers the Releases page, not a download', () => {
+    // The copy names where to read and fetch; the Console never downloads or
+    // replaces anything, and the dictionary is where that promise would break.
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'update.releases')
+      expect(copy.toLowerCase()).toContain('release')
+      expect(copy.toLowerCase()).not.toContain('download')
+    }
+  })
+})
+
+/**
  * The service's codes, and the page's words for them (#47).
  *
  * The contract exports all five vocabularies as runtime tuples — refusals,

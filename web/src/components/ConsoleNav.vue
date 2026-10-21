@@ -3,7 +3,9 @@
 //
 // The floating glass navigation the page shell floats on (#48): the product
 // name, the one number worth having at a glance, the way into the Run panel,
-// the language switch, and the version this build is (#79).
+// the language switch, the version this build is (#79), and — when the boot's
+// one check found a newer release — a single line linking to the Releases page
+// (#81).
 //
 // The blur filter appears exactly once, on this pill, which is fixed. It is
 // never used on content that scrolls: a blurred scrolling surface is the one
@@ -14,6 +16,7 @@ import { DialogTrigger } from 'reka-ui'
 import { useConsoleStatus } from '../composables/useConsoleStatus'
 import { t } from '../i18n/locale'
 import Message from '../i18n/Message.vue'
+import ConsoleUpdateNotice from './ConsoleUpdateNotice.vue'
 import LocaleSwitch from './LocaleSwitch.vue'
 
 // The nav's Mirror count and the drawer's Run facts are one fact, so they come
@@ -65,6 +68,14 @@ const { status } = useConsoleStatus()
       </DialogTrigger>
 
       <LocaleSwitch />
+
+      <!-- #81: the boot check found a newer release. One line, one link, and
+           the line is the link: the reader fetches the zip from Releases
+           themselves. Nothing is downloaded, replaced or asked. -->
+      <template v-if="status?.updateNotice">
+        <span class="h-5 w-px bg-border" aria-hidden="true" />
+        <ConsoleUpdateNotice :notice="status.updateNotice" />
+      </template>
 
       <span class="h-5 w-px bg-border" aria-hidden="true" />
 

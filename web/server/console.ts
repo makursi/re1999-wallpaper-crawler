@@ -31,6 +31,7 @@ import { readLayeredConfig, siteConfig } from '../../core/config-read.js'
 import { ensureDataLayout } from '../../core/data-layout.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
+import { applicationVersion } from '../../core/version.js'
 import type { ConsoleRunState } from '../api-types.js'
 import type { ConsoleConfig } from './console-config.js'
 import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
@@ -56,6 +57,7 @@ import {
   realThumbnailCache,
   realThumbnailGenerator,
 } from './thumbnails.js'
+import { checkForUpdate } from './update-check.js'
 
 interface ConsoleOptions {
   port: number
@@ -244,6 +246,14 @@ async function main(options: ConsoleOptions): Promise<void> {
   const appRoot = resolveAppRoot()
   const dataRoot = dataRootOf(appRoot)
 
+  // #81: the one outbound request that is not the game's site or its CDN. It is
+  // started here, beside the rest of the boot's work, and awaited only where the
+  // service needs its answer — so the page's first status read can carry it.
+  // `checkForUpdate` never rejects and the request is bounded by its own
+  // three-second timeout: an offline machine, a redirect or a malformed payload
+  // is simply "no notice", never a boot failure and never a status error.
+  const updateCheck = checkForUpdate({ currentVersion: applicationVersion(appRoot) })
+
   // The tolerant, layered read (#57, #60, #78): the shipped `app/.env` and the
   // optional `data/user.env`, validated through the full schema with the process
   // environment merged over both. An absent file, an unparsable one or a
@@ -332,6 +342,10 @@ async function main(options: ConsoleOptions): Promise<void> {
   })
 
   const service = await startConsoleServer(config, {
+    // #81: the boot check's answer, fixed for this process — one request per
+    // boot, never one per status read. The await is bounded by the check's own
+    // three-second timeout; a failure has already become `null`.
+    updateNotice: await updateCheck,
     // The Run half is read from the Run log directory, so a Run started from a
     // terminal appears exactly like one started here (ADR 0009).
     runState: () => runLogSource.facts(),
