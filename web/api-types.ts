@@ -26,8 +26,16 @@ export const REFUSAL_CODES = ['run-busy', 'orphaned-run', 'missing-prerequisite'
 /** A refusal's stable code. */
 export type RefusalCode = (typeof REFUSAL_CODES)[number]
 
-/** One global prerequisite a Run needs; the names used to be English prose. */
-export const PREREQUISITE_CODES = ['playwright-cli', 'chrome', 'env-file', 'tsx-entry'] as const
+/**
+ * One global prerequisite a Run needs; the names used to be English prose.
+ *
+ * #76 removed `playwright-cli` and `chrome` with the browser crawl they served:
+ * a Run asks the Gallery list and downloads, so neither can be missing. #84
+ * removed `tsx-entry` with the transpiler itself: the Console spawns the built
+ * Run entry beside its own, and a tree without one is a broken build, refused at
+ * boot (`web/server/build-artifacts.ts`) rather than at the click that needs it.
+ */
+export const PREREQUISITE_CODES = ['env-file'] as const
 
 /** A prerequisite's stable code. */
 export type PrerequisiteCode = (typeof PREREQUISITE_CODES)[number]
@@ -214,8 +222,41 @@ export interface ConsoleVerdictReasons {
   explained: ConsoleExplainedReason[]
 }
 
+/**
+ * A newer release the page may mention (#81).
+ *
+ * The service decides whether one exists — `web/server/update-check.ts` owns the
+ * whole decision — and the page only lays it out: one discreet line naming the
+ * version and linking to the project's Releases page. There is deliberately no
+ * download URL and no mirror: the project ships on GitHub only, and clicking is
+ * the reader's action, not the Console's.
+ */
+export interface ConsoleUpdateNotice {
+  /** The newer version, as the page writes one: `1.2.3`, without the tag's `v`. */
+  version: string
+  /** The project's Releases page — the notice's only link. */
+  releasesUrl: string
+}
+
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
 export interface ConsoleStatusPayload {
+  /**
+   * Which version this Console is (#79): `core/version.ts`'s answer — the
+   * build's injected value, or the application root's package metadata. `null`
+   * when neither names a version, which is "no version to report", never a
+   * made-up number.
+   *
+   * The page shows it so a reader can quote it when reporting a problem; the
+   * service reports the same string the module resolved, so there is one
+   * number and not a second copy here.
+   */
+  version: string | null
+  /**
+   * The boot's update check (#81): a newer release to mention, or `null` for
+   * "say nothing". A failed check is this same `null` — the payload has no
+   * error channel for it, because an offline machine is not a Console problem.
+   */
+  updateNotice: ConsoleUpdateNotice | null
   /** The Run the verdict is about; `null` when no Run log names one. */
   runId: string | null
   state: ConsoleRunState

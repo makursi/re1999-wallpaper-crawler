@@ -572,10 +572,148 @@
 
 ---
 
+### 2026-10-21 — Discovery 坍缩成官网清单：浏览器、会话、run-code 载荷整条退役（#76 / ADR 0018）
+
+**触因**：09-15 晚记下的 (C)「整体坍缩成接口客户端 + 下载器」终于满足了自己的立项门槛。门槛就是 `discovery.coverage`：单轮实测覆盖官网清单 **0.1798 / 0.4496 / 29.7%**，而清单接口一次给出全部 **1001** 条、约 **160 ms**、无需任何会话。这个数字不是性能问题，是产品问题——第一次点「开始抓取」的玩家只会跑一次，而那一轮只拿到清单的一小半。
+
+**决策**：
+- **Discovery 就是清单请求**。`core/gallery/gallery-source.ts` 仍是这个请求的唯一实现（不重写），新增 `core/discovery/discovery.ts` 把一份清单变成一轮 Run 的 Discovery：URL 集 = 全部 `pictureUrl`（去重），报告字段由它计算并有单测。`fetchGalleryList` 失败时 URL 集为空、`coverage: null`，报告照写、退出码不改——那是缺陷，不是「瘦一轮」。
+- **整条浏览器路径删除**：清会话、开浏览器、`run-code` 载荷、滚动稳定性循环、DOM 合并、cookie 提取全部退役；`scripts/run-discovery.js`、`core/discovery/discovery-loader.ts`、`tests/core/discovery-loader.test.ts`、`.run-cache/` 一并删除，两个工具配置里对载荷的排除也删掉。
+- **配置收缩，层结构不动**：`PAGE_PATH`、`SESSION_NAME`、`PLAYWRIGHT_CONFIG` 移出 schema（page hash 从来不是键）。分层读取、优先级、`data/user.env` 都归 #78，本轮不碰。旧的 `.env` 仍能通过校验：zod 忽略未知键；新装只需 `BASE_ORIGIN` 一行，i18n 的 setup 文案与 README 同步成一行。
+- **前置条件只剩两个**：`playwright-cli` 与 `chrome`（含注册表 App Paths 检查）删除，`PrerequisiteCode` 变为 `env-file` / `tsx-entry`；孤儿清理不再关闭浏览器会话（已无会话可关），只撤回日志的声明。
+- **Download 不再带 cookie**：`extractCookies` 与 `Cookie` 头删除，403 重试与完整浏览器头保留（那是 CDN 的头部策略，不是鉴权）。HTTP 客户端改为可注入，契约第一次有了自己的测试；`Referer` 从页面 URL 改为站点 origin（页面已不存在）。
+- **报告形状一个键都不删，语义重指**：`coverage` 读清单时为 1、读不到为 null；`converged` = 清单是否回答；`networkCount`/`combinedCount`/`discoveryDurationMs` = 清单响应自己的计数与耗时；`stableRounds`/`totalIdleSec`/`domCount`/`thumbnailsClicked` 恒为 0；`siteAssets` 与 `discoveryLeak` 保留但恒空；`siteAssetFalsePositive` 在读清单时是 `{count: 0, urls: []}`、读不到时才是 `null`——**不能**因为「没有丢东西」就写 `null`，那是「未检查」的既有含义，而且 run-log 读取器把它与 `mirrorGap` 的 null 绑定，写错会让每一份新报告被整份拒收、每轮都判缺陷。`emptyResult` 现在等价于「清单没读到」。三态语义与 `check-run` 退出码不变。
+- **ADR 0018 同轮**：记录坍缩、已满足的门槛、被驳回的替代（保留浏览器捕获作回退 / 双源 / 删报告键 / `siteAssetFalsePositive: null` / 留着载荷不调用 / 留着 cookie），以及报告契约的决定。
+
+**验证**：
+- 四件套（sandbox 直跑二进制）：`tsc --noEmit` 0、`vue-tsc --noEmit -p web/tsconfig.web.json` 0、`oxlint --type-aware .` **0 warning 0 error**、`vitest run` **37 文件 / 384 tests 通过**。格式化对 `.ts`/`.json` 用 `oxfmt --threads=1`（`.vue` 在本沙箱无法 spawn，未改）。
+- 新增测试：`tests/core/discovery/discovery.test.ts` 6 条（URL 集、计数器、清单不可用、空审计、规则不再过滤清单、重复 URL 去重）；`tests/core/download/download.test.ts` 7 条（无 `Cookie`、403 重试带全头、非 403 不重试、已存在跳过、失败携带 `retried`、相对 URL、批内继续）；`tests/core/report/list-run-report.test.ts` 2 条——把 discovery → `buildRunReport` → JSONL → `parseRunReport` → `assessRun` 串起来，证明读取器的 null 不变式仍成立、干净轮仍是 `clean`、清单不可用仍是 `defect`。
+- **没有真跑**：一轮真下载约 2 GB，本沙箱明确不跑。因此未证明的是站点行为与跨轮稳定性：连续两轮真实运行的条目数一致（票的稳定性验收），以及 `pageSize: 2000` 是否被服务端悄悄截断（`parseGalleryList` 会拒收短于 total 的响应，不会把缺的一半报成新增）。
+
+**教训**：
+- **门槛指标达到之日，就是它失去意义之日**。`coverage` 存在的唯一理由是回答「还要不要爬页面」；URL 集等于清单后它恒为 1。把它继续当测量值打印，会让人以为它还可能下降；把「测量」改成「契约里的常量」必须在 ADR 里明说，而不是悄悄写死。
+- **「保持报告形状」比「保留字段」更细**。字段保住了，含义也会咬人：`siteAssetFalsePositive` 的 `null` 早就有「清单不可用、未检查」的含义，且被 run-log 读取器与 `mirrorGap` 绑定。按「没东西可过滤」写成 `null`，新报告会整份不可读、每轮判缺陷——这不是类型错误，单测也只在跑整条 round trip 时才抓得到。
+- **删协议载荷要删它的边角**：载荷、loader、`.run-cache/` 之外，还有两个工具配置里的路径排除、AGENTS 里的 gotchas、runbook 的 preflight 与读取陷阱。只删主文件会留下指向不存在文件的规则与描述。
+- **注入 HTTP 客户端让「去掉 cookie」第一次可证**：测试直接断言请求头里没有 `Cookie`、403 第二次请求带全 `Sec-Fetch-*`，比真跑更能定位；但站点侧的稳定性仍只有真跑能证，别把单测当站点的保证。
+
+---
+
+### 2026-10-21 — 用户数据搬进 data 目录：镜像、Run log、缩略图缓存与数据版本闸（#80 / ADR 0019）
+
+**触因**：便携包的更新故事是「整体替换 `app\`」，而用户的东西当时住在程序目录里——仓根的 `images/`、`logs/`，以及 `web/.console-cache/`。替换 `app\`（或重新 clone）与丢掉这些是同一个动作。更隐蔽的失败是「静默忽略」：旧程序遇到新版本写下的状态文件会 `safeParse` 成 `null`，把 Run 当成首轮，页面上出现「官网 1010 / 本地 0」，用户只看到「这软件坏了」。
+
+**决策**：
+- **数据目录是一个注入的根**：源码树解析 `<repo>/data`，包由启动器用 `RE1999_DATA_ROOT` 指向 `<install>/data`（与 `app/` 平级，`core/app-root.ts` #78 已提供）。`core/data-layout.ts` 是唯一命名 `<data>/images`、`<data>/logs`、`<data>/cache/thumbnails`、`<data>/layout.json` 的模块；`IMAGES_DIR` 仍可配置，但相对数据根解析。
+- **缩略图缓存搬出程序目录**，但仍不在 Mirror 内：`<data>/cache` 是 `<data>/images` 的兄弟，ADR 0010 的算术前提不变；缓存本可丢弃，但留着就等于每次更新白掉 1000+ 张。
+- **版本标记 + 拒绝启动**：`layout.json` 写 `{"version": 1}`。更高或无法识别的版本在**任何写入之前**拒绝，中文说明点名标记文件与两个版本号；`images/.gallery-state.json` 的 `version: 1` 原样随镜像移动、原样读取，没有重新解释。
+- **前向迁移只做同卷 rename，且幂等**：首次启动（Run、`check-run`、Console 三处入口）识别旧位置并逐个改名，然后写标记；目标已存在就拒绝并给出手工合并步骤（不猜、不并、不覆盖）；跨盘拒绝并说明先手动移动（不静默复制，避免复制到一半失败）。中断的迁移下一次启动接着做，已经写好的标记让第二次启动不碰任何文件。
+- **「程序永不删除数据」用测试证明**：`tests/core/data-layout.test.ts` 在临时树上覆盖迁移、冲突、跨卷、更高版本；`tests/core/data-cycle-survival.test.ts` 跑一轮 Run 的整条数据层（logger、Mirror mkdir、下载、Gallery state 写入与读取），断言迁移前存在的每个文件仍在、逐字节相同（Gallery state 是允许改写的状态文件，只要求仍在）；`tests/web/server/data-survival.test.ts` 用真实 socket 驱动 Console 的 status / gallery / image / thumbnail 与被拒绝的 start，断言同一件事。真仓的 2.1 GB `images/` 全程未被测试读写。
+- **文档与 ADR 同轮**：ADR 0019 记录布局、标记、迁移与「不删除」；ADR 0016 的「Console 不向仓根写任何东西」字面被取代（现在会创建 `<data>/layout.json`），但其约束本意更强：程序不写自己的程序目录，用户数据在更新替换的目录之外。AGENTS 架构树、`data/user.env` 路径、`.gitignore` 与 runbook 的读取路径同步。
+
+**验证**：
+- 四件套（sandbox 直跑二进制）：`tsc --noEmit` 0、`vue-tsc --noEmit -p web/tsconfig.web.json` 0、`oxlint --type-aware .` 0 warning 0 error、`vitest run` **40 文件 / 409 tests 通过**；改动过的 `.ts`/`.json` 用 `oxfmt --threads=1`（`.vue` 在本沙箱无法 spawn，未改）。
+- 新增测试 25 条：`data-layout.test.ts` 21（路径来自数据根、缓存不在 Mirror 内、标记读取、更高/未知版本拒绝且数据逐字节不变、旧布局 rename、自定义镜像/日志名、幂等、目标冲突、跨卷、更高标记不动任何文件）；两条 survival 测试各 1（Run 数据层与 Console socket 周期）；`config-read.test.ts` 的 `siteConfig` 改为数据根下的镜像/日志/缓存并新增 1 条「数据不在程序目录」断言；`console-config.test.ts` 新增 1 条路径断言（原 3 条改写）。
+- **没有真跑**：迁移会移动真仓的 2.1 GB `images/`，这是本票明令禁止的操作；所有迁移与周期证据都来自 `%TEMP%` 下的临时安装。
+
+**教训**：
+- **「不要删」是一条可以被行为测试证明的约束**。只写注释或只 code review 都挡不住未来某个 `rm -rf`；把「迁移前快照 ⊆ 迁移后快照且逐字节相同」写成断言，才让下一个人删数据时先看到红灯。
+- **静默忽略是数据布局里最危险的失败**。版本标记的价值不在「记录版本」，而在把「不认识」从默认分支变成拒绝分支；拒绝必须发生在第一次 mkdir 之前，否则「原数据不动」就只是句口号。
+- **迁移与更新是两种不同的写**。rename 同卷幂等，复制+删除不是；把跨卷明确设成拒绝分支，比写一个「自动复制」再追加失败回滚要诚实得多。
+
+### 2026-10-21 — 程序以构建产物运行：两个 ESM 入口、预构建页面、去掉 tsx 与首启 Vite（#84 / spec #75）
+
+**触因**：便携包（#75）要发的是一棵树，里面只有 `node.exe`、`sharp` 和程序本身。而当时的程序有三处只在源码树里成立：`pnpm webui` 是 `tsx web/server/console.ts`；Console 启动 Run 走的是 `node <tsx CLI 入口> <core/main.ts>` 这个 argv；首启缺页面时用 Vite 当场编译（`ensureBundle`）。三样都要在用户机器上出现转译器/打包器——正是「拿到 zip 的人不该装开发工具」要消灭的东西。
+
+**决策**：
+- **`build/` 就是程序**：`server.js`（bundled `web/server/console.ts`）、`run.js`（bundled `core/main.ts`）、`package.json`（`type: module` + 版本）、`web/dist/`（Vite 产物原样拷入）。这棵树同时是一个完整的应用根：`node build/server.js` 就地找到 `.env`、页面与 Run 入口。gitignore 掉，`pnpm webui` 改成 `cd build && node server.js`。
+- **除 `sharp` 外全部打进 bundle**：`hono`、`@hono/node-server`、`pino`、`pino-pretty`、`undici`、`zod`、`dotenv` 及其传递依赖共 27 个包进两个文件。`sharp` 是原生插件，`await import('sharp')` 的调用点不变，包随树发布（#86）。这份「只有一个外部」不是声明而是断言：`scripts/bundle-externals.ts` 读 esbuild 的 metafile，任何没被允许的 external 都让 `pnpm build` 以非零码退出并点名是哪个包、哪个产物。
+- **一个 `define`**：`RE1999_VERSION` = `package.json` 的 `version`，`core/version.ts` 里那个 `typeof` 兜底缝因此第一次真正被填上；树里的 `package.json` 只是自描述与源码运行的 fallback。
+- **ESM bundle 的 CJS banner**：两个产物顶部都有 `const require = createRequire(import.meta.url)`。esbuild 把 CJS 依赖的 `require` 内联成自己的 shim，而 ESM 输出里没有 `require`；第一版没有 banner，构建产物在 `import` 第一行就死于 `dotenv` 的 `Dynamic require of "fs"`——typecheck、lint、全部测试却都是绿的。
+- **Run 的启动只用 Node**：launcher argv 变成 `[<appRoot>/run.js]`，`tsxEntry`/`mainEntry` 两个依赖删掉；`tsx-entry` 前置条件连同它的 i18n 文案一起退役（`PREREQUISITE_CODES` 只剩 `env-file`），而不是留一个永远为假的检查。
+- **首启不再编译**：`ensureBundle` 删除。页面与 Run 入口都是构建产物，缺任何一个在绑定端口之前就拒绝启动并点名文件（`web/server/build-artifacts.ts`，中文说明指向 `pnpm build`），因此「页面打开是空白 / 点运行毫无反应」两类故障在构建或打包阶段就暴露。
+- **应用根仍是显式输入**：`RE1999_APP_ROOT` / `RE1999_DATA_ROOT` 一字未改，重新用打包后的入口验证（spec 的「打包会坍缩目录结构」那条）。Console 把 `runEntryPath(appRoot)` 交给子进程，子进程的 cwd 与 `RE1999_APP_ROOT` 都指向同一个根。
+- **开发期才需要 `tsx`/`vite`**：`pnpm build` 自身是 `tsx scripts/build.ts`，`core:run` / `check-run` 仍是源码入口（面向 agent，不进用户包，spec #75 明说）；`dev:web` 的 Vite dev server 保留。运行期一个都不需要。
+
+**验证**：
+- `pnpm build`：页面 112 个文件、`server.js` 923 KiB、`run.js` 2124 KiB、外部依赖只有 `sharp`、打出 27 个已打包的包名。
+- **真的启动构建产物**：把 `build/` 拷到 `%TEMP%` 下（仓库之外，没有 `node_modules`、没有 `.ts`、没有 tsx/vite），写一份 `.env`，`RE1999_APP_ROOT`/`RE1999_DATA_ROOT` 指向它，`node server.js --port 0 --no-open` 起来后：`GET /api/status` → `200`，`{"version":"1.0.0",…,"officialTotal":1052,"listAvailable":true,"runConfigAvailable":true,…}`；`GET /` 返回带 token 的 `index.html`。
+- **Console→Run 的整条链**：同一棵树、`BASE_ORIGIN=http://127.0.0.1:9`（死端口，避免真下 2 GB）下 `POST /api/run` → `202 {"started":true}` → 构建后的 Console 用 `process.execPath` 拉起 `run.js` → 写出 `run-2026-10-21T11-20-15.jsonl`（`run_meta` + `run_report`）→ `/api/status` 把该报告读回来（`reportPresent: true`、`defects.gallerySourceUnavailable: true`）。单独跑 `node run.js` 退出码 0。
+- 删掉 `web/dist` 后再启动：三行中文拒绝 + 退出码 1。
+- 四件套：`tsc --noEmit` 0、`vue-tsc` 0、`oxlint --type-aware .` 0 warning 0 error、`vitest run` **43 文件 / 466 tests**；`oxfmt` 重排。
+- **没有真跑完整 Run**：一次完整 Run 约 2 GB，本沙箱不跑；Run 的下载段（`undici`）与真实站点清单之外的路径仍未在构建产物上验证。CI 也还没跑 `pnpm build`（发布流水线归 #88）。
+
+**教训**：
+- **类型检查、lint、单测全绿，和「这个 bundle 能 import 起来」是两件事**。CJS 互操作 banner 这一类失败只在真启动时出现；打包类改动的最低验证标准必须是「把产物挪到一个干净目录并真的运行它」。
+- **构建期的断言要用构建器自己的数据**。esbuild 的 metafile 直接给出每个产物的 external 与 input，比事后 grep 产物文本诚实得多；「只有一个原生依赖」因此是构建的门，而不是文档里的句子。
+- **删掉一个前置检查，要接住它原本挡住的那种失败**。`tsx-entry` 挡的是「spawn 一个不存在的入口，点下去什么都没发生」；删了它就必须有别的机制（构建产物闸）挡住同一个后果，否则只是把 ENOENT 藏得更深。
+
+### 2026-10-21 — 单实例与启动器：一个程序、一个服务、一个窗口（#82 / #85 / ADR 0020）
+
+**触因**：便携包的全部界面就是「双击一个文件」（#75）。此前第二次双击会起第二个服务：端口被占就静默换端口、再开一个浏览器标签，于是两个进程写同一个 Run log 目录，而用户以为只有一个程序。另一半是停止语义——页面按 ADR 0016 没有停止控件，停止必须由那个可见窗口承担：标题说明「关闭即停止」，窗口保持打开，关掉它才是停止。
+
+**决策**：
+- **运行记录 + 探活，而不是锁**：服务绑定端口后把「本次实际绑定的端口 + 本次随机 token」写进 `<data>/instance.json`；每次启动先读它、用记录里的 token 打 `GET /api/instance`（1.5s 超时）。200 且 body 是 `{ok:true}` 才说明写记录的那个服务还在答——该路由和其他路由一样过 token 守卫，所以旧 token 会被 403，记录里保存的 URL 不会跨重启成为永久凭据。记录缺失/不可读/连接被拒/超时/token 不符，一律「正常启动」。干净退出时只有仍拥有该记录（token + pid 一致）的那次启动会删除它。
+- **探活专用路由，不复用 `/api/status`**：status 是页面的轮询，可能顺带请求官网清单；探活一慢就会被读成「没有服务」，正好起了第二个。
+- **记录在 `listen` 之后、更新检查之前发布**：等待更新检查的 await 在离线时能占满 3 秒，那段窗口里第二次双击必须能看到记录；因此 `deps.updateNotice` 改为绑定端口后再赋值，页面首读若正好落在检查完成前只是「这次没有更新提示」，下一次轮询会带上。
+- **启动器 `packaging/启动.bat` 纯 ASCII、零逻辑**：`cd /d "%~dp0app"`、两个根变量、`app\node.exe app\server.js`、`if errorlevel 1 pause`。编码结论是**实测**的（见验证），所以中文只由程序打印：窗口标题（`process.title`，Windows 上是 Unicode 的 SetConsoleTitle）、启动时的「关闭这个窗口就是停止程序」、Run 开始时的「抓取已开始:下载期间请不要关闭这个窗口」、以及 Mark-of-the-Web 的中文解除步骤。
+- **首启与安装指针**：`data\` 仍由 `core/data-layout.ts` 创建并写版本标记；程序每次启动把安装根 `<install>` 写进 `%LOCALAPPDATA%\re1999-wallpaper-crawler\install.json`（文件夹可能被改名/移动，更新器 #87 需要「用户实际在跑的那一份」）。只有 `<install>\app` 与 `<install>\data` 平级这种包布局才写，源码树 `pnpm webui` 不碰 AppData。
+- **Mark-of-the-Web 是提示，不是拒绝**：浏览器下载的 zip 被解压后，`Zone.Identifier` 流会复制到每个文件；启动时检查本次要运行的文件（`app\node.exe`、`server.js`、`run.js`、页面入口），命中就打印中文解除步骤并继续。解压后的树通常照样能跑，把一句可执行说明换成一次拒绝是更糟的支持面。
+- **`.gitattributes` 给 `*.bat` 开 `-text`**：cmd.exe 的标签/goto 解析依赖 CRLF，仓库其余部分的 LF 规则不能套到启动器上。
+
+**验证**：
+- **编码（真窗口，非推断）**：在 `%TEMP%\编码 测试` 下用四种保存方式各写一个含「中文测试：关闭窗口即停止」的 `.bat`，用 `PrintWindow` 截取真实控制台窗口：UTF-8 无 BOM → 窗口里是乱码；UTF-8 + `chcp 65001` → 显示正确（但仅限无 BOM，且系统消息变英文）；UTF-8 **带 BOM** → `'锘緻echo' 不是内部或外部命令`，`@echo off` 失效；GBK → 本机正确。同一台机器的同一控制台用 Node 打印同一句中文 → 正确。结论：中文进程序，脚本保持 ASCII。
+- **启动器端到端**：把 `build/` + `node.exe` + `启动.bat` 组成 `%TEMP%\壁纸 程序\`（含中文与空格），双击 `.bat`：窗口标题为「re1999 壁纸下载器 - 关闭这个窗口就是停止」，窗口内容为「关闭这个窗口就是停止程序。抓取和下载期间请不要关闭。」+ `WebUI: http://127.0.0.1:8791/?token=…`；`data\`（`layout.json` + `instance.json`）与 `install.json` 均被创建，指针里是中文路径。
+- **第二次双击**：退出码 0，窗口只打印「程序已在运行:…」两行，`instance.json` 逐字节未变，node 进程数仍为 1，`/api/status` 200、页面 200 且带 token 重写。
+- **关窗口即停止**：对真实窗口发 WM_CLOSE 后 node 进程与端口都消失；再次双击时旧记录因端口无人应答而被判过期，新服务带着新 token 起来并重写记录。
+- **Run 期间提示**：`BASE_ORIGIN=http://127.0.0.1:9`（死端口，避免真下 2 GB）下点开始，窗口依次打印「抓取已开始:下载期间请不要关闭这个窗口。」与 Run 自己的 pino 输出，Run log 正常落盘并如实报缺陷。
+- **标记检查**：给 `run.js` 与页面入口写上真实的 `:Zone.Identifier` 流，窗口打印中文解除步骤并点名这两个文件。
+- 四件套：`pnpm fmt:check` 0、`oxlint --type-aware .` 0 warning 0 error、`pnpm typecheck` 0、`vitest run` **47 文件 / 499 tests**；`pnpm build` 正常（页 112 文件、`server.js` 932 KiB、`run.js` 2124 KiB、外部依赖仍只有 `sharp`）。
+- **没有真跑完整 Run**：下载段没有在包布局上跑；本轮只证明「启动器 → 服务 → 点开始 → 子进程起来并写日志」这条链。
+
+**教训**：
+- **编码是「保存方式」的属性，不是语言的属性**。同一个中文句子，四种存法在同一台机器上得到三种显示结果；`chcp 65001` 只在其前置条件成立时正确，而 BOM 会把第一行整行变成一个命令。判断这个问题的唯一可靠方式是**真窗口 + 真实截图**，不是读文档也不是读字节猜显示。
+- **探测不能依赖被保护对象的慢路径**。单实例探活若复用 `/api/status`，站点慢就会把「服务在忙」误判成「服务不在」，于是这次修复本身造出它要防的第二个进程。
+- **「脚本不含逻辑」会把检查挪进程序，也会留下一个边界**：`node.exe` 自己被系统拦住时 Node 根本不会运行，任何中文都无法打印；`pause` 至少让系统消息留在屏幕上。这条边界写进 ADR 与 AGENTS，而不是假装覆盖了。
+- **窗口关闭不是干净退出**。控制台关闭是 OS 终止，`exit` 处理器不跑，记录必然留下；所以「过期」只能在读取时用探活证明，不能靠「文件还在就说明服务还在」。
+
+### 2026-10-21 — 更新器：换掉 `app\`，`data\` 一个字节都不碰（#87 / spec #75）
+
+**触因**：便携包的更新故事是「下载新 zip、解压、双击 `更新.bat`」，而这句话只有在「用户的图、日志和配置不在被替换的那个目录里」时才成立（ADR 0019 已经把数据搬到 `data\`）。剩下的是动作本身：程序目录要被整体换掉，旧的要留作回退点，而用户可能早就把文件夹改了名或搬了盘。更危险的是这会是全仓库唯一一个**删除用户可见目录**的模块——「不碰 `data\`」必须是代码里的闸，不是文档里的句子。
+
+**决策**：
+- **先定位，再动手**：`%LOCALAPPDATA%\re1999-wallpaper-crawler\install.json`（#85 每次启动重写）是默认地址；拖到 `更新.bat` 上的路径优先，并且接受三种拖法（旧 `启动.bat`、整个安装文件夹、`app\` 本身）。`data\` 只被 `stat`，从不被打开、改名、复制或删除。
+- **校验全部放在第一次改名之前**：包根不能就是安装根（用户把新 zip 解压到了旧安装里，只有一个 `app\`）；目标必须存在；目标必须同时有 `app\` 与 `data\`；新包的 `app\` 必须齐全（`server.js`/`run.js`/`update.js`/`node.exe`/`web/dist/index.html`）。每一条都有自己的中文说法与「怎么办」。
+- **运行中的服务是拒绝，不是风险**：Windows 允许重命名正在运行的 exe，但不允许删除；此时换目录只会留下半新半旧的树。判断直接复用 #82 的探活（记录里的端口 + token，1.5s），拒绝信息里带上那个页面的 URL，告诉用户关掉窗口（关窗口就是停止）。
+- **复制新 `app\`，不重命名源包**：下载目录和安装目录经常不同卷，`rename` 会 `EXDEV`；复制也让用户解压出来的那份保持完整，失败可以原地重试。
+- **顺序与回滚**：清掉上一代 `app.old` → `app` 改名 `app.old`（原子）→ 复制新 `app\` 到位。复制失败时删除写了一半的 `app\`（只此一处，且路径由 `programTreePath` 校验）→ 把 `app.old` 改回 `app\`。回滚本身失败时不谎称成功：直接说明旧程序完整地在 `app.old\`，请手动改名。
+- **只保留一代回退点**：下一次更新覆盖 `app.old\`，从不清更多代；不做跨次自动回滚（一次临时错误静默降级一个跑得好的版本，比「更新失败」更糟），回退是用户确认后的手动动作。
+- **`programTreePath(installRoot, name)` 是唯一的递归删除入口**：只接受 `app` / `app.old` 两个名字，解析结果必须是安装根的直属子目录；`data`、`..`、绝对路径、其他名字一律抛错。这条闸比任何注释都可靠，因为它把「不删数据目录」变成了一次路径解析的失败。
+- **更新器是构建产物**：逻辑在 `web/server/updater.ts`（真文件系统可测），窗口对话在 `web/server/update-entry.ts`，两者打成 `app\update.js`（`scripts/build.ts` 的第三个入口）。`packaging/更新.bat` 与启动器同形：纯 ASCII、CRLF、零逻辑，只做 `cd` 与 exec。
+- **`"%~dp0."` 的尾点**：`%~dp0` 永远以 `\` 结尾，而 Windows 命令行里 `"C:\path\"` 的反斜杠会转义右引号；加一个 `.` 让引号正常闭合，`path.resolve` 再把它消掉。
+- **成功也不闪退**：`update-entry.ts` 打印结果后等回车（`stdin` 不是 TTY 时不等待），这样「双击→看结果」不需要 `.bat` 里多一行逻辑；失败仍由 `.bat` 的 `pause` 接住。
+
+**验证**：
+- `tests/web/server/updater.test.ts`（14 个）在临时安装上跑真实文件系统：`data\` 以「相对路径 → SHA-256」比较，包含 `layout.json`、`instance.json`、`.gallery-state.json`、缩略图缓存与 `user.env`；覆盖成功、指针缺失/失效、拖拽失效安装、目标不存在、缺 `app\`/`data\`、同根、包不完整、真实 socket 上的「程序正在运行」拒绝、拷贝中途失败回滚、连续两次更新后 `app.old` 只有一代、旁边用户自己的文件夹不被动、`programTreePath` 的拒绝集。
+- **两个真制品端到端**：`pnpm package` 出 `v1.0.0.zip`；把 `package.json` 临时改成 `1.0.1` 再 `pnpm package` 出 `v1.0.1.zip`（随后还原，`git diff package.json` 为空）。解压到临时目录、手工造 `data\`（6 个文件）、写指针，然后**用 cmd 执行真正的 `更新.bat`**：v1.0.0 → v1.0.1 退出码 0、0.5 s；把安装文件夹改名为 `我的 壁纸工具` 后拖旧 `启动.bat` 到 v1.0.0 的 `更新.bat`：1.0.1 → 1.0.0 退出码 0；两次之后 `data\` 的 6 个文件哈希逐一不变，`app\` 与 `app.old\` 各 240 个文件 / 117.5 MB，`node.exe` 92,534,088 字节且哈希与各自源包一致。第三次在真实监听端口上放一个应答 `/api/instance` 的服务：退出码 1、窗口打印拒绝与页面 URL、`app\` 与 `data\` 均未改动。
+- **杀软实测**：本机只有 Windows Defender（`SecurityCenter2` 仅列它），实时保护、行为监控、IOAV、按访问保护全开（`AMRunningMode: Normal`，引擎 1.1.26090.9 / 签名 1.461.118.0），无第三方产品。两次真实更新各 0.5–0.6 s 完成，逐文件哈希校验通过；更新后 `Get-MpThreatDetection` 为 0，Defender 事件日志在窗口期内只有 1150/1151 两个健康事件，**没有** 1006/1007/1116/1117 之类的检测或处置事件。无法观察的部分：其他机器与其他杀软、云端延迟判定（数分钟后才处置）、以及真实交互窗口里的双击（本轮用 `cmd /c` + 重定向 stdin，`.bat` 本身的行为一致）。
+- 四件套：`pnpm fmt:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test` 全绿；`pnpm package` 正常，归档含 `更新.bat` 与 `app/update.js`。
+
+**教训**：
+- **「中途失败」在单卷上造不出来**。`fs.cpSync` 在同一块盘上要么成功要么立刻抛错；要证明回滚，只能把「复制」这一个操作变成可注入的故障点，但断言必须落在真实文件系统上（回滚后的 `app\`、消失的 `app.old\`、逐字节不变的 `data\`）。把注入点缩到最小，并写明它为什么存在。
+- **`%~dp0` 的尾反斜杠会吃掉自己的右引号**。`"%~dp0"` 在 Windows 命令行里不是「带引号的目录」，而是「转义了右引号的字符串」；`"%~dp0."` 才是。这个坑在纯 ASCII 脚本里看不出来，只在 Node 收到的 argv 里现形。
+- **中文注释也会让 `.bat` 变成非 ASCII**。注释里写「见 启动.bat」六个汉字，就足以让 1293 字节的脚本出现 6 个非 ASCII 字节——而 `.bat` 的编码规则只认「整份文件」；验证脚本必须逐字节数 `>127` 的个数，而不是看 `Get-Content` 的显示。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
 |------|---------|------|
+| 把源包的新 `app\` 直接 `rename` 进安装目录（而不是复制） | 下载目录与安装目录常不同卷，跨卷 rename 会 `EXDEV`；复制还让解压出来的包保持完整，失败可原地重试 | 2026-10-21 / #87 |
+| 发现程序在运行也照常更新 | Windows 允许重命名运行中的 exe 却删不掉；结果是一棵半新半旧的树，比拒绝更糟。先让用户关窗口（#82 的记录正好能回答「谁在跑」） | 2026-10-21 / #87 |
+| 跨次自动回滚：下次启动发现新版本起不来就把 `app.old` 换回去 | 一次临时错误会静默降级一个跑得好好的版本；回退是用户确认后的手动动作（spec「更新器」） | 2026-10-21 / #87 |
+| 在 `更新.bat` 里写 `ren` / `move` / 判断 | 无法单测、无法回滚、也无法打印中文；逻辑必须进 `app\update.js`，脚本只做工作目录切换与 exec | 2026-10-21 / #87 |
+| 更新前先删掉整个 `app\` 再复制新目录 | 删除与复制之间的任何失败都让用户彻底没有程序；先改名留回退点，失败时改名回来是原子的 | 2026-10-21 / #87 |
 | NestJS / HTTP 框架模块化 | CLI 脚本项目无路由/API/DB，杀鸡用牛刀 | 2026-06-15 |
 | 多站点框架（Scrapy 式）/ 工具库 | 单一抓取目标，简单优先 | 2026-06-15 |
 | `extractNetworkImageUrls` 修复 | 2 张 vs DOM 172 张，不工作比删除更应删除 | 2026-06-17 |
@@ -630,26 +768,52 @@
 | 页面按特性分目录（`features/gallery`、`features/run`） | 一面墙 + 一个抽屉，目录数会超过它组织的代码 | 2026-10-20 / #69 |
 | 让页面继续自己判断 tile 能不能显示 | 与 `core/wallpaper-url.ts` 的扩展名清单是手抄副本，漂移的症状是每个 tile 一次注定 400 的请求 | 2026-10-20 / #70 |
 | 引入 vue-query / swrv / @vueuse/core 做页面数据层 | 两个 GET + 一个 5 秒轮询，库带来缓存键/重试/invalidate 语义却换不掉那 30 行；页面不为两个函数背一个包 | 2026-10-20 / #69 |
+| 清单失败时回退到浏览器捕获 | 一轮 Run 里两套 URL 集就是 ADR 0002 否决过的重复表示；而且捕获到的只是一小半画廊，不叫回退。清单失败就响亮地报缺陷（`gallerySourceUnavailable` + `emptyResult`），不下载任何东西 | 2026-10-21 / #76 / ADR 0018 |
+| 保留浏览器捕获、同时把清单当第二个真源 | 同一个理由，而且它会把全局 CLI 与 Chrome 两个前置条件留下来，只为产出一个没人该据此行动的数字 | 2026-10-21 / #76 / ADR 0018 |
+| 删掉报告里不再变化的键（`siteAssets`、`stableRounds`、`discoveryLeak`…） | `check-run`、`web/api-types.ts`、Console 与 run-log 读取器都消费这个形状，读取器还会拒收缺键的报告；票的验收就是格式不动。诚实的常量比契约版本便宜 | 2026-10-21 / #76 / ADR 0018 |
+| 因为「没有丢东西」就把 `siteAssetFalsePositive` 写成 `null` | `null` 在这个块里的既有含义是「清单不可用、未检查」，且 run-log 读取器把它与 `mirrorGap` 的 null 绑定；写错会让每份新报告整份不可读、每轮判缺陷。读清单时用 `{count: 0, urls: []}` | 2026-10-21 / #76 / ADR 0018 |
+| 删掉 `scripts/run-discovery.js` 但保留 loader / `.run-cache/` | 它们只为 `run-code` 存在；留着会继续维护两个工具排除项和一个根目录，还诱导别人把爬取恢复回来。连引用一起删 | 2026-10-21 / #76 / ADR 0018 |
+| 保留 cookie 头以防万一 | CDN 与清单都匿名可用（2026-09-15 的 12/12 抽样），会话是 Run 已不再拥有的状态；Download 的第一个单测就断言请求里没有 `Cookie`，403 重试保留 | 2026-10-21 / #76 / ADR 0018 |
+| 把用户数据留在程序目录，只用文档叮嘱「别删」 | 便携包的更新是整体替换 `app/`；文档拦不住被替换掉的 `images/` | 2026-10-21 / #80 / ADR 0019 |
+| 缩略图缓存继续留在 `web/.console-cache/` | 可丢弃不等于值得丢：每次更新白掉 1000+ 张，首次打开重新变慢；移出后仍在 Mirror 之外 | 2026-10-21 / #80 / ADR 0019 |
+| 旧数据用「复制后删除」或跨卷自动复制 | 复制可能中途失败，随后的删除把失败变成数据丢失；同卷 rename 在失败时原样保留旧目录 | 2026-10-21 / #80 / ADR 0019 |
+| 旧目录与新目标同时存在时自动合并 | 两边都可能是 Mirror，静默并集会让 `mirrorGap` 变成合并动作的产物；改为拒绝并给手工步骤 | 2026-10-21 / #80 / ADR 0019 |
+| 遇到更高/未知 `layout.json` 就回退默认值继续启动 | 这正是「官网 1010 / 本地 0」的静默失败；版本不认识就在第一次写入前拒绝 | 2026-10-21 / #80 / ADR 0019 |
+| Console 继续用 tsx 启动 Run，只在打包时换成另一个入口 | 两套启动路径意味着开发期永远测不到发布形态；「页面能开、点运行就崩」正是 #84 要消灭的故障 | 2026-10-21 / #84 |
+| 保留 `ensureBundle`：缺页面时首启现场用 Vite 编译 | 用户机器上就出现了打包器及其原生绑定，且首次点击要等构建；页面是构建产物，缺了就该在构建/打包阶段响 | 2026-10-21 / #84 |
+| 把 `pino`/`undici`/`hono` 留成外部依赖、随包带 `node_modules` | 便携包承诺只有 `node.exe` + `sharp`；随包 `node_modules` 等于把解析规则、平台二进制和体积一起带进去 | 2026-10-21 / #84 |
+| 把 `tsx-entry` 前置检查改名为 `run-entry` 保留 | 它检查的 `node_modules/tsx` 在打包树里永远不存在；而「缺 `run.js`」是构建/打包错误，属于启动时的构建产物闸，不是每次点运行都要查一遍的运行期前置条件 | 2026-10-21 / #84 |
+| 构建产物继续写在 `web/dist`（与源码混居），只把入口放进仓根 | 应用根必须是显式输入，而源码树里遍地 `.ts`——「从产物运行」就无从演示，也无法阻止运行期解析到源码 | 2026-10-21 / #84 |
+| 用 `RE1999_APP_ROOT=build` 前缀跑 `pnpm webui` | 跨平台 shell 里给 npm script 设环境变量要额外依赖（`cross-env`）；`cd build && node server.js` 在 cmd 与 sh 里都成立，且与包的启动器同形 | 2026-10-21 / #84 |
+| 让 `.bat` 自己打印中文（UTF-8 无 BOM / `chcp 65001` / GBK / 带 BOM） | 真窗口实测四种结果：无 BOM 乱码；`chcp 65001` 只在无 BOM 时正确且把系统消息变英文；带 BOM 时第一行变成 `'锘緻echo'` 这条命令；GBK 只在本机正确。中文改由 Node 打印 | 2026-10-21 / #85 / ADR 0020 |
+| 用 `/api/status` 做单实例探活 | status 是页面轮询，可能顺带请求官网清单；探测一慢就被读成「没有服务」，反而起了第二个 | 2026-10-21 / #82 / ADR 0020 |
+| 把运行时记录写进程序目录（`app\instance.json`） | 更新是整体替换 `app\`；运行时状态属于 `data\` | 2026-10-21 / #82 / ADR 0020 |
+| 用独占锁文件代替探活 | 锁同样需要过期判定（崩溃留下的锁），而它只能证明「有人写过文件」；探活问的是「服务真的在答吗、token 对不对」 | 2026-10-21 / #82 / ADR 0020 |
+| 启动器里创建 `data\`、写安装指针、检查 `Zone.Identifier` | 每件事都要一个判断和中文，正是 `.bat` 不可靠的部分；挪进程序后还能被单测与真跑覆盖 | 2026-10-21 / #85 / ADR 0020 |
+| 发现 Mark-of-the-Web 就拒绝启动 | 解压后的树通常照样能跑；把一句可执行说明换成一次拒绝是更糟的支持面 | 2026-10-21 / #85 / ADR 0020 |
+| 给页面补一个停止按钮，让「关窗口」不再是唯一停止方式 | ADR 0009/0016 未变：页面是视图，整棵进程树的停止没有诚实的 HTTP 表示；窗口本来就是停止控件 | 2026-10-21 / #85 / ADR 0020 |
 
 ## 验证规范（所有迭代通用）
 
 - 三件套：`pnpm typecheck` → `pnpm test`（vitest）→ `pnpm lint`（oxlint，含 type-aware）；格式化改动加 `pnpm fmt:check`，且大范围重排要做 **AST 对比**（忽略 import 顺序与括号）证明“只改了空白”
 - 纯工具链/纯移动类改动不真跑，但要在 PR 里写明「没跑」
-- 行为验证：真跑 `pnpm core:run`，读 `logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
+- 行为验证：真跑 `pnpm core:run`，读 `data/logs/` 最新 JSONL 的 `run_report`（收敛 / 成功率 / 缺陷自动判定）
+- 构建/打包类改动：`pnpm build` 之后**必须把 `build/` 挪到仓库之外真启动一次**（`/api/status` 有响应、`POST /api/run` 能写出 Run log），类型检查与单测对这一类失败不敏感（#84）
 - 迁移类任务追加 **Run parity**：新旧 run_report 键集合 + download/defects/failures 深比较
 
 ## 开放问题
 
-- **`scripts/` 该不该属于某一层（2026-10-19 记录）**：布局收成两层后，`scripts/` 是仓根剩下的第三棵树 —— run-code 协议载荷（`run-discovery.js`）与提交护栏（`check-branch.mjs`）。本轮**明确不解决**：载荷的排除按字面路径钉在两个工具配置里、目录名又被 `core/discovery/discovery-loader.ts` 指名，搬它要么连带改这两处排除方式，要么冒静默失联的风险，而收益只是名字好看。留给将来单独一轮（连同载荷排除方式一起重新钉），或就承认它是「协议载荷与工具」的第三棵树。
+- ~~**`scripts/` 该不该属于某一层（2026-10-19 记录）**~~ **已解决（2026-10-21）**：#76 删除了 run-code 协议载荷，`scripts/` 只剩提交护栏 `check-branch.mjs`，「协议载荷与工具」那棵第三棵树随之消失；两个工具配置里对载荷的排除也一并移除。
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - ~~**过滤逻辑分两道**~~ **已解决（2026-09-15 晚）**：`scripts/run-discovery.js` 的 `shouldKeep` 只剩 `data:`/`blob:`（它们不是可抓取的 URL），23 个 UI 图标文件名与 SVG 判定归入 `src/wallpaper-url.ts`（新增 `filenameIn` 规则）。`combinedCount` 因此真的是原始捕获——真跑实测 172 → 484，多出来的就是以前被静默丢掉的图标 URL，它们现在出现在 `siteAssets`（7 → 34）。
-- **(C) 整体坍缩成「接口客户端 + 下载器」**：清单接口已能一次给出全部 1001 个 `pictureUrl`（ADR 0006），CDN 匿名抽样 12/12 也是 206——也就是说浏览器、会话、滚动稳定性循环、cookie 提取、Site asset 过滤、甚至 `@playwright/cli` 这个全局依赖都不再是必需的。**立项门槛是 `discovery.coverage`**：真跑实测单轮只覆盖官方清单的 **45%**，而接口是 100%/160ms。先让它跑几轮取数，再单独开一轮 + 单独一份 ADR，不要在功能评审里顺手做掉。
+- ~~**(C) 整体坍缩成「接口客户端 + 下载器」**~~ **已完成（2026-10-21，#76 / ADR 0018）**：门槛 `discovery.coverage` 的实测值 0.1798 / 0.4496 / 29.7% 与清单的 1001 条 / 160 ms 一起作为证据，浏览器、会话、滚动稳定性循环、cookie 提取、Site asset 过滤、`@playwright/cli` 与 Chrome 全部退出运行期。`coverage` 保留在报告里、恒为 1（读不到清单时为 null），作为那道门槛的存档。
+- **单轮覆盖全清单的跨轮稳定性未验证（2026-10-21 记录）**：票的验收要求「连续两轮真实运行证明条目数不随机波动」，而一轮真下载约 2 GB，本沙箱不跑。逻辑上 URL 集逐条来自清单、无随机性，但站点侧是否稳定（`pageSize` 被截断、WAF、合集变化）只有真跑能证；首轮真跑后应对比两轮 `gallery.officialTotal` 与 `discovery.combinedCount`。
 - **清单接口的稳定性未验证**：未公开文档，`pageSize` 上限、WAF/限流、`collectionId` 是否会随新合集变化都未知。失败模式是响的（`gallerySourceUnavailable` defect + `officialTotal: null`），但 `pageSize: 2000` 一旦被服务端悄悄截断，`parseGalleryList` 会直接拒收而不是把缺的那半报成「新增」。
-- **镜像缺口只报警、不自动补**：`missingFromDisk` 现在能把缺的条目列出来，而清单里带着它们的 URL——自动补下是可行的（且不受 `images/` 文件名不含批次日期的限制），留给后续一轮。
-- ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化，`scripts/run-discovery.js` 永久排除（见 Gotchas）。
+- **镜像缺口只报警、不自动补**：`missingFromDisk` 现在能把缺的条目列出来，而清单里带着它们的 URL——自动补下是可行的（且不受 `data/images/` 文件名不含批次日期的限制），留给后续一轮。
+- ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化。原先对 `scripts/run-discovery.js` 的永久排除随 #76 删除该载荷一并移除。
 - ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
 - ~~**`autofix.yml` 未接**~~ **已接（2026-09-15 晚）**：`.github/workflows/autofix.yml` 在 PR 上跑 `pnpm lint:fix && pnpm fmt`，再由 `autofix-ci/action@v1.3.4` 把结果提交回 PR 分支（App 已由用户安装）。之所以手写而不是用 `sxzz/workflows` 的 autofix reusable：它的默认命令只有 `pnpm run lint --fix`（不含格式化），且与 `ci.yml` 的 setup 写法保持一致更好读。注意：机器人会往你的分支推提交，改完先 `git pull`，别用 `--force-with-lease` 把它的提交打掉。
-- **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
-- ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
+- **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（#76 之前还有 `--filename` 那段 Windows 专属坑，现在已随载荷删除），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
+- ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `data/images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

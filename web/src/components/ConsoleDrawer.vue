@@ -20,7 +20,7 @@ import { useConsoleStatus } from '../composables/useConsoleStatus'
 import { t } from '../i18n/locale'
 import RunPanel from '../RunPanel.vue'
 
-const { failure } = useConsoleStatus()
+const { failure, refresh } = useConsoleStatus()
 </script>
 
 <template>
@@ -49,9 +49,15 @@ const { failure } = useConsoleStatus()
         </DialogClose>
       </div>
 
-      <!-- A status read that failed is a runtime message, not copy, and it is
-           stated where the panel it belongs to is. -->
-      <p v-if="failure !== null" class="text-danger text-sm">{{ failure }}</p>
+      <!-- A status read that failed is stated where the panel it belongs to
+           is: one plain sentence and a retry (#83), never the raw status code
+           a transport happens to have answered with. -->
+      <div v-if="failure !== null" class="flex flex-col items-start gap-2">
+        <p class="text-danger text-sm">{{ t('console.readFailed') }}</p>
+        <button type="button" class="action-button px-3 py-1 text-sm" @click="refresh">
+          <span class="i-ph-arrow-clockwise mr-1" aria-hidden="true" />{{ t('action.retry') }}
+        </button>
+      </div>
 
       <RunPanel />
     </DialogContent>

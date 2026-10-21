@@ -5,6 +5,8 @@ import process from 'node:process'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { APP_ROOT_ENV } from '../../../core/app-root.js'
+import { runEntryPath } from '../../../web/server/build-artifacts.js'
 import type { PrerequisiteChecks } from '../../../web/server/prerequisites.js'
 import { missingPrerequisites } from '../../../web/server/prerequisites.js'
 import type { RunLauncher } from '../../../web/server/run-control.js'
@@ -73,19 +75,15 @@ function launcherWith(
 ): RunLauncher {
   return createRunLauncher({
     nodePath: 'C:\\nvm4w\\nodejs\\node.exe',
-    tsxEntry: path.join('C:\\root', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
-    mainEntry: path.join('C:\\root', 'core', 'main.ts'),
-    projectRoot: 'C:\\root',
+    runEntry: runEntryPath('C:\\root'),
+    appRoot: 'C:\\root',
     ...overrides,
   })
 }
 
 /** Every global prerequisite satisfied, as a machine with them all looks. */
 const ALL_PRESENT: PrerequisiteChecks = {
-  playwrightCli: () => true,
-  chrome: () => true,
   envFile: () => true,
-  tsxEntry: () => true,
 }
 
 const roots: string[] = []
@@ -95,63 +93,68 @@ afterEach(() => {
 })
 
 describe('missingPrerequisites', () => {
-  /** A temporary project root with a `.env` the test writes, and the other three checks present. */
-  function rootWithEnv(envText: string): string {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'prerequisites-'))
-    roots.push(root)
-    fs.writeFileSync(path.join(root, '.env'), envText, 'utf8')
-    return root
+  /** A temporary packaged layout: `app/.env` and/or `data/user.env`, both optional. */
+  function installationWith(files: { app?: string | null; user?: string | null }): {
+    appRoot: string
+    dataRoot: string
+  } {
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'prerequisites-'))
+    roots.push(install)
+    const appRoot = path.join(install, 'app')
+    const dataRoot = path.join(install, 'data')
+    fs.mkdirSync(appRoot)
+    fs.mkdirSync(dataRoot)
+    if (files.app != null) fs.writeFileSync(path.join(appRoot, '.env'), files.app, 'utf8')
+    if (files.user != null) fs.writeFileSync(path.join(dataRoot, 'user.env'), files.user, 'utf8')
+    return { appRoot, dataRoot }
   }
 
-  const otherChecks: Partial<PrerequisiteChecks> = {
-    playwrightCli: () => true,
-    chrome: () => true,
-    tsxEntry: () => true,
-  }
+  const requiredLines = 'BASE_ORIGIN=https://re.bluepoch.com'
 
-  const requiredLines = 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html'
-
-  it('names what is absent, in the order the notes list it', () => {
+  it('names the configuration when it is absent', () => {
     const missing = missingPrerequisites({
-      projectRoot: 'C:\\root',
-      checks: { ...ALL_PRESENT, playwrightCli: () => false, tsxEntry: () => false },
+      appRoot: 'C:\\root',
+      checks: { envFile: () => false },
     })
 
-    expect(missing).toEqual(['playwright-cli', 'tsx-entry'])
+    expect(missing).toEqual(['env-file'])
   })
 
-  it('names the whole gap rather than the first thing it finds', () => {
-    const missing = missingPrerequisites({
-      projectRoot: 'C:\\root',
-      checks: {
-        playwrightCli: () => false,
-        chrome: () => false,
-        envFile: () => false,
-        tsxEntry: () => false,
-      },
-    })
-
-    expect(missing).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
+  it('names nothing when the machine has what a Run needs', () => {
+    expect(missingPrerequisites({ appRoot: 'C:\\root', checks: ALL_PRESENT })).toEqual([])
   })
 
-  it('names nothing when the machine has all four', () => {
-    expect(missingPrerequisites({ projectRoot: 'C:\\root', checks: ALL_PRESENT })).toEqual([])
-  })
+  it('accepts a valid app .env file', () => {
+    const { appRoot, dataRoot } = installationWith({ app: requiredLines })
 
-  it('accepts a valid .env file', () => {
-    const root = rootWithEnv(requiredLines)
-
-    expect(missingPrerequisites({ projectRoot: root, checks: otherChecks, env: {} })).toEqual([])
+    expect(missingPrerequisites({ appRoot, dataRoot, env: {} })).toEqual([])
   })
 
   it('refuses a .env whose defaulted value the Run would reject', () => {
     // The two required keys are present; `BATCH_SIZE=abc` fails the full schema
     // the Run parses, so the start refuses what the setup notice warns about.
-    const root = rootWithEnv(`${requiredLines}\nBATCH_SIZE=abc`)
+    const { appRoot, dataRoot } = installationWith({
+      app: `${requiredLines}\nBATCH_SIZE=abc`,
+    })
 
-    expect(missingPrerequisites({ projectRoot: root, checks: otherChecks, env: {} })).toEqual([
-      'env-file',
-    ])
+    expect(missingPrerequisites({ appRoot, dataRoot, env: {} })).toEqual(['env-file'])
+  })
+
+  it('accepts the user layer as the source of the required keys', () => {
+    // The same merged schema the Run parses decides usability; the user layer is
+    // a real layer, not a decoration on the app layer (#78).
+    const { appRoot, dataRoot } = installationWith({ user: requiredLines })
+
+    expect(missingPrerequisites({ appRoot, dataRoot, env: {} })).toEqual([])
+  })
+
+  it('refuses when a user override makes the layered configuration unusable', () => {
+    const { appRoot, dataRoot } = installationWith({
+      app: requiredLines,
+      user: 'BATCH_SIZE=abc',
+    })
+
+    expect(missingPrerequisites({ appRoot, dataRoot, env: {} })).toEqual(['env-file'])
   })
 })
 
@@ -210,7 +213,7 @@ describe('createRunStarter', () => {
     const starter = createRunStarter({
       launcher: bound.launcher,
       isRunInFlight: () => false,
-      missingPrerequisites: () => ['chrome', 'tsx-entry'],
+      missingPrerequisites: () => ['env-file'],
     })
 
     const result = await starter()
@@ -219,7 +222,7 @@ describe('createRunStarter', () => {
     expect(result.status).toBe(412)
     expect(result.refusal).toEqual({
       code: 'missing-prerequisite',
-      missing: ['chrome', 'tsx-entry'],
+      missing: ['env-file'],
     })
     expect(bound.starts()).toBe(0)
   })
@@ -229,7 +232,7 @@ describe('createRunStarter', () => {
     const starter = createRunStarter({
       launcher: bound.launcher,
       isRunInFlight: () => false,
-      missingPrerequisites: () => ['chrome'],
+      missingPrerequisites: () => ['env-file'],
     })
 
     expect((await starter()).status).toBe(409)
@@ -237,7 +240,7 @@ describe('createRunStarter', () => {
 })
 
 describe('createRunLauncher', () => {
-  it('starts the Run as the current Node binary with the tsx entry, in the repo root', () => {
+  it('starts the Run as the current Node binary with the built Run entry, in the app root', () => {
     const child = new FakeChild()
     const { spawn, calls } = spawner(child)
     const launcher = launcherWith({ spawn })
@@ -247,17 +250,30 @@ describe('createRunLauncher', () => {
     expect(calls).toHaveLength(1)
     const [command, args, options] = calls[0]
     expect(command).toBe('C:\\nvm4w\\nodejs\\node.exe')
-    expect(args).toEqual([
-      path.join('C:\\root', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
-      path.join('C:\\root', 'core', 'main.ts'),
-    ])
+    // One argument: the built entry. The tsx CLI used to sit in slot 0 and the
+    // `.ts` source in slot 1 (#84); a packaged tree has neither.
+    expect(args).toEqual([path.join('C:\\root', 'run.js')])
     expect(options.cwd).toBe('C:\\root')
     // Never a shell, never `npx`, never `pnpm` (spec decision 6).
     expect(options.shell).toBe(false)
     expect(options.windowsHide).toBe(true)
   })
 
-  it('adds no pipe of the Console\u2019s own to the child', () => {
+  it('loads the Run through nothing in node_modules — the shipped tree has none', () => {
+    const child = new FakeChild()
+    const { spawn, calls } = spawner(child)
+
+    launcherWith({ spawn }).start()
+
+    const [, args] = calls[0]
+    // Neither a tsx loader nor a bundled path: the only argument is a file
+    // beside the Console entry, which is what `scripts/build.ts` writes.
+    expect(args.some(arg => arg.includes('node_modules'))).toBe(false)
+    expect(args.some(arg => /tsx|\.mjs$/.test(arg))).toBe(false)
+    expect(args.every(arg => !arg.endsWith('.ts'))).toBe(true)
+  })
+
+  it('adds no pipe of the Console\u2019s own to the child, and hands it the app root', () => {
     const child = new FakeChild()
     const { spawn, calls } = spawner(child)
 
@@ -265,7 +281,12 @@ describe('createRunLauncher', () => {
 
     const options = calls[0][2]
     expect(options.stdio).toEqual(['ignore', 'inherit', 'inherit'])
-    expect(options.env).toBe(process.env)
+    // The child inherits the Console's machine, but the root is passed down
+    // explicitly: the Run never has to guess where it was installed.
+    expect(options.env).toMatchObject({
+      [APP_ROOT_ENV]: 'C:\\root',
+      PATH: process.env.PATH,
+    })
   })
 
   it('reads a live child as alive and a child that exited as dead', () => {

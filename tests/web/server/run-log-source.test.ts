@@ -7,7 +7,7 @@ import type { RunLogSourceOptions } from '../../../web/server/run-log-source.js'
 import { createRunLogSource } from '../../../web/server/run-log-source.js'
 import { ORPHAN_WINDOW_MS } from '../../../web/server/run-state.js'
 import {
-  fixtureProjectRoot,
+  fixtureAppRoot,
   galleryState,
   LEGACY_LOG_NAME,
   LOG_NAME,
@@ -27,7 +27,7 @@ afterEach(() => {
 
 /** A directory tree standing in for the repository: a Mirror and a log dir. */
 function fixture(): RunLogSourceOptions {
-  const root = fixtureProjectRoot('console-run-log-')
+  const root = fixtureAppRoot('console-run-log-')
   roots.push(root)
   return runLogSourceOptionsIn(root)
 }

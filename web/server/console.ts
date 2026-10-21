@@ -1,21 +1,43 @@
 // ── The Console's entry point ───────────────────────────────────────
 //
-// The one command: build the page if it is not on disk, start the loopback
-// service, print the URL it bound and open it in the default browser. It reads
-// the project's `.env` through `core/config-read.ts`'s file-reading predicate —
-// the same schema `core/config.ts` parses eagerly for the pipeline — and injects
-// a configuration value, so nothing under `web/server/` ever reads the
-// environment and `tests/**` keeps needing no `.env` (spec decision 29). A
-// missing or broken `.env` is not fatal here: the Console boots, says a Run
-// cannot be configured yet, and leaves the failing fast to the Run (#57).
+// The one command: start the loopback service over the built page, print the URL
+// it bound and open it in the default browser. It resolves the one application
+// root (#78), reads the layered configuration through `core/config-read.ts`'s
+// file-reading predicate — the same schema `core/config.ts` parses eagerly for
+// the pipeline — and injects a configuration value, so nothing under
+// `web/server/` ever reads the environment and `tests/**` keeps needing no
+// `.env` (spec decision 29). A missing or broken layer is not fatal here: the
+// Console boots, says a Run cannot be configured yet, and leaves the failing
+// fast to the Run (#57).
 //
-// The Console deliberately never loads `.env` into `process.env`: dotenv does
+// #84: this file is a build artifact. `scripts/build.ts` bundles it into
+// `build/server.js` beside the Run's `build/run.js` and the prebuilt page, and
+// the Console compiles nothing at boot — no Vite, no transpiler, no
+// `node_modules` in a shipped tree. Both non-Console artifacts are checked
+// before the port is bound (`web/server/build-artifacts.ts`): a tree that lacks
+// one is a broken build or a broken package, and saying so beats serving a blank
+// page and failing a click later.
+//
+// The Console deliberately never loads the files into `process.env`: dotenv does
 // not override, so a value that was wrong at boot would shadow a corrected file
 // forever and the setup notice could never clear without a restart (#60). The
-// Run is unaffected — it reads its own `.env` from its working directory.
+// Run is unaffected — it reads the same layers through its own root.
 //
 // ADR 0008: no dispatcher and no CLI framework. The Console takes `--port` and
 // `--no-open` and nothing more; the flags are parsed by Node's own parser.
+//
+// #82: this entry is also what a second double-click runs. Before it resolves
+// any of the boot's work it asks the record the previous start left behind
+// whether that service is still answering (`instance-handshake.ts`); if it is,
+// this start only reopens that page and exits, so one program cannot become two
+// processes writing the same Run log directory. The record it publishes once its
+// port is known is removed when the boot that wrote it exits.
+//
+// #85: the package's launcher (`packaging/启动.bat`) is ASCII-only and does
+// nothing but `cd` into `app\` and run this file, because cmd.exe renders a
+// `.bat`'s Chinese through the console's code page. Everything the person at the
+// window reads comes from here: the title (the stop instruction), the "do not
+// close" line, the unsafely-downloaded notice, and the pointer the updater reads.
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -25,25 +47,30 @@ import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
 
-import type { ConfigValues, SiteConfig } from '../../core/config-read.js'
-import {
-  galleryListUrlOf,
-  PROJECT_ROOT,
-  readProjectConfig,
-  siteConfig,
-} from '../../core/config-read.js'
+import { dataRootOf, resolveAppRoot } from '../../core/app-root.js'
+import { readLayeredConfig, siteConfig } from '../../core/config-read.js'
+import { ensureDataLayout } from '../../core/data-layout.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
+import { applicationVersion } from '../../core/version.js'
 import type { ConsoleRunState } from '../api-types.js'
+import {
+  buildArtifactRefusal,
+  pageEntryFile,
+  runEntryPath,
+  SERVER_ENTRY_FILE,
+} from './build-artifacts.js'
 import type { ConsoleConfig } from './console-config.js'
-import { DEFAULT_CONSOLE_PORT, DIST_DIR_NAME } from './console-config.js'
+import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
-import { missingPrerequisites, runEnvFileAvailable, tsxEntryPath } from './prerequisites.js'
+import { installPointerFile, installRootOf, writeInstallPointer } from './installation.js'
+import { runningInstanceUrl } from './instance-handshake.js'
+import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
+import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
 import type { RunLauncher } from './run-control.js'
 import {
-  createBrowserSessionCloser,
   createRunCleaner,
   createRunLauncher,
   createRunStarter,
@@ -51,7 +78,7 @@ import {
 } from './run-control.js'
 import { createRunLogSource } from './run-log-source.js'
 import { readNewestRunReport } from './run-report-source.js'
-import type { ConsoleService, ThumbnailSource } from './server.js'
+import type { ConsoleServerDeps, ConsoleService, ThumbnailSource } from './server.js'
 import { startConsoleServer } from './server.js'
 import { galleryFactsOf } from './status.js'
 import {
@@ -59,38 +86,27 @@ import {
   realImageSizeReader,
   realThumbnailCache,
   realThumbnailGenerator,
-  THUMBNAIL_CACHE_DIR_NAME,
 } from './thumbnails.js'
+import { markedAsUnsafe, unsafeDownloadNotice } from './unsafe-download.js'
+import { checkForUpdate } from './update-check.js'
+
+/**
+ * The launcher's window title (#85): the stop instruction itself, because
+ * closing the window is the whole stop story — the page has no stop control
+ * (ADR 0016). Set with `process.title`, which on Windows is a real console title
+ * write and therefore Unicode-safe, unlike anything a `.bat` prints.
+ */
+const WINDOW_TITLE = 're1999 壁纸下载器 - 关闭这个窗口就是停止'
+
+/** What a start says once, before anything can take a while (#85). */
+const STOP_INSTRUCTION = '关闭这个窗口就是停止程序。抓取和下载期间请不要关闭。'
+
+/** What a start says when it spawns a Run (#85 story 11). */
+const RUN_STARTED_NOTICE = '抓取已开始:下载期间请不要关闭这个窗口。'
 
 interface ConsoleOptions {
   port: number
   open: boolean
-}
-
-/**
- * The web layer's own anchor: this entry point is the only thing that knows
- * where the layer starts. It is derived from this module's own depth — the file
- * sits in `web/server/`, so its parent is the layer root, where the page's build
- * config, the built page and the thumbnail cache live.
- *
- * It is deliberately NOT derived from `PROJECT_ROOT`: the two answer different
- * questions (a Run's cwd and the layer's own artifacts) and are never conflated
- * (spec decision 7).
- */
-const WEB_ROOT = path.resolve(import.meta.dirname, '..')
-
-/** The Console's configuration, built here and injected into the service. */
-function consoleConfig(values: ConfigValues | null, site: SiteConfig): ConsoleConfig {
-  return {
-    projectRoot: PROJECT_ROOT,
-    imagesDir: site.imagesDir,
-    logDir: site.logDir,
-    galleryStateFile: site.galleryStateFile,
-    distDir: path.join(WEB_ROOT, DIST_DIR_NAME),
-    // Absent when there is no usable `.env`: the Gallery list is then "not read"
-    // and `/api/status` reports that a Run cannot be configured yet (#57).
-    galleryListEndpoint: values === null ? null : galleryListUrlOf(values.BASE_ORIGIN),
-  }
 }
 
 /**
@@ -109,24 +125,26 @@ function galleryListSource(endpoint: string | null): GalleryListSource {
 
 /**
  * The thumbnail source the service is given (#35; spec decision 29). This is the
- * composition root, so it is the one place that knows the web layer's root, the
- * real filesystem and the image library: `web/server/server.ts` receives the
- * source whole and never reaches for `sharp` or for a cache path itself.
+ * composition root, so it is the one place that knows the data directory's cache
+ * path, the real filesystem and the image library: `web/server/server.ts`
+ * receives the source whole and never reaches for `sharp` or for a cache path
+ * itself.
  *
- * The cache lives under the web layer's root — never inside the Mirror
- * (ADR 0010) — and the name that keys it is the Wallpaper's own, which embeds a
- * content hash, so a hit needs no invalidation. `web/server/thumbnails.ts` is the
- * image library's only import site, and the import is dynamic on purpose: a
- * broken or absent native addon arrives as a rejected `await import('sharp')` — a
- * named 500 at the request site, never a crashed process and never a failed Run.
+ * The cache lives under `<data>/cache/thumbnails` — never inside the Mirror
+ * (ADR 0010), and no longer under the program directory, which an update
+ * replaces (#80) — and the name that keys it is the Wallpaper's own, which
+ * embeds a content hash, so a hit needs no invalidation.
+ * `web/server/thumbnails.ts` is the image library's only import site, and the
+ * import is dynamic on purpose: a broken or absent native addon arrives as a
+ * rejected `await import('sharp')` — a named 500 at the request site, never a
+ * crashed process and never a failed Run.
  */
-function realThumbnailSource(): ThumbnailSource {
-  const cacheDir = path.join(WEB_ROOT, THUMBNAIL_CACHE_DIR_NAME)
+function realThumbnailSource(config: ConsoleConfig): ThumbnailSource {
   return {
-    thumbnail: async (name, sourceFile) => {
+    thumbnail: async name => {
       const file = await ensureThumbnail(name, {
-        imagesDir: path.dirname(sourceFile),
-        cacheDir,
+        imagesDir: config.imagesDir,
+        cacheDir: config.cacheDir,
         generate: realThumbnailGenerator,
         cache: realThumbnailCache,
       })
@@ -153,24 +171,6 @@ function consoleOptions(argv: string[]): ConsoleOptions {
   }
 
   return { port, open: !values['no-open'] }
-}
-
-/**
- * ADR 0011: the first start pays the build, later starts reuse it. Vite's
- * programmatic API keeps the build in this process — no shell, no `npx`, and no
- * child process of our own — and the import is lazy, so the bundler never
- * enters the service's module graph.
- *
- * The config file is the layer's own (`web/vite.config.ts`), and Vite resolves
- * the page, the entry document and the output directory from it, so this process
- * names one path and the config owns the rest.
- */
-async function ensureBundle(config: ConsoleConfig): Promise<void> {
-  if (fs.existsSync(path.join(config.distDir, 'index.html'))) return
-
-  process.stdout.write('正在构建页面…\n')
-  const { build } = await import('vite')
-  await build({ configFile: path.join(WEB_ROOT, 'vite.config.ts') })
 }
 
 /**
@@ -223,8 +223,8 @@ interface StopDeps {
  * closing it never stops anything, because it is a view and the truth is on
  * disk. A signal with no Run in flight shuts down at once; with a Run in flight
  * it asks first — the one gesture most likely to be made must not kill twenty
- * minutes of work. Accepting kills the whole child tree (a headed browser and a
- * truncated Run log are what killing only the first leaves behind); declining
+ * minutes of work (a download in flight and a truncated Run log are what killing
+ * only the first leaves behind); declining
  * leaves both the service and the Run running, and says so.
  *
  * Glue, deliberately: the decision itself is the pure `stopDecision`, and this
@@ -255,7 +255,7 @@ function installStopHandlers(deps: StopDeps): void {
       }
     }
 
-    // The whole tree the launcher started: tsx, the browser CLI, the browser.
+    // The whole tree the launcher started: the Run and its children.
     deps.launcher.stop()
     await deps.service.close()
     process.exit(0)
@@ -266,16 +266,118 @@ function installStopHandlers(deps: StopDeps): void {
 }
 
 async function main(options: ConsoleOptions): Promise<void> {
-  // The tolerant, file-reading read (#57, #60): the project's `.env`, parsed and
-  // validated through the full schema with the process environment merged over
-  // it. An absent file, an unparsable one or a malformed value all come out as
-  // `null`, and everything below still has the defaults it needs. The file is
-  // deliberately not loaded into `process.env` — dotenv does not override, so a
-  // boot-time load would freeze a wrong value over a corrected file.
-  const values = readProjectConfig(PROJECT_ROOT)
-  const site = siteConfig(PROJECT_ROOT, values)
-  const config = consoleConfig(values, site)
-  await ensureBundle(config)
+  // The one application root, resolved here and passed down (#78): a packaged
+  // launcher names it in `RE1999_APP_ROOT`; otherwise it is the process's
+  // working directory — the repository for `pnpm core:run`, and `build/` itself
+  // for `pnpm webui` (#84). Nothing below this point derives it.
+  const appRoot = resolveAppRoot()
+  const dataRoot = dataRootOf(appRoot)
+
+  // #82: one program, one service. Before anything is read, written or bound,
+  // ask the record the previous start left behind whether that service is still
+  // answering. If it is, this start is a second double-click: it points the
+  // browser at the page that is already up and exits, so two processes can never
+  // write the same Run log directory. A record that is absent, unreadable or
+  // stale answers `null` and this boot proceeds normally.
+  const runningUrl = await runningInstanceUrl(dataRoot)
+  if (runningUrl !== null) {
+    process.stdout.write(`程序已在运行:${runningUrl}\n`)
+    process.stdout.write('本窗口只是把浏览器指回正在运行的那个页面,随后自动关闭。\n')
+    if (options.open) openInBrowser(runningUrl)
+    process.exit(0)
+  }
+
+  // #85: the window the user double-clicked into existence *is* the program's
+  // stop control (ADR 0016). The title says what closing it does, and the one
+  // line below says it again where the user is looking; the page gains no stop
+  // button. `process.title` is a Unicode console-title write on Windows, which
+  // is why the words can be Chinese while the launcher stays ASCII.
+  process.title = WINDOW_TITLE
+  process.stdout.write(`${STOP_INSTRUCTION}\n`)
+
+  // #81: the one outbound request that is not the game's site or its CDN. It is
+  // started here, beside the rest of the boot's work, and awaited only where the
+  // service needs its answer — so the page's first status read can carry it.
+  // `checkForUpdate` never rejects and the request is bounded by its own
+  // three-second timeout: an offline machine, a redirect or a malformed payload
+  // is simply "no notice", never a boot failure and never a status error.
+  const updateCheck = checkForUpdate({ currentVersion: applicationVersion(appRoot) })
+
+  // The tolerant, layered read (#57, #60, #78): the shipped `app/.env` and the
+  // optional `data/user.env`, validated through the full schema with the process
+  // environment merged over both. An absent file, an unparsable one or a
+  // malformed value all come out as `null`, and everything below still has the
+  // defaults it needs. The files are deliberately not loaded into `process.env` —
+  // a boot-time load would freeze a wrong value over a corrected file.
+  const layered = readLayeredConfig({ appRoot, dataRoot })
+  if (layered.notice !== null) process.stdout.write(`${layered.notice}\n`)
+
+  // The data directory is the one thing an update must never touch, so it is
+  // brought to the current layout (a pre-#80 checkout by rename) before the
+  // Console reads or writes anything in it. An unrecognised or newer layout
+  // refuses here, with the Chinese explanation, and changes nothing.
+  const layout = ensureDataLayout({
+    appRoot,
+    dataRoot,
+    configuredImagesDir: layered.values?.IMAGES_DIR,
+    configuredLogDir: layered.values?.LOG_DIR,
+  })
+  if (!layout.ok) {
+    process.stderr.write(`${layout.refusal.message}\n`)
+    process.exit(1)
+  }
+  for (const move of layout.ready.migrated) {
+    process.stdout.write(`数据已搬迁：${move.source} → ${move.target}\n`)
+  }
+
+  const values = layered.values
+  const site = siteConfig(appRoot, values, dataRoot)
+  const config = consoleConfigOf(appRoot, values, site)
+
+  // #84: the page and the Run entry are build artifacts, and this start compiles
+  // nothing. A tree without them is a broken build or a broken package; it is
+  // refused here, by name, before the port is bound — the alternative is a page
+  // that opens blank, or a first click that spawns an ENOENT.
+  const missingArtifact = buildArtifactRefusal({ appRoot: config.appRoot, distDir: config.distDir })
+  if (missingArtifact !== null) {
+    process.stderr.write(`${missingArtifact.message}\n`)
+    process.exit(1)
+  }
+
+  // #85: a zip that came from a browser carries Mark-of-the-Web, and extraction
+  // copies it onto every file — a class of failure with no honest error message
+  // (a blank page, a 500 on one tile, a program that will not start). The files
+  // this turn will run are checked here, before the port is bound, and the
+  // Chinese unblock instruction is printed. It is a notice, not a refusal: the
+  // tree may well work, and refusing a working tree would be its own support
+  // case. `node.exe` is present only in the packaged tree, which is exactly the
+  // tree that can have arrived with the mark.
+  const programFiles = [
+    path.join(config.appRoot, 'node.exe'),
+    path.join(config.appRoot, SERVER_ENTRY_FILE),
+    runEntryPath(config.appRoot),
+    pageEntryFile(config.distDir),
+  ].filter(file => fs.existsSync(file))
+  const unsafeNotice = unsafeDownloadNotice(markedAsUnsafe(programFiles), config.appRoot)
+  if (unsafeNotice !== null) process.stdout.write(`${unsafeNotice}\n`)
+
+  // #85: record where this installation is, for the updater (#87). Only the
+  // portable package has an installation root (a source checkout answers null),
+  // and the pointer is rewritten on every start so a moved folder heals on its
+  // next launch. A write that fails is said once and does not stop the program:
+  // the updater's memory is not worth a failed start.
+  const installRoot = installRootOf(config.appRoot, dataRoot)
+  if (installRoot !== null) {
+    const pointer = writeInstallPointer({ installRoot })
+    if (!pointer.written) {
+      const file = installPointerFile(process.env.LOCALAPPDATA)
+      process.stdout.write(
+        `无法记录安装位置(${pointer.reason}),更新时可能找不到这个安装。${
+          file === null ? '' : `\n  目标文件:${file}`
+        }\n`,
+      )
+    }
+  }
 
   // One cached read of the Gallery list serves both `/api/status` (its
   // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
@@ -296,12 +398,16 @@ async function main(options: ConsoleOptions): Promise<void> {
   let ownRunLogName: string | null = null
   const launcher = createRunLauncher({
     nodePath: process.execPath,
-    tsxEntry: tsxEntryPath(config.projectRoot),
-    mainEntry: path.join(config.projectRoot, 'core', 'main.ts'),
-    projectRoot: config.projectRoot,
+    // The built Run entry, the sibling of this bundle (#84). Nothing under
+    // `node_modules`: a shipped tree has no transpiler to load it with.
+    runEntry: runEntryPath(config.appRoot),
+    appRoot: config.appRoot,
     onStarted: () => {
       ownRunLogName = null
       newestBeforeSpawn = newestRunLogName(config.logDir)
+      // #85 story 11: the most expensive moment of the program's life says so,
+      // in the window whose closing is the stop control.
+      process.stdout.write(`${RUN_STARTED_NOTICE}\n`)
     },
     onExited: () => {
       const newest = newestRunLogName(config.logDir)
@@ -319,31 +425,37 @@ async function main(options: ConsoleOptions): Promise<void> {
   })
   const startRun = createRunStarter({
     launcher,
-    // A Run in flight and an Orphaned Run both hold — or may hold — the one
-    // persistent Browser session, so neither may be started over; the reason
-    // the page shows differs, because the actions differ.
+    // A Run in flight and an Orphaned Run both write the one Mirror and log
+    // directory, so neither may be started over; the reason the page shows
+    // differs, because the actions differ.
     isRunInFlight: () => runLogSource.facts().state !== 'idle',
     refusalCode: () => (runLogSource.facts().state === 'orphaned' ? 'orphaned-run' : null),
-    missingPrerequisites: () => missingPrerequisites({ projectRoot: config.projectRoot }),
+    missingPrerequisites: () => missingPrerequisites({ appRoot: config.appRoot, dataRoot }),
   })
   const cleanupRun = createRunCleaner({
     // Never clean under a live Run; that is the one refusal (ADR 0009).
     isRunInFlight: () => runLogSource.facts().state === 'running',
-    closeBrowserSession: createBrowserSessionCloser({ sessionName: site.sessionName }),
     acknowledgeOrphan: () => runLogSource.acknowledgeOrphan(),
   })
 
-  const service = await startConsoleServer(config, {
+  // #82: this boot's token, generated once because it is needed twice — by the
+  // service's guard and by the record the next double-click probes. It stays
+  // random per boot: the record is a handshake, not a credential, and a URL
+  // saved from an earlier run is refused by this one (see `instance-record.ts`).
+  const token = randomBytes(16).toString('hex')
+
+  const deps: ConsoleServerDeps = {
     // The Run half is read from the Run log directory, so a Run started from a
     // terminal appears exactly like one started here (ADR 0009).
     runState: () => runLogSource.facts(),
     galleryFacts: async () => galleryFactsOf(await galleryList.get()),
     galleryList,
-    // #60: the page's setup notice has to clear on the next status read once
-    // `.env` exists, so this is the `.env` half of `missingPrerequisites` read
-    // again per request — one file, no `PATH` scan and no registry lookup — and
-    // the same predicate the start refuses on, so notice and refusal agree.
-    runConfigAvailable: () => runEnvFileAvailable(config.projectRoot),
+    // #60: the page's setup notice has to clear on the next status read once a
+    // usable layer exists, so this is the configuration half of
+    // `missingPrerequisites` read again per request — two small files, no `PATH`
+    // scan and no registry lookup — and the same predicate the start refuses on,
+    // so notice and refusal agree.
+    runConfigAvailable: () => runEnvFileAvailable(config.appRoot, dataRoot),
     // The one Run number the gallery view needs (#33), read from the newest Run
     // log exactly as `check-run` reads it — never recomputed from the Gallery
     // state, which would give 0.
@@ -351,7 +463,7 @@ async function main(options: ConsoleOptions): Promise<void> {
     // The image library's one call site (#35). Its import is dynamic and lives
     // inside `web/server/thumbnails.ts`, so a broken native binary is a 500 on
     // one tile — never a crash, and never a failed Run.
-    thumbnailSource: realThumbnailSource(),
+    thumbnailSource: realThumbnailSource(config),
     // The wall's second input (#48): each Wallpaper's own pixel size, so the
     // masonry can place a tile before its lazy thumbnail arrives. Memoised here
     // rather than in the route, because the measurement has to outlive a
@@ -360,9 +472,34 @@ async function main(options: ConsoleOptions): Promise<void> {
     imageSizeSource: createImageSizeCache(realImageSizeReader),
     startRun,
     cleanupRun,
-    token: randomBytes(16).toString('hex'),
+    token,
     port: options.port,
+  }
+
+  const service = await startConsoleServer(config, deps)
+
+  // #82: publish this boot's address as soon as the port is known, and before
+  // the boot's one network request is awaited. From here until shutdown a second
+  // double-click reuses this service instead of starting another; the record is
+  // removed on the way out, so a clean shutdown leaves nothing to reconnect to.
+  // A hard kill leaves a stale record, and staleness is proved at read time by
+  // the probe, which is the same "start normally" answer.
+  const recordFile = instanceRecordPath(dataRoot)
+  const identity = { port: service.port, token, pid: process.pid }
+  writeInstanceRecord(recordFile, identity)
+  process.once('exit', () => {
+    // Only this boot's own record: two starts that raced leave the later one's
+    // record in place when the earlier one shuts down.
+    forgetInstanceRecord(recordFile, identity)
   })
+
+  // #81: the boot check's answer, handed to the service the moment it is known —
+  // one request per boot, never one per status read. `checkForUpdate` was started
+  // at the top of `main` and never rejects: an offline machine, a redirect or a
+  // malformed payload is simply "no notice", never a boot failure. A status read
+  // that lands during the check carries no notice yet, and the page's poll picks
+  // it up on the next read.
+  deps.updateNotice = await updateCheck
 
   // Always the port actually bound: the preferred one is only a preference
   // (spec decision 3).

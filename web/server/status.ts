@@ -28,11 +28,13 @@ import type {
   ConsoleRunReport,
   ConsoleRunState,
   ConsoleStatusPayload,
+  ConsoleUpdateNotice,
   ConsoleVerdict,
   ConsoleVerdictReasons,
 } from '../api-types.js'
 import { decideRunState, parseRunMeta } from './run-state.js'
 import type { Same } from './same.js'
+import type { UpdateNotice } from './update-check.js'
 
 /**
  * The API's defect block, checked against the Run report's on the way through.
@@ -74,6 +76,18 @@ function toApiVerdictReasons(
   return reasons
 }
 
+/**
+ * The boot's update notice (#81), held to the page's declaration by the same
+ * `Same` check: the notice module owns what a notice is, and a field added or
+ * changed there must be declared in `web/api-types.ts` before it can reach the
+ * page.
+ */
+function toApiUpdateNotice(
+  notice: Same<UpdateNotice, ConsoleUpdateNotice> extends true ? UpdateNotice | null : never,
+): ConsoleUpdateNotice | null {
+  return notice
+}
+
 /** The Run half of the status, as a reader hands it over. */
 export interface ConsoleRunFacts {
   runId: string | null
@@ -110,6 +124,19 @@ export interface ConsoleGalleryFacts {
 
 /** Everything the payload is built from. */
 export interface ConsoleStatusFacts {
+  /**
+   * The version this Console is running (#79), as `core/version.ts` resolved it
+   * for the application root. `null` when the install carries neither an
+   * injected version nor readable package metadata.
+   */
+  version: string | null
+  /**
+   * The boot's one update check (#81), as `web/server/update-check.ts` decided
+   * it: a newer release to mention, or `null` for "say nothing". The entry point
+   * resolves it once per boot and injects the answer — this assembly never asks
+   * the network, so a status read stays a read.
+   */
+  update: UpdateNotice | null
   run: ConsoleRunFacts
   /** The Mirror's non-dot entry count (web/server/mirror.ts). */
   mirrorCount: number
@@ -245,12 +272,19 @@ export function galleryFactsOf(list: GalleryList | null): ConsoleGalleryFacts {
  * has to be made here as well.
  */
 export function buildStatus({
+  version,
+  update,
   run,
   mirrorCount,
   gallery,
   runConfigAvailable,
 }: ConsoleStatusFacts): ConsoleStatusPayload {
   const payload: ConsoleStatusPayload = {
+    // #79: the one current version, carried as resolved — never re-derived or
+    // re-written here, so the page, the service and package.json cannot drift.
+    version,
+    // #81: the boot check's answer, which the entry point already resolved.
+    updateNotice: toApiUpdateNotice(update),
     runId: run.runId,
     state: run.state,
     startedAt: run.startedAt,

@@ -1,10 +1,10 @@
 # Wallpaper Scraper — Project Context
 
 A wallpaper scraper for Bluepoch's official wallpaper gallery (re.bluepoch.com).
-It drives a real browser through the SPA, captures every image request on the
-network layer, filters them down to real wallpapers, and downloads them to
-disk. The repo is one project split into two sub-domains — **Discovery** and
-**Download** — joined by the **Wallpaper URL set**.
+It asks the site's own gallery list for every Wallpaper URL in one unauthenticated
+request, then downloads them in parallel to disk. The repo is one project split
+into two sub-domains — **Discovery** and **Download** — joined by the **Wallpaper
+URL set**.
 
 ## Language
 
@@ -16,84 +16,38 @@ docs/adr/0014) — so a reader meeting 「镜像」 on the page can find Mirror 
 ### Shared
 
 **Wallpaper (壁纸)**:
-An image that passed discovery filtering (not an icon, SVG, data: or blob:
-URI) and is queued for download to disk.
+An image the gallery lists, queued for download to disk. The Gallery list is
+what decides this; the Site asset rules are the older vocabulary, kept for the
+Console's tile check (ADR 0018).
 _Avoid_: picture, background, 图片, 背景
 
-**Image**:
-Any image URL observed by the browser — from a network response or a DOM
-element — before filtering. Broader than Wallpaper.
-_Avoid_: wallpaper (as a name for the raw captured artifact)
-
 **Wallpaper URL set**:
-The deduplicated, filtered collection of Wallpaper URLs produced by Discovery
-and consumed by Download (bridged across processes via `window.__wpUrls`).
-The raw capture may still carry Site assets; the Site asset filter drops them
-before Download sees the set.
+The deduplicated collection of Wallpaper URLs produced by Discovery and consumed
+by Download. Since #76 it is the Gallery list's `pictureUrl`s, in the list's
+order.
 _Avoid_: URL list, allUrls, manifest
-
-**Browser session**:
-A named, persistent Chrome profile managed by Playwright CLI (`bluepoch`).
-It carries cookies and login state across the whole run.
-_Avoid_: tab, profile
 
 ### Discovery
 
 **Discovery**:
-The sub-domain that traverses the page and produces the Wallpaper URL set.
+The sub-domain that produces the Wallpaper URL set. Since #76 it is one request
+to the Gallery list, not a browser crawl (`core/discovery/discovery.ts`).
 _Avoid_: scraping, crawling
-
-**Discovery script**:
-The run-code script (`scripts/run-discovery.js`) executed inside the Browser
-session that performs the whole page traversal.
-_Avoid_: scraper script, spider
-
-**Network-first capture**:
-Capturing image URLs from network responses via `page.on("response")` instead
-of scanning the DOM. The DOM only drives scrolling and clicks.
-_Avoid_: DOM scraping
-
-**Virtual scroll list**:
-A page region that renders only visible thumbnails and grows its scrollable
-height as you scroll — the central mechanism that triggers lazy loading.
-_Avoid_: container, scroll container
-
-**Lazy loading**:
-The site loads images on demand as thumbnails enter the viewport; scrolling is
-what forces the next batch to render and fire network requests.
-_Avoid_: on-demand loading
-
-**Thumbnail**:
-A clickable small tile in a Virtual scroll list. Clicking opens a High-res
-preview.
-_Avoid_: tile, mini image
-
-**High-res preview**:
-The popup dialog opened by clicking a Thumbnail, showing the full-resolution
-image. Opening it is what triggers the high-res network request.
-_Avoid_: zoom, detail popup
-
-**Stability loop**:
-The settling loop at the end of Discovery that keeps scrolling and waits until
-no new image requests arrive and the page height is stable — proof that
-discovery is complete.
-_Avoid_: convergence, idle detection
 
 **Site asset (站点资源)**:
 A resource the page or the CDN serves alongside the gallery that is not a
 Wallpaper: the page's own HTML document, analytics pixels, and the site's UI
 art (page background, music-player covers, icons). Marked by the rules in
-`core/wallpaper-url.ts` and never downloaded.
+`core/wallpaper-url.ts`. Since #76 nothing captures those URLs, so the rules no
+longer sit on the Run's path; they remain the vocabulary for "is this a
+Wallpaper" (ADR 0004, ADR 0018).
 _Avoid_: junk, noise, non-image (a Site asset can be an image)
 
 **Site asset filter**:
-The stage that partitions the raw capture into Wallpapers and Site assets
-before Download, so the Wallpaper URL set Download consumes contains neither
-Site assets nor non-image URLs. It is the only filter: the Discovery script
-drops nothing but `data:`/`blob:` payloads, which are not URLs the crawler can
-fetch. Every drop is reported, and every Run checks the drops against the
-Gallery list, so a rule that swallows a Wallpaper is caught rather than
-inferred. See docs/adr/0004.
+The rule set that used to partition a browser capture into Wallpapers and Site
+assets before Download. Off the Run's path since #76: the list is the authority,
+so there is nothing to drop. Every Run still reports the empty result
+(`siteAssets`, `siteAssetFalsePositive`) so the report's shape is unchanged.
 _Avoid_: cleanup, sanitizer
 
 ### Gallery tracking
@@ -101,7 +55,7 @@ _Avoid_: cleanup, sanitizer
 **Gallery list (官方清单)**:
 The site's own inventory of the gallery, from its list endpoint: every entry
 with the id the gallery numbers it by, plus the total. One request, no session.
-It is the authoritative Wallpaper URL set.
+It is the authoritative Wallpaper URL set — and since #76, a Run's Discovery.
 _Avoid_: API, endpoint, manifest
 
 **Gallery total**:
@@ -112,7 +66,7 @@ _Avoid_: image count, total images, 图片总数
 
 **Gallery state**:
 The persisted record of the entry ids previous Runs have seen
-(`images/.gallery-state.json`), which is what lets a Run report
+(`<data>/images/.gallery-state.json`), which is what lets a Run report
 `newSinceLastRun`. Ids are never forgotten: the site can retire an entry and
 put it back, and forgetting it would report the re-appearance as new twice.
 It lives beside the Mirror it describes and is deleted with it.
@@ -125,7 +79,8 @@ nothing to compare against.
 _Avoid_: delta, growth, 新增
 
 **Mirror (镜像)**:
-The local copy of the gallery — the Wallpaper files in `images/`.
+The local copy of the gallery — the Wallpaper files in `<data>/images/`, under
+the user's data directory rather than the program's (ADR 0019).
 _Avoid_: library, collection, dataset
 
 **Mirror gap (镜像缺口)**:
@@ -135,8 +90,10 @@ does not contain — retired art, or junk the filter let through).
 _Avoid_: diff, drift
 
 **Discovery coverage (覆盖率)**:
-The share of the Gallery list that one Run's capture contained. A Run sees a
-small slice by design; the number says how small.
+The share of the Gallery list that one Run's URL set contained. Since #76 the
+URL set *is* the list, so it is `1` whenever the list was read and `null` when
+it was not — the number the old crawl was judged by (`18–45%`) is retired with
+its purpose (ADR 0018).
 _Avoid_: hit rate, recall
 
 ### Download
@@ -157,13 +114,9 @@ _Avoid_: dedup, existing-file check
 
 **403 retry**:
 The second download attempt after a 403, sent with full browser headers
-(Accept, Sec-Fetch-*) because the CDN rejects minimal requests.
+(Accept, Sec-Fetch-*) because the CDN rejects minimal requests. It is header
+policy, not auth: no session cookie is sent (ADR 0018).
 _Avoid_: header escalation
-
-**Session cookies**:
-The cookie header extracted from the Browser session and attached to downloads
-so gated images succeed.
-_Avoid_: auth, login
 
 ### Console
 
@@ -187,8 +140,8 @@ _Avoid_: GUI, dashboard, admin panel, web app
 ### Diagnostics
 
 **Run (运行)**:
-One invocation of the whole scraper, from session clear through download
-summary, producing one JSONL log and one Run report.
+One invocation of the whole scraper, from the gallery-list request through the
+download summary, producing one JSONL log and one Run report.
 _Avoid_: execution, session run
 
 **Run log (运行日志)**:
@@ -208,33 +161,36 @@ _Avoid_: stuck Run, zombie Run, dead Run, hung Run
 
 **Run 稳定性 (Run stability)**:
 The degree to which a single Run completes both pipelines and produces a
-trustworthy outcome, measured by: discovery convergence, download success
-rate, 403 retry rescue rate, and absence of leak/anomaly signals. Cross-run
-consistency is only tracked for the Gallery total; other aggregation-phase
-signals are future work.
+trustworthy outcome, measured by: whether the Gallery list answered, download
+success rate, 403 retry rescue rate, and absence of anomaly signals. Cross-run
+consistency is tracked for the Gallery total; the list-driven Run repeats
+exactly what the list holds, so entry counts are expected to match across Runs.
 _Avoid_: reliability, health
 
 **Run parity (运行等价)**:
 The standard for accepting a pipeline change: a post-change Run's `run_report`
 structure must be byte-identical in shape to a pre-change baseline (same
-fields, same contract), and its observable metrics — `combinedCount`, success
-rate, convergence — must not materially regress. Used to prove an
+fields, same contract), and its observable metrics — download counts, success
+rate, list availability — must not materially regress. Used to prove an
 implementation swap (e.g. module system, runtime) kept behavior equivalent.
 _Avoid_: run quality, 运行质量, no regression
 
 **运行缺陷 (Run defect)**:
-An anomaly detectable from the log that shows the crawl deviated from
-expectations. Classes: discovery leak, convergence failure, empty result,
-persistent failure, empty file, Site asset false positive, gallery source
+An anomaly detectable from the log that shows the Run deviated from
+expectations. Classes: discovery leak (empty since #76), convergence failure
+(now: the list did not answer), empty result, persistent failure, empty file,
+Site asset false positive (always empty when the list was read), gallery source
 unavailable, mirror gap. Cross-run drift beyond the Gallery list is a future,
 aggregation-phase class.
 _Avoid_: bug, error, failure (as a blanket term)
 
 **Run report**:
 The single structured log record (`type: run_report`) that aggregates one
-Run's stability signals, its Gallery numbers and Mirror gap, the Site assets it
-filtered, the capture's Discovery coverage, and detected defects, so an Agent
-can assess the run without re-parsing the whole log.
+Run's stability signals, its Gallery numbers and Mirror gap, the (now
+always-empty) Site asset section, Discovery's counters and coverage, and
+detected defects, so an Agent can assess the run without re-parsing the whole
+log. Its shape is a contract: #76 re-pointed fields without dropping any
+(ADR 0018).
 _Avoid_: summary, dashboard, report file
 
 **run_meta**:
@@ -242,61 +198,94 @@ The first log record of a Run carrying runId, timestamps, and a config
 snapshot, so cross-run analysis is not confounded by config drift.
 _Avoid_: header, preamble
 
+### Distribution
+
+**Portable package (便携包)**:
+The folder a player gets from the release zip: the program, its launcher, its
+updater and its manual, with the player's own data beside them.
+_Avoid_: installer, app, 安装包
+
+**Program directory (程序目录)**:
+The part of the portable package the program owns and an update replaces whole;
+in the package it is `app\`.
+_Avoid_: install directory, program folder
+
+**Data directory (数据目录)**:
+The part of the portable package that belongs to the player: the Mirror, the Run
+logs, the cache and their overrides. No update writes to it, and deleting it is
+the player's own act.
+_Avoid_: storage, workspace, user folder
+
+**Artifact (制品)**:
+A built file a release carries — the Console entry, the Run entry, the updater
+entry and the page — as opposed to source. A shipped program runs its artifacts
+as they are and compiles nothing.
+_Avoid_: build output, bundle, binary
+
+**Launcher (启动器)**:
+The one file a player double-clicks to start the program; in the package it is
+`启动.bat`.
+_Avoid_: entry point, starter, shortcut
+
+**Updater (更新器)**:
+The one file a player double-clicks to replace the program directory with a newer
+release; in the package it is `更新.bat`.
+_Avoid_: installer, patcher, update package (the release is the package)
+
+**Fallback point (回退点)**:
+The previous program directory, kept beside the current one after an update so the
+player can rename it back when a new version does not start. One generation only;
+in the package it is `app.old\`.
+_Avoid_: backup, snapshot, rollback
+
+**Install pointer (安装指针)**:
+The program's own note, outside the package folder, of where the installation it
+last started from lives — so the updater can still find a folder that has been
+renamed or moved.
+_Avoid_: install record, registry entry, config
+
+**Site-constants template (站点常量模板)**:
+The committed source of the configuration a release carries: the game's site
+constants, never the owner's local settings.
+_Avoid_: .env, default config, sample config
+
 ## Architecture
 
-### Network-first capture (the core principle)
+### The Gallery list is Discovery (the core principle)
 
-Discovery is network-first: a Node.js listener records every response whose
-`content-type` is `image/*`. The DOM is never the source of truth — it only
-drives scroll, clicks, and hash injection. This survives SPA virtual scroll,
-which unmounts off-screen images and makes DOM counting unreliable.
+Discovery is one unauthenticated request: `POST` the site's picture-query
+endpoint with `{ current: 1, pageSize: 2000 }` and take every `pictureUrl`. The
+list carries the whole inventory, so a Run's URL set is complete by construction
+— no rendering, no scrolling, no network capture, no session (ADR 0018).
 
 ### Discovery pipeline
 
-1. Open a persistent headed Chrome session (`viewport: null` + 1920×1080
-   window) and navigate to the wallpaper page.
-2. Inject the `#wallpaper` page hash, reload, and re-inject.
-3. Scroll the Virtual scroll lists repeatedly (dynamic `scrollHeight`), then
-   click every Thumbnail to trigger High-res preview requests.
-4. Run the Stability loop until 45s pass with no new image AND the total
-   scroll height is unchanged, for 6 consecutive rounds.
-5. Merge network captures with DOM `img[src]` URLs — dropping only
-   `data:`/`blob:` payloads, which are not URLs — and publish the result as the
-   raw capture.
-6. Partition that capture with the Site asset filter (`core/wallpaper-url.ts`)
-   — analytics pixels, site UI art, the page's own HTML — hand only Wallpapers
-   to Download, and check the drops against the Gallery list. That list is
-   fetched once, here, and reused for the Gallery state at the end of the Run.
+1. Ask the Gallery list (`core/gallery/gallery-source.ts`, one implementation).
+2. Turn the list into the Run's Discovery (`core/discovery/discovery.ts`): the
+   deduplicated URL set, the report's `discovery` block, and an empty capture
+   audit.
+3. A list failure is reported, never papered over: `coverage: null`,
+   `gallerySourceUnavailable`, `emptyResult`, no downloads.
 
 ### Download pipeline
 
-1. Extract Session cookies from the browser.
-2. Download in parallel batches of `BATCH_SIZE`; skip files that already exist
-   (Content-hash skip).
-3. On 403, retry once with full browser headers (403 retry).
-4. Summarize ok / skipped / failed + total size on disk, then refresh the
-   Gallery state from that same list: compare it with the Mirror and record the
+1. Download in parallel batches of `BATCH_SIZE`; skip files that already exist
+   (Content-hash skip). No session cookie is sent.
+2. On 403, retry once with full browser headers (403 retry).
+3. Summarize ok / skipped / failed + total size on disk, then refresh the
+   Gallery state from the same list: compare it with the Mirror and record the
    ids for the next Run.
 
 ## Gotchas
 
-- **Windows / cmd.exe**: the Discovery script must be passed via `--filename`,
-  never inline — cmd.exe mangles multi-line strings and `#`. The loader
-  materializes that file into `.run-cache/`: written only when its content
-  differs from what is on disk, never deleted, and inside the CLI's allowed
-  roots (its output directory or its working directory), which the OS temp
-  directory is not.
-- **`.env` `#` is a comment char**: `PAGE_HASH=#wallpaper` is hardcoded in
-  `core/config.ts`, not read from `.env`.
-- **Viewport matters**: the site renders a mobile layout for small viewports;
-  `viewport: null` + window size forces the desktop version.
-- **run-code runs in Node.js, not the browser**: `window`/`document` only
-  exist inside `page.evaluate()`; the cross-process bridge is
-  `window.__wpUrls` / `window.__wpLog`.
-- **undici is required**: Node's `fetch` forbids setting the `Cookie` header;
-  undici's `fetch` allows it.
-- **Fixed `scrollHeight` caps break virtual scroll**: the loop must re-read
-  `scrollHeight` each iteration, or lazy-loaded content is never reached.
-- **Network-layer decoupling**: don't gate waits on `networkidle` — the SPA
-  reports idle while lazy loads are still pending. Use the Stability loop
-  (time + height) instead.
+- **The report's shape is a contract, even where a field stopped varying**:
+  `siteAssets` and `discoveryLeak` are always empty, `coverage` is `1` or
+  `null`, and `siteAssetFalsePositive` is `{count: 0, urls: []}` whenever the
+  list was read — not `null`, which means "the list was unavailable" and is
+  tied to the Mirror gap by the run-log reader (ADR 0018).
+- **A legacy `.env` still validates**: `PAGE_PATH`, `SESSION_NAME` and
+  `PLAYWRIGHT_CONFIG` left the schema; zod ignores unknown keys, so an existing
+  file with them keeps working and the keys simply mean nothing.
+- **The list endpoint is undocumented**: a short or capped response is refused
+  (`parseGalleryList`), not reported as "new" or "missing". The failure mode is
+  loud: `gallerySourceUnavailable` + exit 1 from `check-run`.

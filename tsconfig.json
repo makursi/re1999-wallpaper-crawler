@@ -13,20 +13,22 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  // The Node program: the crawler, its tests, the repository-wide configs, and
-  // the Console's service — named by directory, so an entry point nothing
-  // imports cannot silently drop out of the check. The page (web/src) and the
-  // shared contract it reads (web/api-types.ts) are the web program's
-  // (web/tsconfig.web.json); the service is here, where `node:` types exist.
+  // The Node program: the crawler, its tests, the repository-wide configs, the
+  // Console's service, and the build that produces the shipped tree — named by
+  // directory, so an entry point nothing imports cannot silently drop out of the
+  // check. The page (web/src) and the shared contract it reads (web/api-types.ts)
+  // are the web program's (web/tsconfig.web.json); the service is here, where
+  // `node:` types exist.
   "include": [
     "core/**/*",
+    "scripts/**/*",
     "tests/**/*",
     "vitest.config.ts",
     "web/vite.config.ts",
     "web/server/**/*",
     "web/api-types.ts"
   ],
-  // The page's build output lives under the layer that produces it; `dist` at
-  // the repository root belongs to nobody now (the crawler stays build-free).
-  "exclude": ["node_modules", "web/dist"]
+  // The page's build output lives under the layer that produces it, and the
+  // built tree (`build/`, #84) is generated too: neither is a type program.
+  "exclude": ["node_modules", "web/dist", "build"]
 }

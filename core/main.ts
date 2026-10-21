@@ -1,28 +1,27 @@
-import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import process from 'node:process'
 
 import {
+  APP_ROOT,
   BASE_ORIGIN,
   BATCH_SIZE,
+  DATA_ROOT,
   GALLERY_LIST_URL,
   GALLERY_STATE_FILE,
   IMAGES_DIR,
+  IMAGES_DIR_SETTING,
   LOG_DIR,
-  PAGE_HASH,
-  PAGE_PATH,
-  PAGE_URL,
-  PLAYWRIGHT_CONFIG,
-  PROJECT_ROOT,
-  SESSION,
+  LOG_DIR_SETTING,
   USER_AGENT,
+  USER_CONFIG_NOTICE,
 } from './config.js'
-import type { DiscoveryScriptCopy } from './discovery/discovery-loader.js'
-import { materializeDiscoveryScript } from './discovery/discovery-loader.js'
-import { downloadBatch, extractCookies } from './download/download.js'
+import { ensureDataLayout } from './data-layout.js'
+import type { DiscoveryResult } from './discovery/discovery.js'
+import { discoverFromList } from './discovery/discovery.js'
+import { downloadBatch } from './download/download.js'
 import type { GalleryList } from './gallery/gallery-source.js'
-import { falsePositivesAmong, fetchGalleryList, officialNamesOf } from './gallery/gallery-source.js'
+import { fetchGalleryList } from './gallery/gallery-source.js'
 import type { GalleryStats } from './gallery/gallery-state.js'
 import {
   mergeGalleryStats,
@@ -31,36 +30,13 @@ import {
   writeGalleryState,
 } from './gallery/gallery-state.js'
 import { createLogger } from './logger.js'
-import type {
-  CaptureAudit,
-  DiscoveryStats,
-  DownloadOutcome,
-  RunMeta,
-  RunReport,
-} from './report/report.js'
-import { buildRunReport, classifyOutcomes, detectLeaks } from './report/report.js'
-import {
-  classifySiteAsset,
-  describeSiteAssetRules,
-  isWallpaperFile,
-  splitWallpaperUrls,
-  wallpaperNameOf,
-} from './wallpaper-url.js'
-
-// ── Playwright CLI wrapper ─────────────────────────────────────────
-
-function pwc(args: string, timeoutSec = 300): string {
-  return execSync(`npx playwright-cli -s=${SESSION} ${args}`, {
-    encoding: 'utf8',
-    stdio: 'pipe',
-    timeout: timeoutSec * 1000,
-    maxBuffer: 50 * 1024 * 1024,
-  })
-}
+import type { DownloadOutcome, RunMeta, RunReport } from './report/report.js'
+import { buildRunReport, classifyOutcomes } from './report/report.js'
+import { isWallpaperFile } from './wallpaper-url.js'
 
 // ── helpers ────────────────────────────────────────────────────────
 
-function newRunMeta(discoveryScript: DiscoveryScriptCopy): {
+function newRunMeta(): {
   meta: RunMeta
   config: Record<string, string | number | boolean | undefined>
 } {
@@ -69,110 +45,27 @@ function newRunMeta(discoveryScript: DiscoveryScriptCopy): {
   return {
     meta: { runId, startedAt, config: {} },
     config: {
-      // Which payload this Run executed: the copy has a fixed name, so its
-      // identity lives here instead of in the filename (#51). Twelve hex
-      // characters tell two payloads apart and still fit on one line.
-      DISCOVERY_SCRIPT_SHA: discoveryScript.sha256.slice(0, 12),
       BASE_ORIGIN,
-      PAGE_PATH,
-      PAGE_HASH,
       IMAGES_DIR,
       LOG_DIR,
-      SESSION,
       BATCH_SIZE,
-      PLAYWRIGHT_CONFIG,
       USER_AGENT,
       GALLERY_LIST_URL,
       GALLERY_STATE_FILE,
-      SITE_ASSET_FILTER: describeSiteAssetRules(),
     },
   }
 }
 
-// execSync throws an Error; anything else reaching a catch is unknown and only
-// has a useful String() form.
+// Anything reaching a catch is unknown and only has a useful String() form.
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-// An object is indexable at runtime; this is the narrowing the browser-payload
-// checks need, without an assertion that would skip the checks themselves.
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-// run-code publishes its diagnostics as `{ t, msg }` records in `window.__wpLog`.
-function isRunCodeLogEntry(value: unknown): value is { msg: string } {
-  return isRecord(value) && 'msg' in value && typeof value.msg === 'string'
-}
-
-// `playwright-cli --raw eval "JSON.stringify(...)"` sometimes hands back a JSON
-// *string* that still has to be decoded, so decode until it is not a string.
-function parseJsonPayload(raw: string): unknown {
-  const first: unknown = JSON.parse(raw)
-  return typeof first === 'string' ? JSON.parse(first) : first
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function booleanOr(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback
-}
-
-// `window.__wpStats` is the browser's word on how discovery went, so every field
-// is checked here: a truncated or stale payload must not put junk into the Run
-// report's discovery block (its `converged`/counts drive defect detection).
-function parseStats(rawStats: string): DiscoveryStats {
-  const fallback: DiscoveryStats = {
-    converged: false,
-    stableRounds: 0,
-    totalIdleSec: 0,
-    networkCount: 0,
-    domCount: 0,
-    combinedCount: 0,
-    thumbnailsClicked: 0,
-    discoveryDurationMs: 0,
-    coverage: null,
-  }
-  if (!rawStats) return fallback
-  try {
-    const parsed = parseJsonPayload(rawStats)
-    if (!isRecord(parsed)) return fallback
-    return {
-      converged: booleanOr(parsed.converged, fallback.converged),
-      stableRounds: numberOr(parsed.stableRounds, fallback.stableRounds),
-      totalIdleSec: numberOr(parsed.totalIdleSec, fallback.totalIdleSec),
-      networkCount: numberOr(parsed.networkCount, fallback.networkCount),
-      domCount: numberOr(parsed.domCount, fallback.domCount),
-      combinedCount: numberOr(parsed.combinedCount, fallback.combinedCount),
-      thumbnailsClicked: numberOr(parsed.thumbnailsClicked, fallback.thumbnailsClicked),
-      discoveryDurationMs: numberOr(parsed.discoveryDurationMs, fallback.discoveryDurationMs),
-      // Filled in by the caller, which is what asks the gallery list.
-      coverage: null,
-    }
-  } catch {
-    return fallback
-  }
-}
-
 /**
- * Share of the official list this Run's raw capture contained. This is the
- * number that says whether rendering the page is still worth it next to asking
- * the list endpoint (see the discovery-coverage open question in HISTORY.md).
- */
-function coverageOf(captured: readonly string[], list: GalleryList | null): number | null {
-  if (list === null) return null
-  const officialNames = officialNamesOf(list)
-  if (officialNames.size === 0) return null
-  const hits = new Set(captured.map(wallpaperNameOf).filter(name => officialNames.has(name)))
-  return Math.round((hits.size / officialNames.size) * 10_000) / 10_000
-}
-
-/**
- * Ask the site's own gallery list. A failure is not fatal — the Run still
- * has a capture and a mirror — but it is reported instead of guessed at.
+ * Ask the site's own gallery list. It is not a check on a capture any more — it
+ * is the Run's Discovery (#76): without it there is nothing to download, and the
+ * report says so (`gallerySourceUnavailable`, `coverage: null`) instead of
+ * guessing at a URL set.
  */
 async function loadGalleryList(
   logger: ReturnType<typeof createLogger>,
@@ -194,9 +87,7 @@ function printSummary(logger: ReturnType<typeof createLogger>, report: RunReport
   logger.info('========================================')
   logger.info('           DOWNLOAD SUMMARY')
   logger.info('========================================')
-  logger.info(
-    `  Images captured    : ${report.discovery.combinedCount}  (Site assets filtered: ${report.siteAssets.count})`,
-  )
+  logger.info(`  Wallpapers in list : ${report.discovery.combinedCount}`)
   logger.info(`  Wallpapers found   : ${m.total}`)
   logger.info(`  Successfully saved : ${m.ok}`)
   logger.info(`  Skipped (existing) : ${m.skipped}`)
@@ -270,36 +161,26 @@ function updateGalleryStats(
 function finishRun(
   logger: ReturnType<typeof createLogger>,
   meta: RunMeta,
-  discoveryStats: DiscoveryStats,
+  discovery: DiscoveryResult,
   outcomes: DownloadOutcome[],
-  capture: CaptureAudit,
   galleryList: GalleryList | null,
 ): RunReport {
   const finishedAt = new Date().toISOString()
   const metrics = classifyOutcomes(outcomes)
   const gallery = updateGalleryStats(logger, meta, finishedAt, galleryList)
   const report = buildRunReport(meta, finishedAt, {
-    discovery: discoveryStats,
+    discovery: discovery.stats,
     metrics,
     gallery,
-    ...capture,
+    ...discovery.capture,
   })
 
   logger.info(report, 'run report')
 
   const d = report.defects
-  if (d.discoveryLeak.count > 0)
-    logger.warn(
-      { defect: 'discoveryLeak', count: d.discoveryLeak.count, urls: d.discoveryLeak.urls },
-      'leaked URLs detected',
-    )
-  if (d.nonConverged)
-    logger.warn(
-      { defect: 'nonConverged', stableRounds: report.discovery.stableRounds },
-      'discovery did not converge',
-    )
+  if (d.nonConverged) logger.warn({ defect: 'nonConverged' }, 'the gallery list did not answer')
   if (d.emptyResult)
-    logger.warn({ defect: 'emptyResult' }, 'no images found — page structure may have changed')
+    logger.warn({ defect: 'emptyResult' }, 'no Wallpapers to download — was the list read?')
   if (d.persistentFailures > 0)
     logger.warn(
       { defect: 'persistentFailures', count: d.persistentFailures },
@@ -309,15 +190,6 @@ function finishRun(
     logger.warn(
       { defect: 'emptyFiles', files: d.emptyFiles },
       'downloaded files were empty (0 bytes)',
-    )
-  if (d.siteAssetFalsePositive !== null && d.siteAssetFalsePositive.count > 0)
-    logger.warn(
-      {
-        defect: 'siteAssetFalsePositive',
-        count: d.siteAssetFalsePositive.count,
-        urls: d.siteAssetFalsePositive.urls,
-      },
-      'the Site asset filter dropped URLs the official list calls Wallpapers',
     )
   if (d.gallerySourceUnavailable)
     logger.warn(
@@ -344,180 +216,72 @@ function finishRun(
 
 // ── main ────────────────────────────────────────────────────────────
 
-async function main() {
-  // The Discovery script copy is materialized before anything else — before the
-  // Run log exists, and before the browser is touched: a payload that cannot be
-  // handed to `run-code` must fail in milliseconds, and it must not leave a Run
-  // log whose missing `run_report` would be misread as a lost report. Its
-  // content is compared rather than trusted, so a Run that changes nothing
-  // writes nothing, and nothing is ever left at the repository root (#51).
-  const discoveryScript = materializeDiscoveryScript()
+/**
+ * Bring the data directory to the current layout before anything writes into
+ * it. This is the one place a Run can move the pre-#80 checkout's data (by
+ * rename); an unrecognised or newer layout refuses here, before the logger, so
+ * the data is exactly as it was found.
+ */
+function ensureUsableDataLayout(): void {
+  const result = ensureDataLayout({
+    appRoot: APP_ROOT,
+    dataRoot: DATA_ROOT,
+    configuredImagesDir: IMAGES_DIR_SETTING,
+    configuredLogDir: LOG_DIR_SETTING,
+  })
+  if (!result.ok) {
+    console.error(result.refusal.message)
+    process.exit(1)
+  }
+  for (const move of result.ready.migrated) {
+    process.stdout.write(`数据已搬迁：${move.source} → ${move.target}\n`)
+  }
+}
 
+async function main() {
+  ensureUsableDataLayout()
   const logger = createLogger(LOG_DIR)
 
-  const { meta, config } = newRunMeta(discoveryScript)
+  const { meta, config } = newRunMeta()
   logger.info(
     { type: 'run_meta', runId: meta.runId, startedAt: meta.startedAt, config },
     'run started',
   )
-  // A separate record because this is an event, not configuration: the Run's
-  // `run_meta` says *which* payload ran, this says whether it had to be written.
-  logger.info(
-    { type: 'discovery_script', path: discoveryScript.path, written: discoveryScript.written },
-    discoveryScript.written ? 'discovery script copy written' : 'discovery script copy reused',
-  )
+  // The user layer's one line, after `run_meta` and before the Run's first
+  // event: a user who edited `data/user.env` can see in the terminal and in the
+  // Run log that it was accepted, and which keys it contributed (#78). It must
+  // not precede `run_meta` — that record opens the log, and the Orphaned Run
+  // reader takes the first line as the Run's identity.
+  if (USER_CONFIG_NOTICE !== null) logger.info(USER_CONFIG_NOTICE)
 
-  // 0. Clean slate
-  logger.info('0. Preparing fresh browser session...')
-  try {
-    pwc('close-all', 10)
-  } catch {}
-  try {
-    pwc('delete-data', 10)
-  } catch {}
-  logger.info('   Session cleared.')
-
-  // 1. Open browser with real Chrome, 2560x1440 window, persistent
-  logger.info('1. Opening browser...')
-  const configPath = path.resolve(PROJECT_ROOT, PLAYWRIGHT_CONFIG)
-  pwc(`open --persistent --config=${configPath}`)
-
-  // Navigate to the page and wait for it to load
-  logger.info('1b. Navigating to wallpaper page...')
-  pwc(`goto ${PAGE_URL}`)
-  try {
-    pwc('wait-for load', 30)
-  } catch {}
-
-  // 2. Run comprehensive image discovery script
-  logger.info('2. Running image discovery (scroll + thumbnails)...')
-  logger.info('   (this may take several minutes)')
-
-  // The payload goes in by file, never inline: cmd.exe mangles multi-line code
-  // with # and quotes (AGENTS.md › "Windows: run-code uses --filename").
-  try {
-    execSync(`npx playwright-cli -s=${SESSION} run-code --filename="${discoveryScript.path}"`, {
-      encoding: 'utf8',
-      stdio: 'pipe',
-      timeout: 900_000, // slow networks: discovery can take >10min (425s observed)
-      maxBuffer: 50 * 1024 * 1024,
-    })
-  } catch (err: unknown) {
-    logger.error({ err: errorMessage(err) }, 'run-code execution failed')
-  }
-
-  // 3. Extract URLs from browser (merged network + DOM from run-code)
-  logger.info('3. Extracting image URLs from browser...')
-
-  const rawJson = execSync(
-    `npx playwright-cli -s=${SESSION} --raw eval "JSON.stringify(window.__wpUrls || [])"`,
-    {
-      encoding: 'utf8',
-      stdio: 'pipe',
-      timeout: 30_000,
-      maxBuffer: 50 * 1024 * 1024,
-    },
-  ).trim()
-
-  let allUrls: string[]
-  try {
-    const parsed = parseJsonPayload(rawJson)
-    const captured: unknown[] = Array.isArray(parsed) ? parsed : []
-    allUrls = captured.filter((url): url is string => typeof url === 'string')
-  } catch {
-    logger.error('Failed to parse URLs from browser.')
-    allUrls = []
-  }
-  logger.info(`   Total unique images: ${allUrls.length}`)
-
-  const leakedUrls = detectLeaks(allUrls)
-  if (leakedUrls.length > 0) {
-    logger.warn(`   Leaked non-image URLs: ${leakedUrls.length}`)
-    for (const u of leakedUrls) logger.warn(`     - ${u}`)
-  }
-
-  // 3a. Drop Site assets — the page HTML, analytics pixels, site UI art — so
-  // they never reach Download. The raw capture above is left untouched for the
-  // leak check, and the drop is recorded in the report.
-  const { wallpapers, siteAssets } = splitWallpaperUrls(allUrls)
-  if (siteAssets.length > 0) {
-    logger.info(`   Site assets filtered: ${siteAssets.length}`)
-    for (const u of siteAssets) {
-      const rule = classifySiteAsset(u)
-      logger.info(`     - ${u}  [${rule?.reason ?? 'unknown'}]`)
-    }
-  }
-  logger.info(`   Wallpapers to download: ${wallpapers.length}`)
-
-  // 3a-1. Ask the site's own gallery list. It is the authority on what the
-  // gallery holds, and therefore on whether the filter above kept the right
-  // things — a URL it lists is a Wallpaper by definition.
+  // 1. Discovery. One unauthenticated request carries the whole gallery, so
+  // every Run starts from the same complete URL set the site lists (#76).
+  logger.info('1. Asking the gallery list...')
+  const discoveryStartedAt = Date.now()
   const galleryList = await loadGalleryList(logger)
-  // A dropped URL the list calls a Wallpaper is a rule mistake; `null` means the
-  // list was unavailable and nothing could be checked (ADR 0006).
-  const capture: CaptureAudit = {
-    leakedUrls,
-    siteAssets,
-    siteAssetFalsePositive: falsePositivesAmong(siteAssets, galleryList),
-  }
+  const discovery = discoverFromList(galleryList, Date.now() - discoveryStartedAt)
+  logger.info(`   Wallpapers to download: ${discovery.urls.length}`)
 
-  // 3b. Extract run-code diagnostic log
-  try {
-    const rawLog = execSync(
-      `npx playwright-cli -s=${SESSION} --raw eval "JSON.stringify(window.__wpLog || [])"`,
-      {
-        encoding: 'utf8',
-        stdio: 'pipe',
-        timeout: 15_000,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    ).trim()
-    const parsed = parseJsonPayload(rawLog)
-    const entries: unknown[] = Array.isArray(parsed) ? parsed : []
-    for (const entry of entries) {
-      if (isRunCodeLogEntry(entry)) logger.info({ phase: 'run-code' }, entry.msg)
-    }
-  } catch {
-    logger.warn('Failed to extract run-code diagnostic log.')
-  }
-
-  // 3c. Extract structured discovery stats
-  let discoveryStats: DiscoveryStats
-  try {
-    const rawStats = execSync(
-      `npx playwright-cli -s=${SESSION} --raw eval "JSON.stringify(window.__wpStats || {})"`,
-      {
-        encoding: 'utf8',
-        stdio: 'pipe',
-        timeout: 15_000,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    ).trim()
-    discoveryStats = parseStats(rawStats)
-    discoveryStats.coverage = coverageOf(allUrls, galleryList)
-  } catch {
-    logger.warn('Failed to extract discovery stats.')
-    discoveryStats = parseStats('')
-  }
-
-  if (wallpapers.length === 0) {
-    logger.warn('No Wallpapers found. The page structure may have changed.')
-    printSummary(logger, finishRun(logger, meta, discoveryStats, [], capture, galleryList))
+  if (discovery.urls.length === 0) {
+    logger.warn('No Wallpapers to download: the gallery list was not read.')
+    printSummary(logger, finishRun(logger, meta, discovery, [], galleryList))
     return
   }
 
-  // 4. Extract cookies for download
-  logger.info('4. Extracting cookies...')
-  extractCookies(pwc)
-
-  // 5. Download all images
-  logger.info('5. Downloading images...')
+  // 2. Download every URL in the list.
+  logger.info('2. Downloading images...')
   fs.mkdirSync(IMAGES_DIR, { recursive: true })
 
-  const outcomes = await downloadBatch(wallpapers, IMAGES_DIR, BATCH_SIZE, logger)
+  const outcomes = await downloadBatch(
+    discovery.urls,
+    IMAGES_DIR,
+    BATCH_SIZE,
+    { baseOrigin: BASE_ORIGIN, userAgent: USER_AGENT },
+    logger,
+  )
 
-  // 6. Summarize, report and print
-  printSummary(logger, finishRun(logger, meta, discoveryStats, outcomes, capture, galleryList))
+  // 3. Summarize, report and print.
+  printSummary(logger, finishRun(logger, meta, discovery, outcomes, galleryList))
 }
 
 main().catch(err => {

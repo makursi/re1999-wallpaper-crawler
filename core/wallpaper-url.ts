@@ -1,10 +1,12 @@
 // ── The Wallpaper URL set: the Discovery → Download join ────────────
 //
-// Discovery captures every image request the SPA makes, and some of those are
-// not Wallpapers: the page's own HTML, analytics pixels, and the site's UI art
-// (background, music-player covers, icons). This module is the single place
-// that decides which captured URL is a Wallpaper, so Discovery's output and
-// Download's input cannot drift apart.
+// Discovery once captured every image request the SPA made, and some of those
+// were not Wallpapers: the page's own HTML, analytics pixels, and the site's UI
+// art (background, music-player covers, icons). Since #76 the Gallery list is
+// the Run's URL set (docs/adr/0018), so these rules no longer sit on the Run's
+// path — they remain the vocabulary for "is this a Wallpaper" (the Console's
+// tile check, the leak accounting older Run logs still carry), and the mirror
+// check still uses `isWallpaperFile` to recognise a file on disk.
 
 export const IMAGE_EXTENSIONS: readonly string[] = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 

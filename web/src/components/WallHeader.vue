@@ -5,6 +5,11 @@
 // holds, and what the two disagree about. The eyebrow tag carries the Chinese
 // name of the view, so the display mark leads and the reader still knows what
 // this is (ADR 0015, story 20).
+//
+// A failed read is not printed here. The raw failure (`HTTP 500`, a transport
+// message) is the service's vocabulary, not the reader's; #83 puts one plain
+// sentence and a retry control in its place, and the retry is the view's — this
+// component only asks for it.
 
 import { computed } from 'vue'
 
@@ -15,9 +20,10 @@ import Message from '../i18n/Message.vue'
 const props = defineProps<{
   /** The wall's one read; `null` until it arrives. */
   gallery: ConsoleGalleryPayload | null
-  /** The read's own failure, if it had one. */
+  /** The read's own failure, if it had one. Only its presence is shown. */
   failure: string | null
 }>()
+const emit = defineEmits<{ retry: [] }>()
 
 /** The official total as the reader sees it: a number, or "not read". */
 const officialTotal = computed(() => {
@@ -27,6 +33,11 @@ const officialTotal = computed(() => {
 
 /** The newest-Run clause, or nothing when there is nothing to compare against. */
 const newestRunAdded = computed(() => props.gallery?.newSinceLastRun ?? undefined)
+
+/** Whether a retry control has anything to retry: a failed read or an unread list. */
+const canRetry = computed(
+  () => props.failure !== null || (props.gallery !== null && !props.gallery.listAvailable),
+)
 </script>
 
 <template>
@@ -59,7 +70,7 @@ const newestRunAdded = computed(() => props.gallery?.newSinceLastRun ?? undefine
         <Message message="gallery.newestRunAdded" :params="{ newSinceLastRun: newestRunAdded }" />
       </p>
     </div>
-    <p v-if="failure !== null" class="text-danger text-sm">{{ failure }}</p>
+    <p v-if="failure !== null" class="text-danger text-sm">{{ t('wall.readFailed') }}</p>
     <p v-else-if="gallery === null" class="text-muted text-sm">{{ t('gallery.reading') }}</p>
     <p v-else-if="!gallery.listAvailable" class="max-w-[52rem] text-muted text-sm">
       {{ t('gallery.listUnavailable') }}
@@ -70,5 +81,15 @@ const newestRunAdded = computed(() => props.gallery?.newSinceLastRun ?? undefine
         :params="{ missing: gallery.mirrorGap.missing, extra: gallery.mirrorGap.extra }"
       />
     </p>
+    <!-- The retry the failure sentence asks for: re-read the list and the
+         Mirror, which is the only action either state has. -->
+    <button
+      v-if="canRetry"
+      type="button"
+      class="action-button self-start px-3 py-1 text-sm"
+      @click="emit('retry')"
+    >
+      <span class="i-ph-arrow-clockwise mr-1" aria-hidden="true" />{{ t('action.retry') }}
+    </button>
   </div>
 </template>

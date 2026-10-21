@@ -20,7 +20,6 @@
     ".playwright-cli",
     "pnpm-lock.yaml",
     "TRASH.md",
-    "**/*.md",
-    "scripts/run-discovery.js"
+    "**/*.md"
   ]
 }

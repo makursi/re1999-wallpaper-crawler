@@ -1,0 +1,189 @@
+name: Release
+
+# One tag, one downloadable artifact, and nothing public until a human has
+# looked at it (#88).
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# builds the portable zip from a clean Windows checkout and creates a **draft**
+# GitHub Release named for the tag, with the matching `CHANGELOG.md` section as
+# its body. It never publishes: the draft is the last step, so a failure in any
+# earlier step leaves no Release at all.
+#
+# ── The human step (deliberately not automated) ─────────────────────
+#
+#   1. Open the draft Release on the repository's Releases page and download
+#      `re1999-wallpaper-crawler-vX.Y.Z.zip`.
+#   2. Extract it on a clean Windows machine (no Node, no pnpm, no checkout),
+#      double-click 启动.bat, let it bind, and check: the page opens, the
+#      version in the page's corner is the tag, a thumbnail renders, and a Run
+#      can start. The manual inside the package says what a player should see.
+#   3. Only then publish the draft. If the smoke test fails, delete the draft
+#      and delete the tag — do not publish a package that has never been run.
+#
+# `workflow_dispatch` is the dry run: it runs every build step with
+# package.json's version but creates no Release, because there is no tag yet.
+#
+# ── Why windows-latest ──────────────────────────────────────────────
+#
+# The artifact carries a win32-x64 `sharp` native module and a `node.exe`; a
+# Linux build would produce a package that cannot start on a player's machine
+# (#86, #87). The runtime that is packaged is the runner's own `node.exe` —
+# the same one the gates just ran on — passed through the packager's
+# `RE1999_NODE_EXE` seam instead of being guessed at.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# A release build must not be cancelled halfway by another push to the same
+# ref; a tag is unique, so allowing in-progress runs to finish costs nothing.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  # The draft Release is created with the default GITHUB_TOKEN. Nothing here
+  # needs any other scope, and no secret is used.
+  contents: write
+
+jobs:
+  release:
+    name: build the portable package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs pnpm (version from `packageManager`), a Node.js runtime, and
+      # runs `pnpm install` — the same setup as ci.yml. Its node.exe is the
+      # portable runtime this job packages.
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          require-lockfile: true
+
+      # The checks below are functions with tests, not conditions inside this
+      # file: `scripts/release-tag.ts` owns tag/version agreement and
+      # `scripts/release-notes.ts` owns the changelog extraction.
+      - name: Resolve the release version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ($env:EVENT_NAME -eq 'push') {
+            $version = pnpm exec tsx scripts/release-tag.ts $env:REF_NAME
+          } else {
+            $version = pnpm exec tsx scripts/release-tag.ts --package
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'the version check printed nothing' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # Runs before the build on purpose: a tag without a changelog section is
+      # refused in seconds, and a release with an empty body is worse than a
+      # failed job. The file lives in the runner's temp directory, not the
+      # checkout, so the build tree stays exactly what the tag names.
+      - name: Extract the changelog section
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          pnpm exec tsx scripts/release-notes.ts $env:RELEASE_VERSION --out $notes
+
+      # The same gates ci.yml runs, in the same order.
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format
+        run: pnpm fmt:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build web bundle
+        run: pnpm build:web
+
+      - name: Test
+        run: pnpm test
+
+      # Resolve the runtime explicitly rather than assuming a PATH shim is the
+      # executable: the packager copies this exact file into `app\node.exe`.
+      - name: Resolve the Node runtime to ship
+        id: node
+        run: |
+          $exe = node -p "process.execPath"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($exe)) {
+            throw 'cannot resolve the runner Node executable'
+          }
+          "exe=$exe" >> $env:GITHUB_OUTPUT
+
+      # `pnpm package` = `pnpm build` + the packager. It asserts the whitelist
+      # before writing the zip, so an archive carrying anything outside
+      # scripts/package-layout.ts fails here with the offending paths named.
+      - name: Package the portable release
+        env:
+          RE1999_NODE_EXE: ${{ steps.node.outputs.exe }}
+        run: pnpm package
+
+      # The packager names the archive after package.json, and the version step
+      # proved the tag agrees with it; this is the cheap last look before the
+      # artifact is attached to a Release.
+      - name: Check the archive is the one this release names
+        id: archive
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $archive = "dist-package/re1999-wallpaper-crawler-v$env:RELEASE_VERSION.zip"
+          if (-not (Test-Path -LiteralPath $archive)) {
+            throw "the packager did not produce $archive"
+          }
+          $size = (Get-Item -LiteralPath $archive).Length
+          if ($size -lt 1MB) {
+            throw "$archive is only $size bytes — a package that small is not one"
+          }
+          Write-Output "archive: $archive ($([math]::Round($size / 1MB, 1)) MB)"
+          "zip=$archive" >> $env:GITHUB_OUTPUT
+
+      # The draft Release. `gh release create` is the last step, so when any
+      # build step failed there is nothing to publish and nothing to clean up.
+      # A release that already exists is never replaced by this workflow: the
+      # maintainer deletes it deliberately if a rebuild is what they mean.
+      - name: Create the draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          ARCHIVE: ${{ steps.archive.outputs.zip }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          if ($env:RELEASE_VERSION -ne $tag.Substring(1)) {
+            throw "internal: the resolved version and the tag disagree ($env:RELEASE_VERSION vs $tag)"
+          }
+
+          gh release view $tag --json isDraft 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            throw "a Release for $tag already exists — delete that draft first if you mean to rebuild it; this workflow never replaces a release"
+          }
+
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          gh release create $tag $env:ARCHIVE --draft --title $tag --notes-file $notes
+          if ($LASTEXITCODE -ne 0) {
+            # A failed upload can leave an empty draft behind; a failed build
+            # must not produce a Release at any stage.
+            gh release delete $tag --yes 2>$null | Out-Null
+            throw 'gh release create failed; any half-made draft was removed'
+          }
+
+          Write-Output "draft release: $tag (not published — the smoke test and publish are the maintainer's)"
+
+      - name: Dry run complete
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          Write-Output "Dry run: no Release was created. The archive is $env:RELEASE_ARCHIVE and the notes are at $notes."
+        env:
+          RELEASE_ARCHIVE: ${{ steps.archive.outputs.zip }}

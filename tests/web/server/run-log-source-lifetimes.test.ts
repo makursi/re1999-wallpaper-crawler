@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { RunLogSourceOptions } from '../../../web/server/run-log-source.js'
 import { createRunLogSource } from '../../../web/server/run-log-source.js'
 import {
-  fixtureProjectRoot,
+  fixtureAppRoot,
   LOG_NAME,
   plainLine,
   runLog,
@@ -27,7 +27,7 @@ afterEach(() => {
 })
 
 function fixture(): RunLogSourceOptions {
-  const root = fixtureProjectRoot('console-run-log-lifetime-')
+  const root = fixtureAppRoot('console-run-log-lifetime-')
   roots.push(root)
   return runLogSourceOptionsIn(root)
 }

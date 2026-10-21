@@ -1,66 +1,50 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
-import type { ConsoleRunStartPayload } from '../api-types.js'
 import RunReportBlock from './components/RunReportBlock.vue'
 import RunSetupNotice from './components/RunSetupNotice.vue'
 import RunVerdict from './components/RunVerdict.vue'
 import { useConsoleStatus } from './composables/useConsoleStatus'
+import { useRunStart } from './composables/useRunStart'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
-import type { RefusalView } from './i18n/refusal'
-import { refusalFromError, refusalOf, refusalTextOf } from './i18n/refusal'
-import { postJson } from './lib/console-api'
+import { startLabelKey } from './lib/run-start'
 import OrphanPanel from './OrphanPanel.vue'
 
 // The page's one status (`composables/useConsoleStatus.ts`): the panel shows the
 // same snapshot the navigation's Mirror count is drawn from, and it no longer
 // owns a poll of its own.
 const { status, refresh } = useConsoleStatus()
-/** The last refusal, in the three shapes the page can meet one (#47). */
-const refusal = ref<RefusalView | null>(null)
-const starting = ref(false)
-
-/** The refusal as one sentence; `null` when there is none to show. */
-const refusalText = computed(() => refusalTextOf(refusal.value, 'run.refusedStart'))
+// The page's one start (`composables/useRunStart.ts`): the wall's band offers
+// the same control on an empty wall, and the two must never both look ready.
+const { starting, refusalText, start } = useRunStart()
 
 /**
  * Progress, in this project's own vocabulary: Wallpapers in the Mirror against
- * the Gallery total. Both come from contract facts — the Mirror's file count
- * and the Gallery list — never from a per-file record in the Run log.
+ * the Gallery total (#83). Both are live contract facts — the status route
+ * re-counts the Mirror per read and the list's total is the same one the wall
+ * uses — so a Run in flight reads "downloaded N of M" and not a spinner.
  */
-const progress = computed(() => {
-  const mirror = status.value?.mirrorCount ?? 0
-  const total = status.value?.officialTotal
-  return total === null || total === undefined
-    ? t('app.wallpapersInMirror', { count: mirror })
-    : t('app.mirrorAgainstTotal', { count: mirror, total })
-})
+const progressKey = computed(() =>
+  status.value?.officialTotal == null ? 'wall.progressUnknownTotal' : 'wall.progress',
+)
+const progressParams = computed(() => ({
+  done: status.value?.mirrorCount ?? 0,
+  total: status.value?.officialTotal ?? 0,
+}))
 
-/** The in-flight line's one parameter: the Mirror-against-total progress phrase. */
-const inFlightParams = computed(() => ({ progress: progress.value }))
+/** The start control's word: first fetch, continue, or another try after a problem. */
+const startWord = computed(() =>
+  t(startLabelKey(status.value?.mirrorCount ?? 0, status.value?.verdict === 'defect')),
+)
 
-async function startRun(): Promise<void> {
-  starting.value = true
-  refusal.value = null
-  try {
-    const reply = await postJson<ConsoleRunStartPayload>('/api/run')
-    if (!reply.ok || !reply.body.started) {
-      // The service sends a code and its parameters; the sentence is the
-      // dictionary's, in the reader's language (#47). A body without one is an
-      // HTTP refusal (the guard's 403), named by its status instead.
-      refusal.value = refusalOf(reply.status, reply.body.refusal)
-      return
-    }
-    // The Run's identity is its log, so it is read back rather than assumed.
-    await refresh()
-  } catch (error) {
-    // A transport failure is a runtime message, not copy (docs/adr/0014).
-    refusal.value = refusalFromError(error)
-  } finally {
-    starting.value = false
-  }
-}
+/**
+ * The newest Run could not reach the site. That is one plain sentence and the
+ * start control (re-worded as "fetch again"), never the defect rows alone.
+ */
+const siteUnreachable = computed(
+  () => status.value?.report?.defects.gallerySourceUnavailable === true,
+)
 
 // Closing the page never stops a Run: nothing here owns a Run, and there is no
 // stop control to add (ADR 0009). The first status read belongs to the store,
@@ -84,9 +68,13 @@ async function startRun(): Promise<void> {
     <p v-if="status === null">{{ t('run.readingLog') }}</p>
 
     <template v-else>
-      <p v-if="status.state === 'running'">
-        <Message message="run.inFlight" :params="inFlightParams" />
-      </p>
+      <!-- A Run in flight: the two counts, not a spinner (#83), and what
+           closing the window means. There is no stop control (ADR 0016). -->
+      <template v-if="status.state === 'running'">
+        <p class="font-serif">{{ t('wall.runningHeading') }}</p>
+        <p><Message :message="progressKey" :params="progressParams" /></p>
+        <p class="text-muted text-sm">{{ t('wall.runningHint') }}</p>
+      </template>
       <!-- An Orphaned Run has its own component: it is the one state with an
            action, and the action is a POST the page must not get wrong. -->
       <OrphanPanel v-else-if="status.state === 'orphaned'" :status="status" @cleaned="refresh" />
@@ -94,6 +82,9 @@ async function startRun(): Promise<void> {
       <template v-else>
         <RunVerdict />
         <RunReportBlock />
+        <!-- One human sentence for the site being unreachable, with the start
+             control below as the retry (#83). -->
+        <p v-if="siteUnreachable" class="text-danger">{{ t('run.siteUnreachable') }}</p>
       </template>
     </template>
 
@@ -102,11 +93,11 @@ async function startRun(): Promise<void> {
         type="button"
         class="action-button"
         :disabled="starting || status?.state === 'running'"
-        @click="startRun"
+        @click="start"
       >
         <!-- An action control: the regular Phosphor weight, never the light
              weight reserved for large marks and navigation. -->
-        <span class="i-ph-play mr-1" aria-hidden="true" />{{ t('run.start') }}
+        <span class="i-ph-play mr-1" aria-hidden="true" />{{ startWord }}
       </button>
     </p>
     <p v-if="refusalText !== null" class="text-danger">{{ refusalText }}</p>

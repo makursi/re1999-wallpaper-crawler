@@ -9,7 +9,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { RunLauncher } from '../../../web/server/run-control.js'
 import {
-  createBrowserSessionCloser,
   createRunCleaner,
   createRunLauncher,
   createRunStarter,
@@ -63,9 +62,8 @@ function launcherWith(
 ): RunLauncher {
   return createRunLauncher({
     nodePath: 'C:\\nvm4w\\nodejs\\node.exe',
-    tsxEntry: 'C:\\root\\node_modules\\tsx\\dist\\cli.mjs',
-    mainEntry: 'C:\\root\\core\\main.ts',
-    projectRoot: 'C:\\root',
+    runEntry: 'C:\\root\\run.js',
+    appRoot: 'C:\\root',
     platform,
     ...overrides,
   })
@@ -95,7 +93,7 @@ describe('killProcessTree', () => {
     expect(calls).toHaveLength(1)
     const [call] = calls
     // The pid the Console recorded at spawn time — never an image name, which
-    // would also kill a Chrome the owner opened by hand.
+    // would also kill a process the owner started by hand.
     expect(call.command).toBe('taskkill')
     expect(call.args).toEqual(['/PID', '4321', '/T', '/F'])
     // The notes' rule: no pipe of our own, or a confined host refuses it.
@@ -137,52 +135,11 @@ describe('killProcessTree', () => {
   })
 })
 
-describe('createBrowserSessionCloser', () => {
-  it('runs the CLI directly where it is a program', () => {
-    const { spawn, calls } = spawner()
-
-    createBrowserSessionCloser({ sessionName: 'bluepoch', platform: 'linux', spawn })()
-
-    expect(calls).toHaveLength(1)
-    expect(calls[0].command).toBe('playwright-cli')
-    // The same named session the pipeline reuses (core/config.ts › SESSION).
-    expect(calls[0].args).toEqual(['-s=bluepoch', 'close-all'])
-    expect(calls[0].options.stdio).toBe('ignore')
-  })
-
-  it('goes through cmd.exe on Windows, where the global CLI is a .cmd shim', () => {
-    const { spawn, calls } = spawner()
-
-    // Measured on this machine: `spawn('playwright-cli', …, {shell: false})` is
-    // ENOENT, because npm installs `playwright-cli.cmd`/`.ps1`, which
-    // CreateProcess cannot start. The command is unchanged; only its launcher is.
-    createBrowserSessionCloser({ sessionName: 'bluepoch', platform: 'win32', spawn })()
-
-    expect(calls).toHaveLength(1)
-    expect(calls[0].command).toBe('cmd.exe')
-    expect(calls[0].args).toEqual(['/d', '/s', '/c', 'playwright-cli -s=bluepoch close-all'])
-    expect(calls[0].options.stdio).toBe('ignore')
-  })
-
-  it('stays quiet when the CLI cannot be launched: the log is the truth', () => {
-    const child = new FakeChild()
-    const { spawn } = spawner(child)
-    const close = createBrowserSessionCloser({ sessionName: 'bluepoch', platform: 'linux', spawn })
-
-    expect(() => close()).not.toThrow()
-    expect(() => child.emit('error')).not.toThrow()
-  })
-})
-
 describe('createRunCleaner', () => {
   it('refuses to clean under a Run in flight, and says why', async () => {
-    let closed = 0
     let acknowledged = 0
     const clean = createRunCleaner({
       isRunInFlight: () => true,
-      closeBrowserSession: () => {
-        closed++
-      },
       acknowledgeOrphan: () => {
         acknowledged++
       },
@@ -193,26 +150,21 @@ describe('createRunCleaner', () => {
     expect(result.cleaned).toBe(false)
     expect(result.status).toBe(409)
     expect(result.refusal).toEqual({ code: 'run-busy', missing: [] })
-    // Untouched: cleaning under a live Run would close its Browser session.
-    expect(closed).toBe(0)
+    // Untouched: cleaning under a live Run would withdraw its claim while it
+    // is still writing.
     expect(acknowledged).toBe(0)
   })
 
-  it('closes the leftover session and acknowledges the orphan when it can', async () => {
-    let closed = 0
+  it('acknowledges the orphan when it can', async () => {
     let acknowledged = 0
     const clean = createRunCleaner({
       isRunInFlight: () => false,
-      closeBrowserSession: () => {
-        closed++
-      },
       acknowledgeOrphan: () => {
         acknowledged++
       },
     })
 
     expect(await clean()).toMatchObject({ cleaned: true, status: 200, refusal: null })
-    expect(closed).toBe(1)
     expect(acknowledged).toBe(1)
   })
 })

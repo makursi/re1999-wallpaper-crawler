@@ -84,9 +84,9 @@ describe('the locale dictionary', () => {
   it('interpolates the parameters a message names, in either language', () => {
     // Typed as a `MessageKey`, which is what a component's `t()` call passes: a
     // key the dictionary does not carry is a compile error, not a blank line.
-    const key: MessageKey = 'app.wallpapersInMirror'
-    expect(translate('zh-CN', key, { count: 12 })).toBe('镜像中有 12 张壁纸')
-    expect(translate('en', key, { count: 12 })).toBe('12 Wallpapers in the Mirror')
+    const key: MessageKey = 'nav.mirrorCount'
+    expect(translate('zh-CN', key, { count: 12 })).toBe('镜像 12')
+    expect(translate('en', key, { count: 12 })).toBe('Mirror 12')
   })
 
   it('returns the message unchanged when it names no parameters', () => {
@@ -103,10 +103,9 @@ describe('the locale dictionary', () => {
   it('splits a message at its parameters, so a value can be a data cell', () => {
     // The pieces are what `Message.vue` renders: the parameter's value marked by
     // name, the sentence's own text around it unmarked.
-    expect(translateParts('zh-CN', 'app.wallpapersInMirror', { count: 12 })).toEqual([
-      { text: '镜像中有 ', name: null },
+    expect(translateParts('zh-CN', 'nav.mirrorCount', { count: 12 })).toEqual([
+      { text: '镜像 ', name: null },
       { text: '12', name: 'count' },
-      { text: ' 张壁纸', name: null },
     ])
   })
 
@@ -122,14 +121,15 @@ describe('the locale dictionary', () => {
 
 /**
  * The setup notice (#60): with no usable `.env`, the Run panel has to tell a
- * first-time reader what to create before they click anything. The two lines
- * are the site's constants, not copy to be translated — the same two lines
- * `README.md`'s quick start gives — so both locales carry them verbatim, and
- * the sentence that introduces them names the file the reader creates.
+ * first-time reader what to create before they click anything. The line is the
+ * site's constant, not copy to be translated — the same line `README.md`'s quick
+ * start gives — so both locales carry it verbatim, and the sentence that
+ * introduces it names the file the reader creates. #76 dropped the page path
+ * with the browser crawl, so one line is all a Run needs.
  */
 describe('the setup notice', () => {
-  it('gives the two .env lines verbatim in both locales', () => {
-    const lines = 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html'
+  it('gives the .env line verbatim in both locales', () => {
+    const lines = 'BASE_ORIGIN=https://re.bluepoch.com'
     for (const locale of LOCALES) {
       expect(translate(locale, 'run.setup.lines')).toBe(lines)
     }
@@ -138,6 +138,30 @@ describe('the setup notice', () => {
   it('names the file the reader creates', () => {
     for (const locale of LOCALES) {
       expect(translate(locale, 'run.setup.file', { file: '.env' })).toContain('.env')
+    }
+  })
+})
+
+/**
+ * The update notice (#81): one line and one link, in both languages. The
+ * service sends a version and a Releases URL and no sentence, so the two pieces
+ * of copy below are all the reader sees; the parity tests above already make a
+ * locale that forgot one of them a failure.
+ */
+describe('the update notice', () => {
+  it('names the newer version in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'update.available', { version: '1.2.3' })).toContain('1.2.3')
+    }
+  })
+
+  it('offers the Releases page, not a download', () => {
+    // The copy names where to read and fetch; the Console never downloads or
+    // replaces anything, and the dictionary is where that promise would break.
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'update.releases')
+      expect(copy.toLowerCase()).toContain('release')
+      expect(copy.toLowerCase()).not.toContain('download')
     }
   })
 })
@@ -187,7 +211,7 @@ describe('every service code has copy in both locales', () => {
         GALLERY_ROW_STATES.length,
     )
     expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
-    expect([...PREREQUISITE_CODES]).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
+    expect([...PREREQUISITE_CODES]).toEqual(['env-file'])
     expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
     expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
   })
@@ -203,5 +227,146 @@ describe('every service code has copy in both locales', () => {
   it('gives every code its own message rather than sharing one', () => {
     const keys = codeKeys.map(([, key]) => key)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+/**
+ * The first-run wall (#83). A fresh install shows an empty wall, and an empty
+ * wall has to explain itself instead of looking broken: one obvious action, one
+ * honest line about the size of the first fetch, and no suggestion that
+ * anything starts by itself. These pin the *numbers* and the promises, because
+ * those are what a reader decides on — "about 2 GB" is the whole point.
+ */
+describe('the first-run wall', () => {
+  it('names the scale of the first fetch in numbers, in both locales', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'wall.emptyScale')
+      // About 1000+ wallpapers, about 2 GB, 10–40 minutes: three numbers, never
+      // an adjective ("large", "a while", "some time").
+      expect(copy, `${locale}: ${copy}`).toMatch(/1[,.]?000/)
+      expect(copy, `${locale}: ${copy}`).toContain('2 GB')
+      expect(copy, `${locale}: ${copy}`).toContain('10')
+      expect(copy, `${locale}: ${copy}`).toContain('40')
+    }
+  })
+
+  it('says the reader starts it, and nothing starts on its own', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'wall.emptyBody')
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /只有你|不会自己/ : /until you|never starts|on its own/i,
+      )
+    }
+  })
+
+  it('says an interruption resumes rather than restarts, in both locales', () => {
+    for (const locale of LOCALES) {
+      const before = translate(locale, 'wall.emptyResumeHint')
+      const after = translate(locale, 'wall.resumeBody', { remaining: 710 })
+      expect(before, `${locale}: ${before}`).toMatch(locale === 'zh-CN' ? /跳过/ : /skip/i)
+      expect(after, `${locale}: ${after}`).toMatch(locale === 'zh-CN' ? /跳过/ : /skip/i)
+      // The resume band names what is still missing; "N of M" alone leaves the
+      // reader doing subtraction.
+      expect(after, `${locale}: ${after}`).toContain('710')
+    }
+  })
+
+  it('names both counts in the progress sentence, not a spinner', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'wall.progress', { done: 300, total: 1010 })
+      expect(copy, `${locale}: ${copy}`).toContain('300')
+      expect(copy, `${locale}: ${copy}`).toContain('1010')
+    }
+  })
+
+  it('offers one action for an empty wall and the continue action for a resume', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'wall.start')).not.toBe('')
+      expect(translate(locale, 'wall.continue')).not.toBe('')
+      expect(translate(locale, 'wall.start')).not.toBe(translate(locale, 'wall.continue'))
+    }
+  })
+})
+
+/**
+ * The three verdicts (#83). Their meanings do not move — clean / explained /
+ * defect stay what `assessRun` decided — but the page's words for them are a
+ * player's, not a maintainer's: no service code, and none of the internal terms
+ * the old labels used.
+ */
+describe('the verdicts in the reader’s words', () => {
+  it('never shows the service’s verdict code', () => {
+    for (const code of CONSOLE_VERDICTS) {
+      const label = translate('en', VERDICT_MESSAGE_KEYS[code])
+      expect(label.toLowerCase(), `${code}: ${label}`).not.toContain(code)
+    }
+  })
+
+  it('does not reuse the internal Chinese terms', () => {
+    for (const code of CONSOLE_VERDICTS) {
+      const label = translate('zh-CN', VERDICT_MESSAGE_KEYS[code])
+      expect(['干净', '已解释', '缺陷'], `${code}: ${label}`).not.toContain(label)
+    }
+  })
+
+  it('says clean means nothing went wrong', () => {
+    expect(translate('zh-CN', VERDICT_MESSAGE_KEYS.clean)).toMatch(/完成|没有发现问题/)
+    expect(translate('en', VERDICT_MESSAGE_KEYS.clean).toLowerCase()).toMatch(
+      /nothing wrong|no problem|finished/,
+    )
+  })
+
+  it('says explained means routine notes, not a failure', () => {
+    expect(translate('zh-CN', VERDICT_MESSAGE_KEYS.explained)).toMatch(/常规/)
+    expect(translate('zh-CN', VERDICT_MESSAGE_KEYS.explained)).toMatch(/不算失败/)
+    expect(translate('en', VERDICT_MESSAGE_KEYS.explained).toLowerCase()).toMatch(/routine/)
+    expect(translate('en', VERDICT_MESSAGE_KEYS.explained).toLowerCase()).toMatch(
+      /not failures|not a failure/,
+    )
+  })
+
+  it('says defect means something went wrong', () => {
+    expect(translate('zh-CN', VERDICT_MESSAGE_KEYS.defect)).toMatch(/问题/)
+    expect(translate('en', VERDICT_MESSAGE_KEYS.defect).toLowerCase()).toMatch(/wrong|problem/)
+  })
+})
+
+/**
+ * A failure, in one human sentence (#83): an offline machine or an unreachable
+ * site must not print a stack, an `HTTP 500` or a transport message at a player.
+ * The copy below is what stands between them and one of those, so it is held to
+ * the same bar in both languages — and it has to say what to do next, which is
+ * what makes the retry control beside it make sense.
+ */
+describe('a failure speaks plainly', () => {
+  const failureKeys: MessageKey[] = [
+    'wall.readFailed',
+    'gallery.listUnavailable',
+    'run.siteUnreachable',
+    'error.connection',
+    'console.readFailed',
+  ]
+
+  it('never prints a stack, an HTTP status or a transport code', () => {
+    for (const key of failureKeys) {
+      for (const locale of LOCALES) {
+        const copy = translate(locale, key)
+        expect(copy, `${key} in ${locale}`).not.toMatch(
+          /HTTP\s?\d|\berrno\b|ECONN|ETIMEDOUT|at \w+\.\w+|stack/i,
+        )
+      }
+    }
+  })
+
+  it('offers a retry affordance in words', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'action.retry')).not.toBe('')
+      expect(translate(locale, 'gallery.listUnavailable')).toMatch(
+        locale === 'zh-CN' ? /再试|重试/ : /try again/i,
+      )
+      expect(translate(locale, 'run.siteUnreachable')).toMatch(
+        locale === 'zh-CN' ? /再抓|重试/ : /try again|fetch again/i,
+      )
+    }
   })
 })

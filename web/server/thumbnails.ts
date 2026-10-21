@@ -4,11 +4,13 @@
 // generated the first time it is asked for and cached by the Wallpaper's own
 // name afterwards (spec decisions 22–24; docs/adr/0010).
 //
-// The cache lives OUTSIDE the Mirror: `web/.console-cache/thumbnails/` under the
-// web layer's root, which is what keeps the Mirror gap — the one number the page
-// is for — independent of where the Console puts its files. The name is the key
-// because a Wallpaper's name embeds a content hash, so a cache hit needs no
-// invalidation.
+// The cache lives OUTSIDE the Mirror: `<data>/cache/thumbnails/` under the user's
+// data directory, which is what keeps the Mirror gap — the one number the page
+// is for — independent of where the Console puts its files (ADR 0010). It moved
+// there from the program directory's `web/.console-cache/` in #80: the cache is
+// disposable, but leaving it under `app/` would make every update throw away
+// 1000+ thumbnails. The name is the key because a Wallpaper's name embeds a
+// content hash, so a cache hit needs no invalidation.
 //
 // This is the image library's ONLY import site, and the import is dynamic on
 // purpose: the native addon loads during module evaluation in 0.35.5, so a
@@ -23,9 +25,6 @@ import type { ImageSizeReader } from './image-sizes.js'
 
 /** The pinned size: the longest edge, in pixels (spec decision 23). */
 export const THUMBNAIL_MAX_EDGE = 400
-
-/** The cache's directory name, relative to the web layer's root (ADR 0010). */
-export const THUMBNAIL_CACHE_DIR_NAME = path.join('.console-cache', 'thumbnails')
 
 /**
  * The image library's own work: read `sourcePath`, write a thumbnail to

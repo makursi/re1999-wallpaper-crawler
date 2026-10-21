@@ -23,6 +23,26 @@ import type { RunLogSourceOptions } from '../../../web/server/run-log-source.js'
 /** The access token every Console test presents; the service generates a real one. */
 export const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 
+/** The repository's own package metadata: the one file that declares a version. */
+const REPO_PACKAGE_FILE = path.resolve(import.meta.dirname, '..', '..', '..', 'package.json')
+
+/**
+ * The version the repository's `package.json` declares (#79).
+ *
+ * A fixture app root is a stand-in for a source checkout, so it carries this
+ * file verbatim and the Console reads it the way a source run does. The value
+ * is read here rather than written down: a second hand-written number is exactly
+ * what the version module exists to prevent.
+ */
+export function packageVersion(): string {
+  const parsed: unknown = JSON.parse(fs.readFileSync(REPO_PACKAGE_FILE, 'utf8'))
+  if (typeof parsed === 'object' && parsed !== null && 'version' in parsed) {
+    const { version } = parsed
+    if (typeof version === 'string' && version.length > 0) return version
+  }
+  throw new Error(`${REPO_PACKAGE_FILE} carries no version`)
+}
+
 export const RUN_ID = '2026-10-18T01-03-31'
 export const STARTED_AT = '2026-10-18T01:03:31.856Z'
 /** The name today's writer emits: `core/logger.ts`'s `run-<runId>.jsonl`. */
@@ -126,38 +146,51 @@ export function runLog(...records: string[]): string {
 }
 
 /**
- * A fixture repository root: a fresh temporary directory holding an empty Mirror
- * (`images/`) and an empty Run log directory (`logs/`).
+ * A fixture repository root: a fresh temporary directory whose `data/` holds an
+ * empty Mirror (`<root>/data/images`) and an empty Run log directory
+ * (`<root>/data/logs`), exactly the source-checkout layout #80 introduced.
  *
  * The caller owns the directory — push it onto its own `roots` array so its
  * `afterEach` can remove it — and seeds whatever its test needs.
  */
-export function fixtureProjectRoot(prefix: string): string {
+export function fixtureAppRoot(prefix: string): string {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
-  fs.mkdirSync(path.join(projectRoot, 'images'))
-  fs.mkdirSync(path.join(projectRoot, 'logs'))
+  fs.mkdirSync(path.join(projectRoot, 'data', 'images'), { recursive: true })
+  fs.mkdirSync(path.join(projectRoot, 'data', 'logs'), { recursive: true })
+  // A checkout carries its package metadata, and the Console's version is read
+  // from it relative to the app root (#79). Copied verbatim so the fixture's
+  // version is the repository's, never a second number written here.
+  fs.copyFileSync(REPO_PACKAGE_FILE, path.join(projectRoot, 'package.json'))
   return projectRoot
 }
 
-/** The Console's configuration over a fixture project root. */
-export function consoleConfigIn(projectRoot: string): ConsoleConfig {
-  const imagesDir = path.join(projectRoot, 'images')
+/** The user's data directory under a fixture root, as `dataRootOf` resolves it. */
+export function fixtureDataRoot(appRoot: string): string {
+  return path.join(appRoot, 'data')
+}
+
+/** The Console's configuration over a fixture app root. */
+export function consoleConfigIn(appRoot: string): ConsoleConfig {
+  const dataRoot = fixtureDataRoot(appRoot)
+  const imagesDir = path.join(dataRoot, 'images')
   return {
-    projectRoot,
+    appRoot,
+    dataRoot,
     imagesDir,
-    logDir: path.join(projectRoot, 'logs'),
+    logDir: path.join(dataRoot, 'logs'),
     galleryStateFile: path.join(imagesDir, '.gallery-state.json'),
-    // The built page lives under the web layer's root, beside its config —
-    // `web/dist` in the real repository. Mirrored here so a fixture's layout is
-    // the production one, one level deeper than the fixture project root.
-    distDir: path.join(projectRoot, 'web', 'dist'),
+    cacheDir: path.join(dataRoot, 'cache', 'thumbnails'),
+    // The built page lives under the app root's web layer — `web/dist` in the
+    // real repository. Mirrored here so a fixture's layout is the production
+    // one, one level deeper than the fixture app root.
+    distDir: path.join(appRoot, 'web', 'dist'),
     galleryListEndpoint: 'https://gallery.test/query',
   }
 }
 
 /**
  * A Run log source's options over a fixture project root: the Mirror and the log
- * directory `fixtureProjectRoot` created, and the Gallery state file inside the
+ * directory `fixtureAppRoot` created, and the Gallery state file inside the
  * Mirror.
  */
 export function runLogSourceOptionsIn(projectRoot: string): RunLogSourceOptions {

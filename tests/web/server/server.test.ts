@@ -8,7 +8,11 @@ import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
-import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
+import { checkForUpdate, RELEASES_PAGE_URL } from '../../../web/server/update-check.js'
+import { consoleConfigIn, fixtureAppRoot, packageVersion, TOKEN } from './run-fixtures.js'
+
+/** The version the repository's package metadata declares (#79). */
+const PACKAGE_VERSION = packageVersion()
 
 /** The names Vite emits: one content hash per asset, referenced relatively. */
 const ASSET_JS = 'assets/index-BO_xJMyK.js'
@@ -70,7 +74,7 @@ afterEach(async () => {
  * directory, and a built page.
  */
 function fixture(): ConsoleConfig {
-  const projectRoot = fixtureProjectRoot('console-test-')
+  const projectRoot = fixtureAppRoot('console-test-')
   roots.push(projectRoot)
   const config = consoleConfigIn(projectRoot)
 
@@ -179,6 +183,11 @@ describe('GET /api/status', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8')
     expect(await response.json()).toEqual({
+      // #79: the one version, read from the application root's package
+      // metadata — this fixture copies the repository's own file.
+      version: PACKAGE_VERSION,
+      // #81: this service was given no update check, which is "no notice".
+      updateNotice: null,
       runId: null,
       state: 'idle',
       startedAt: null,
@@ -196,6 +205,19 @@ describe('GET /api/status', () => {
       report: null,
       reportPresent: false,
     })
+  })
+
+  it('reports the version the package metadata declares, in semver form', async () => {
+    // #79: the page shows this number, so the socket has to carry it. The
+    // expected value is the one file that owns the number, never a literal
+    // repeated here; the shape is what a reader can quote in a chat group.
+    const service = await serve()
+
+    const response = await fetch(`${service.origin}/api/status?token=${TOKEN}`)
+    const body: unknown = await response.json()
+
+    expect(body).toMatchObject({ version: PACKAGE_VERSION })
+    expect(body).toMatchObject({ version: expect.stringMatching(/^\d+\.\d+\.\d+(?:[-+].*)?$/) })
   })
 
   it('reports that a Run’s configuration is unavailable when the configuration has no endpoint', async () => {
@@ -231,6 +253,37 @@ describe('GET /api/status', () => {
     available = true
 
     expect(await read()).toMatchObject({ runConfigAvailable: true })
+  })
+
+  it('carries a newer release the boot check found, and links to the Releases page', async () => {
+    const notice = await checkForUpdate({
+      currentVersion: '1.0.0',
+      fetchRelease: async () => ({ tagName: 'v1.2.3', draft: false, prerelease: false }),
+    })
+    const service = await serve({ updateNotice: notice })
+
+    const body: unknown = await (await fetch(`${service.origin}/api/status?token=${TOKEN}`)).json()
+
+    expect(body).toMatchObject({
+      updateNotice: { version: '1.2.3', releasesUrl: RELEASES_PAGE_URL },
+    })
+  })
+
+  it('answers a failed update check as no notice, not as a status error', async () => {
+    // Offline, timed out, malformed: every one of them became the check's `null`
+    // before the service saw it, so the read is a plain 200 with no error field.
+    const notice = await checkForUpdate({
+      currentVersion: '1.0.0',
+      fetchRelease: async () => null,
+    })
+    const service = await serve({ updateNotice: notice })
+
+    const response = await fetch(`${service.origin}/api/status?token=${TOKEN}`)
+    const body: unknown = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({ updateNotice: null })
+    expect(body).not.toHaveProperty('error')
   })
 
   it('takes the Run and Gallery halves from the injected readers', async () => {

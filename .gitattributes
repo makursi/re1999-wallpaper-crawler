@@ -1,3 +1,15 @@
 # Line endings are LF everywhere: oxfmt writes LF, and this keeps Windows
 # checkouts from re-introducing CRLF through core.autocrlf.
 * text=auto eol=lf
+# ... except the launcher (#85). cmd.exe reads a `.bat` line by line and its
+# label/goto and block parsing expect CRLF; a batch file that fits the rest of
+# the repository's LF rule is the kind of thing that works on one machine and
+# silently skips a line on another. `-text` stores and checks out the bytes the
+# packaging ticket (#86) copies into the archive verbatim.
+*.bat -text
+# The manual (#89) is a `.txt` Notepad has to read correctly, so it is stored as
+# UTF-8 with a BOM and CRLF — Notepad's unambiguous "this is UTF-8" signal, and
+# one line per line. `-text` keeps those bytes through git so the packager copies
+# into the archive exactly the file that was measured here
+# (tests/scripts/packaging-docs.test.ts pins the BOM and the line endings).
+packaging/*.txt -text

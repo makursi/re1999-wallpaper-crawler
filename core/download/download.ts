@@ -5,7 +5,6 @@ import * as path from 'node:path'
 import type { Logger } from 'pino'
 import { fetch } from 'undici'
 
-import { BASE_ORIGIN, PAGE_URL, USER_AGENT } from '../config.js'
 import type { DownloadOutcome } from '../report/report.js'
 import { wallpaperNameOf } from '../wallpaper-url.js'
 
@@ -17,31 +16,39 @@ export class HttpError extends Error {
   }
 }
 
-// ── cookie extraction ──────────────────────────────────────────────
+// ── the HTTP client, injected ──────────────────────────────────────
+//
+// The real client is undici's `fetch`; a test passes a fake so the download
+// contract (headers, the 403 retry, the outcome shape) is proved without a
+// socket. The shape is the smallest part of `fetch` this module uses.
 
-let cachedCookieHeader = ''
-
-export function extractCookies(pwc: (args: string, timeoutSec?: number) => string): string {
-  try {
-    const raw = pwc('cookie-list', 15)
-    const cookies: string[] = []
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('[') || trimmed.startsWith('─')) continue
-      const parts = trimmed.split(/\s+/)
-      if (parts.length >= 2) {
-        cookies.push(`${parts[0]}=${parts[1]}`)
-      }
-    }
-    cachedCookieHeader = cookies.join('; ')
-    return cachedCookieHeader
-  } catch {
-    return ''
-  }
+/** The response fields a download reads. */
+export interface DownloadResponse {
+  status: number
+  ok: boolean
+  arrayBuffer: () => Promise<ArrayBuffer>
 }
 
-function getCookieHeader(): string {
-  return cachedCookieHeader
+/** The request a download makes: headers, and a followed redirect. */
+export interface DownloadRequest {
+  headers: Record<string, string>
+  redirect: 'follow'
+}
+
+/** The HTTP client Download calls. `undici`'s `fetch` is one. */
+export type DownloadFetch = (url: string, request: DownloadRequest) => Promise<DownloadResponse>
+
+/**
+ * The site a download speaks to, injected rather than read from the
+ * configuration: an origin to resolve relative Wallpaper URLs against (and to
+ * name as the `Referer`) and the `User-Agent` every request carries. Nothing in
+ * this module reads the configuration, so importing it never parses one.
+ */
+export interface DownloadSite {
+  /** The site origin: relative URLs resolve against it, and it is the `Referer`. */
+  baseOrigin: string
+  /** The `User-Agent` header every request sends. */
+  userAgent: string
 }
 
 // ── URL utilities ──────────────────────────────────────────────────
@@ -57,20 +64,22 @@ export function resolveUrl(url: string, base: string): string {
 }
 
 // ── download with fetch ────────────────────────────────────────────
+//
+// No session: the Gallery list and the CDN both answer anonymously (ADR 0006),
+// so a download carries no Cookie header and has no browser to borrow one from
+// (#76). The 403 retry stays — it is the CDN's header policy, not auth.
 
 export async function downloadFile(
   url: string,
   dest: string,
-  referer: string,
+  site: DownloadSite,
+  fetchImpl: DownloadFetch = fetch,
 ): Promise<{ status: number; retried: boolean }> {
-  const cookieHeader = getCookieHeader()
-
   async function doRequest(retry: boolean): Promise<{ status: number; retried: boolean }> {
     const headers: Record<string, string> = {
-      'User-Agent': USER_AGENT,
-      Referer: referer,
+      'User-Agent': site.userAgent,
+      Referer: site.baseOrigin,
     }
-    if (cookieHeader) headers.Cookie = cookieHeader
 
     if (retry) {
       Object.assign(headers, {
@@ -82,7 +91,7 @@ export async function downloadFile(
       })
     }
 
-    const response = await fetch(url, { headers, redirect: 'follow' })
+    const response = await fetchImpl(url, { headers, redirect: 'follow' })
 
     if (response.status === 403 && !retry) {
       return doRequest(true)
@@ -105,9 +114,11 @@ export async function downloadFile(
 export async function downloadOne(
   url: string,
   destDir: string,
+  site: DownloadSite,
   _logger: Logger,
+  fetchImpl: DownloadFetch = fetch,
 ): Promise<DownloadOutcome> {
-  const absUrl = resolveUrl(url, BASE_ORIGIN)
+  const absUrl = resolveUrl(url, site.baseOrigin)
   const filename = getFilenameFromUrl(absUrl)
   const dest = path.join(destDir, filename)
 
@@ -117,7 +128,7 @@ export async function downloadOne(
 
   const start = Date.now()
   try {
-    const { status, retried } = await downloadFile(absUrl, dest, PAGE_URL)
+    const { status, retried } = await downloadFile(absUrl, dest, site, fetchImpl)
     const bytes = fs.statSync(dest).size
     return {
       kind: 'ok',
@@ -147,14 +158,16 @@ export async function downloadBatch(
   urls: string[],
   destDir: string,
   batchSize: number,
+  site: DownloadSite,
   logger: Logger,
+  fetchImpl: DownloadFetch = fetch,
 ): Promise<DownloadOutcome[]> {
   const outcomes: DownloadOutcome[] = []
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize)
     const results = await Promise.all(
       batch.map(async url => {
-        const outcome = await downloadOne(url, destDir, logger)
+        const outcome = await downloadOne(url, destDir, site, logger, fetchImpl)
         switch (outcome.kind) {
           case 'ok':
             logger.debug(

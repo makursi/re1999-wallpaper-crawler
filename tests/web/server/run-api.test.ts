@@ -13,7 +13,7 @@ import type { ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import {
   consoleConfigIn,
-  fixtureProjectRoot,
+  fixtureAppRoot,
   galleryState,
   LOG_NAME,
   NEW_FILES,
@@ -51,7 +51,7 @@ interface ServeOptions {
  * injected so nothing is ever spawned.
  */
 async function serve(options: ServeOptions = {}): Promise<Harness> {
-  const projectRoot = fixtureProjectRoot('console-run-api-')
+  const projectRoot = fixtureAppRoot('console-run-api-')
   roots.push(projectRoot)
   const config = consoleConfigIn(projectRoot)
 
@@ -180,7 +180,7 @@ describe('POST /api/run', () => {
   })
 
   it('names every missing prerequisite as a code and starts nothing', async () => {
-    const harness = await serve({ prerequisites: ['chrome', 'tsx-entry'] })
+    const harness = await serve({ prerequisites: ['env-file'] })
 
     const response = await postStart(harness)
 
@@ -188,7 +188,7 @@ describe('POST /api/run', () => {
     const body: unknown = await response.json()
     expect(body).toMatchObject({
       started: false,
-      refusal: { code: 'missing-prerequisite', missing: ['chrome', 'tsx-entry'] },
+      refusal: { code: 'missing-prerequisite', missing: ['env-file'] },
     })
     expect(harness.starts()).toBe(0)
   })
@@ -271,10 +271,34 @@ describe('the status view over HTTP', () => {
     })
   })
 
+  it('moves the progress numbers while a Run is in flight', async () => {
+    // The page's "downloaded N of M" (#83) rides on these two fields, so the
+    // contract is what the wall shows: an unfinished Run, then files landing
+    // between two reads, and the Mirror count moving while the total stands
+    // still.
+    const harness = await serve({ officialTotal: 1010 })
+    writeLog(harness.config, runLog(plainLine('2. Downloading images...')))
+
+    expect(await getStatus(harness)).toMatchObject({
+      state: 'running',
+      mirrorCount: 0,
+      officialTotal: 1010,
+    })
+
+    fs.writeFileSync(path.join(harness.config.imagesDir, '1013_a.png'), 'a')
+    fs.writeFileSync(path.join(harness.config.imagesDir, '1014_b.jpg'), 'b')
+
+    expect(await getStatus(harness)).toMatchObject({
+      state: 'running',
+      mirrorCount: 2,
+      officialTotal: 1010,
+    })
+  })
+
   it('works with no .env present', async () => {
     const harness = await serve()
 
-    expect(fs.existsSync(path.join(harness.config.projectRoot, '.env'))).toBe(false)
+    expect(fs.existsSync(path.join(harness.config.appRoot, '.env'))).toBe(false)
     expect(await getStatus(harness)).toMatchObject({ state: 'idle' })
   })
 

@@ -12,7 +12,16 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import process from 'node:process'
 
-import { GALLERY_STATE_FILE, LOG_DIR } from './config.js'
+import {
+  APP_ROOT,
+  DATA_ROOT,
+  GALLERY_STATE_FILE,
+  IMAGES_DIR,
+  IMAGES_DIR_SETTING,
+  LOG_DIR,
+  LOG_DIR_SETTING,
+} from './config.js'
+import { ensureDataLayout } from './data-layout.js'
 import { readGalleryState } from './gallery/gallery-state.js'
 import type { RunReport } from './report/report.js'
 import type { RunExplainedReason, RunVerdict } from './report/run-log.js'
@@ -145,17 +154,33 @@ function printVerdict({ verdict, reading, report, recordPresent, stateRunId }: R
 }
 
 async function main(): Promise<void> {
+  // A Run's data now lives in the data directory. Bring a pre-#80 checkout
+  // there before reading — by rename — and refuse an unrecognised layout with
+  // its Chinese explanation instead of reporting "no Run log". The verdict is
+  // stdout's contract, so migration notes go to stderr.
+  const layout = ensureDataLayout({
+    appRoot: APP_ROOT,
+    dataRoot: DATA_ROOT,
+    configuredImagesDir: IMAGES_DIR_SETTING,
+    configuredLogDir: LOG_DIR_SETTING,
+  })
+  if (!layout.ok) {
+    console.error(layout.refusal.message)
+    process.exitCode = 1
+    return
+  }
+  for (const move of layout.ready.migrated) {
+    console.error(`数据已搬迁：${move.source} → ${move.target}`)
+  }
+
   const reading = readNewestLog(LOG_DIR)
   const logText = reading.kind === 'text' ? reading.text : ''
   const report = parseRunReport(logText)
-  // The Mirror is `images/`; the state file sits in it, so it is derived rather
-  // than configured separately.
-  const imagesDir = path.dirname(GALLERY_STATE_FILE)
   const state = readGalleryState(GALLERY_STATE_FILE)
   // The log's own name says which Run it is, which is what a *missing* report
   // still needs in order to be told from a Run that never finished.
   const logRunId = reading.kind === 'text' ? logRunIdOf(path.basename(reading.file)) : null
-  const verdict = assessRun(report, state, createFileProbe(imagesDir), logRunId)
+  const verdict = assessRun(report, state, createFileProbe(IMAGES_DIR), logRunId)
 
   printVerdict({
     verdict,

@@ -44,18 +44,31 @@ export interface DownloadMetrics {
 }
 
 export interface DiscoveryStats {
+  /**
+   * Whether Discovery's one request completed. Since #76 Discovery is the
+   * Gallery list, so this is `false` exactly when the list could not be read —
+   * there is no settling loop whose rounds could leave it unconverged.
+   */
   converged: boolean
+  /** Always `0`: the list has no settling rounds (kept for the report's shape). */
   stableRounds: number
+  /** Always `0`: no page was scrolled, so nothing idled (kept for the shape). */
   totalIdleSec: number
+  /** The URLs the one list response carried (deduplicated). */
   networkCount: number
+  /** Always `0`: no DOM exists any more (kept for the shape). */
   domCount: number
+  /** The Wallpaper URL set the Run downloads — the list's own URLs. */
   combinedCount: number
+  /** Always `0`: no thumbnail was clicked (kept for the shape). */
   thumbnailsClicked: number
+  /** How long the list request took. */
   discoveryDurationMs: number
   /**
-   * Share of the official list this Run's capture contained, or `null` when the
-   * list was unavailable. The gate for judging whether scrolling the page is
-   * still worth it next to asking the list endpoint (docs/adr/0006).
+   * Share of the official list the Run's URL set contains. It is `1` whenever
+   * the list was read — the URL set *is* the list, so the old screening number
+   * (18–45% of the gallery, the gate for #76) has nothing left to measure — and
+   * `null` when the list was unavailable. See docs/adr/0018.
    */
   coverage: number | null
 }
@@ -75,6 +88,12 @@ export interface RunReport {
   discovery: DiscoveryStats
   download: DownloadMetrics
   gallery: GalleryStats
+  /**
+   * Site assets dropped before Download. A Run has no browser capture to filter
+   * any more (#76), so this is always `{ count: 0, urls: [] }`; the section is
+   * kept because `check-run`, the Console and the run-log readers consume it,
+   * and the ADR records that it no longer varies (docs/adr/0018).
+   */
   siteAssets: { count: number; urls: string[] }
   defects: {
     discoveryLeak: { count: number; urls: string[] }
@@ -82,7 +101,12 @@ export interface RunReport {
     emptyResult: boolean
     persistentFailures: number
     emptyFiles: string[]
-    /** `null` = not checked, because the list was unavailable. */
+    /**
+     * `null` = not checked, because the list was unavailable. When the list was
+     * read, the check is vacuously empty (`[]`): there is no dropped URL left
+     * for a rule to have swallowed. The Run log reader ties this `null` to the
+     * Mirror gap's, so it cannot be `null` while the Mirror was checked.
+     */
     siteAssetFalsePositive: { count: number; urls: string[] } | null
     gallerySourceUnavailable: boolean
     mirrorGap: { missing: number; extra: number } | null
@@ -173,8 +197,12 @@ function bump(hist: Record<string, number>, status: string): void {
 }
 
 /**
- * What one Run's capture produced. These travel together — from the split,
- * through the list checks, into the report — so they are passed as one value.
+ * What one Run's Discovery produced. These travel together — from the list,
+ * through the split, into the report — so they are passed as one value.
+ *
+ * Since #76 the audit describes an empty capture: a Run asks the Gallery list
+ * and downloads it, so nothing was captured, nothing leaked and nothing was
+ * dropped. The fields stay because the report's shape is a contract (ADR 0018).
  */
 export interface CaptureAudit {
   leakedUrls: string[]

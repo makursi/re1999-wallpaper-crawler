@@ -48,10 +48,15 @@ export function refusalFromError(error: unknown): RefusalView {
  * The refusal as one sentence; `null` when there is none to show. `refusedKey`
  * is the panel's own message for an HTTP refusal, because a start and a cleanup
  * are refused by different sentences.
+ *
+ * A transport failure is the page's own sentence too (#83): the thrown text —
+ * `Failed to fetch`, a socket error — is a runtime message, not copy (ADR 0014),
+ * and printing it at a player is exactly the "stack instead of words" the
+ * first-run ticket forbids. The retry beside the sentence is the affordance.
  */
 export function refusalTextOf(view: RefusalView | null, refusedKey: MessageKey): string | null {
   if (view === null) return null
   if (view.kind === 'code') return describeRefusal(view.refusal)
   if (view.kind === 'status') return t(refusedKey, { status: view.status })
-  return view.message
+  return t('error.connection')
 }

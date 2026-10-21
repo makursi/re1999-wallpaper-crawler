@@ -9,7 +9,6 @@ import {
   ensureThumbnail,
   realThumbnailCache,
   realThumbnailGenerator,
-  THUMBNAIL_CACHE_DIR_NAME,
   THUMBNAIL_MAX_EDGE,
 } from '../../../web/server/thumbnails.js'
 import { writeTestImage } from './test-image.js'
@@ -30,7 +29,7 @@ function scratch(): { imagesDir: string; cacheDir: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'console-thumbnail-test-'))
   roots.push(root)
   const imagesDir = path.join(root, 'images')
-  const cacheDir = path.join(root, THUMBNAIL_CACHE_DIR_NAME)
+  const cacheDir = path.join(root, 'cache', 'thumbnails')
   fs.mkdirSync(imagesDir)
   return { imagesDir, cacheDir }
 }

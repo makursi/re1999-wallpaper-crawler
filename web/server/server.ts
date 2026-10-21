@@ -36,6 +36,7 @@ import { authGuard } from './http/guard.js'
 import { json } from './http/respond.js'
 import { registerGalleryRoute } from './routes/gallery.js'
 import { registerImageRoutes } from './routes/images.js'
+import { registerInstanceRoute } from './routes/instance.js'
 import { registerRunRoutes } from './routes/run.js'
 import { registerStaticRoutes } from './routes/static.js'
 import { registerStatusRoute } from './routes/status.js'
@@ -101,6 +102,9 @@ function createApp(runtime: ServiceRuntime): Hono {
   app.use('*', authGuard(runtime))
 
   registerStatusRoute(app, runtime)
+  // #82: the single-instance handshake's other end — cheap, guarded, and
+  // independent of everything the other routes read.
+  registerInstanceRoute(app)
   registerGalleryRoute(app, runtime)
   registerImageRoutes(app, runtime)
   registerRunRoutes(app, runtime)

@@ -1,17 +1,27 @@
 node_modules/
-# A Run's data: the Mirror and the Run logs. They stay at the repository root,
-# because both programs read them.
+# The user's data directory (#80): the Mirror, the Run logs, the thumbnail cache
+# and data/user.env. It is a sibling of the program directory in the package and
+# a child of the repository in a source checkout; either way it is the user's,
+# not the program's, so it never enters git.
+data/
+# The pre-#80 locations, still ignored so an un-migrated checkout stays clean.
+# The first start moves them into data/ by rename (core/data-layout.ts).
 images/
 logs/
 .playwright/
 .playwright-cli/
-# The Discovery script copy a Run materializes for `run-code --filename`: written
-# only when its content changes, never deleted. Both tool walkers honour this file.
-.run-cache/
-# The Console's own artifacts, under its layer directory: the built page and the
-# thumbnail cache. Named by path rather than as a bare `dist/`, because the layer
-# owns them now and a stray root-level `dist/` would belong to nobody.
+# The Console's build artifact, under its layer directory. Named by path rather
+# than as a bare `dist/`, because the layer owns it and a stray root-level
+# `dist/` would belong to nobody.
 web/dist/
+# The built tree (#84): the two bundled entries, the copied page and the tree's
+# package metadata. `pnpm build` writes it, a package ships it, and it is never
+# source — `node build/server.js` is how the program runs.
+build/
+# The packaged release (#86): `pnpm package` writes the one zip a release
+# uploads. Generated, never source, and never committed.
+dist-package/
+# The pre-#80 thumbnail cache; moved to data/cache/ after the first start.
 web/.console-cache/
 *.log
 .env

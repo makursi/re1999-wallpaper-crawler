@@ -11,7 +11,7 @@ import { createGalleryListSource } from '../../../web/server/gallery-list-source
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { galleryFactsOf, IDLE_RUN_FACTS } from '../../../web/server/status.js'
-import { consoleConfigIn, fixtureProjectRoot, TOKEN } from './run-fixtures.js'
+import { consoleConfigIn, fixtureAppRoot, TOKEN } from './run-fixtures.js'
 
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'
 const RETIRED = '978.竖版-2560x1440_61032b056992416faaf041b01d7c1633.jpg'
@@ -26,7 +26,7 @@ afterEach(async () => {
 
 /** A directory tree standing in for the repository, built as data. */
 function fixture(): ConsoleConfig {
-  const projectRoot = fixtureProjectRoot('console-gallery-test-')
+  const projectRoot = fixtureAppRoot('console-gallery-test-')
   roots.push(projectRoot)
   const config = consoleConfigIn(projectRoot)
 

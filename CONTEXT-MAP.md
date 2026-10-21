@@ -2,19 +2,21 @@
 
 ## Contexts
 
-- **Discovery** — traverses the page and produces the raw capture.
-  Owns: `scripts/run-discovery.js`, `core/discovery/discovery-loader.ts`; orchestrated by
-  `core/main.ts` (steps 0–3). Vocabulary in CONTEXT.md → Discovery.
+- **Discovery** — asks the site's Gallery list and turns it into the Run's
+  Wallpaper URL set.
+  Owns: `core/discovery/discovery.ts`; orchestrated by `core/main.ts` (step 1),
+  with the list request itself in Gallery tracking's
+  `core/gallery/gallery-source.ts`. Vocabulary in CONTEXT.md → Discovery.
 - **Download** — consumes the Wallpaper URL set and writes files to disk.
-  Owns: `core/download/download.ts`; orchestrated by `core/main.ts` (steps 4–5).
+  Owns: `core/download/download.ts`; orchestrated by `core/main.ts` (step 2).
   Vocabulary in CONTEXT.md → Download.
 - **Gallery tracking** — the site's own inventory of the gallery, the mirror
-  check against `images/`, and the cross-run memory of which entries have been
-  seen.
+  check against the data directory's `images/`, and the cross-run memory of
+  which entries have been seen.
   Owns: `core/gallery/gallery-source.ts` (the list endpoint),
-  `core/gallery/gallery-state.ts` (`images/.gallery-state.json`); `core/main.ts`
-  fetches the list once during discovery (step 3) and writes the state at the
-  end of the Run (step 6). Vocabulary in CONTEXT.md → Gallery tracking.
+  `core/gallery/gallery-state.ts` (`<data>/images/.gallery-state.json`); `core/main.ts`
+  fetches the list once as the Run's Discovery (step 1) and writes the state at
+  the end of the Run (step 3). Vocabulary in CONTEXT.md → Gallery tracking.
 - **Console** — the human entry point: a local service started by one command
   that serves a page reading the Run log directory, the Gallery list and the
   Mirror.
@@ -25,32 +27,45 @@
   dictionary test enumerates, ADR 0014), `web/src/` (the page, in three buckets:
   `components/`, `composables/`, `lib/`), and the page's tooling
   (`web/vite.config.ts`, `web/uno.config.ts`, `web/tsconfig.web.json`, and the
-  artifacts they produce: `web/dist/`, the thumbnail cache under
-  `web/.console-cache/`); started by the `webui` script.
+  built page under `web/dist/`); bundled into the built tree (`build/`, with
+  `scripts/build.ts` doing the bundling) and started by the `webui` script over
+  that tree. The thumbnail cache is not a Console artifact any more: it is
+  `<data>/cache/thumbnails/` (ADR 0019).
   Vocabulary in CONTEXT.md → Console.
+- **Distribution** — how the program reaches a player: one portable package, the
+  program directory an update replaces, the data directory it never touches, the
+  version a release carries, and the one request that says a newer release
+  exists.
+  Owns: `packaging/` (the archive's root files and the site-constants template),
+  `scripts/build.ts` + `scripts/bundle-externals.ts` (the built tree and its one
+  allowed external), `scripts/package.ts` + `scripts/package-layout.ts` (the
+  archive's whitelist and assembly), `web/server/installation.ts`,
+  `web/server/updater.ts` and `web/server/update-entry.ts` (the install pointer
+  and the swap), `web/server/update-check.ts` and `core/version.ts` (the one
+  version and the one outbound request). Vocabulary in CONTEXT.md → Distribution.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
-  Wallpaper lives in `core/wallpaper-url.ts`, which both Discovery's output and
-  Download's input pass through.
+  Wallpaper lives in `core/wallpaper-url.ts`; Download's input, the Console's
+  tile check and the mirror check all read it, while Discovery's URL set comes
+  from the Gallery list (ADR 0018).
 
 ## Relationships
 
-- **Discovery → Site asset filter → Download**: Discovery publishes the raw
-  capture (bridged via `window.__wpUrls`); the Site asset filter in
-  `core/wallpaper-url.ts` partitions it into Wallpapers and Site assets; Download
-  consumes only the Wallpapers and writes them to `images/`.
-- **Discovery → Download (shared)**: the Browser session's Session cookies are
-  extracted after discovery and reused by Download for auth.
-- **Gallery list → Site asset filter**: the list is the authority on what a
-  Wallpaper is, so a URL the filter dropped that appears in the list is reported
-  as a Site asset false positive (`null` when the list was unavailable, because
-  not checking is not the same as finding nothing).
+- **Gallery list → Discovery → Download**: the list is the Run's URL set
+  (ADR 0018), so Download consumes exactly what the site lists and writes it to
+  the data directory's `images/` (ADR 0019).
+- **Gallery list → Site asset filter (vocabulary)**: the rules in
+  `core/wallpaper-url.ts` still decide what a Wallpaper is for the Console's
+  tile check, but nothing on the Run's path drops a URL any more, so the
+  false-positive check is vacuous (`{count: 0, urls: []}`) whenever the list was
+  read and `null` when it was not.
 - **Gallery list ↔ Mirror**: the list is compared with the Wallpaper files on
   disk in both directions (missing / extra), which is what makes a Mirror gap
   visible.
-- **Discovery → Gallery list**: `discovery.coverage` measures one Run's capture
-  against the list.
+- **Gallery list → Discovery**: one Run's URL set is the list, so
+  `discovery.coverage` is `1` or `null` — kept as the gate's archive (ADR 0018).
 - **Console → CLI entries**: the WebUI is the only human entry, and the Console
-  starts a Run as a child process; `core:run` and `check-run` are the
+  starts a Run as a child process — from #84, the built Run entry beside its own
+  (`build/run.js`), never a transpiler; `core:run` and `check-run` are the
   agent-facing entries, with their names, exit codes and contracts unchanged.
 - **Run log → Console**: the Console knows Runs by reading the Run log
   directory, never a handle it holds, so a terminal-started Run is visible and a
@@ -62,6 +77,15 @@
 - **Gallery list → Console**: the gallery view is one row per Gallery list
   entry, and it degrades to the Mirror alone when the list is unreachable,
   reporting the list as unread rather than as nothing missing.
+- **Distribution → Console**: the package's launcher starts the Console from
+  `app\` with both roots injected, and the Console's boot writes the data
+  directory and the install pointer the updater reads (ADR 0019, ADR 0020).
+- **Distribution → Gallery tracking / Download**: a release carries no `data\`
+  and an update replaces only the program directory, so the Mirror, the Run logs
+  and the cache survive it (ADR 0019, ADR 0021).
+- **Distribution ↔ Release**: the version is one number from the tag through the
+  build to the page, and the page's notice is the only thing that tells a player
+  a newer release exists.
 
 ## Where things live
 
@@ -74,9 +98,8 @@
 | Gallery state + Mirror gap | `core/gallery/gallery-state.ts` |
 | Analysis/report      | `core/report/report.ts`           |
 | Orchestration        | `core/main.ts`                    |
-| Discovery script     | `scripts/run-discovery.js`       |
-| Discovery loader     | `core/discovery/discovery-loader.ts` |
-| Download + cookies   | `core/download/download.ts`       |
+| Discovery (the list → the Run's URL set) | `core/discovery/discovery.ts` |
+| Download             | `core/download/download.ts`       |
 | Console service + entry point | `web/server/`            |
 | Console API contract | `web/api-types.ts` (types + code vocabularies) |
 | Console page (Vue 3, built by Vite) | `web/src/`, `web/index.html` |
