@@ -18,6 +18,9 @@ web/dist/
 # package metadata. `pnpm build` writes it, a package ships it, and it is never
 # source — `node build/server.js` is how the program runs.
 build/
+# The packaged release (#86): `pnpm package` writes the one zip a release
+# uploads. Generated, never source, and never committed.
+dist-package/
 # The pre-#80 thumbnail cache; moved to data/cache/ after the first start.
 web/.console-cache/
 *.log

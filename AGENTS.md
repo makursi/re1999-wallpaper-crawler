@@ -20,6 +20,7 @@ notice says so when it is missing.
 | Scrape wallpapers | `pnpm core:run` (`tsx core/main.ts`) |
 | Check the newest Run | `pnpm check-run` (`tsx core/check-run.ts`) |
 | Build the program | `pnpm build` (`tsx scripts/build.ts` → `build/`; needed before `webui`) |
+| Package the portable release | `pnpm package` (`pnpm build` + `tsx scripts/package.ts` → `dist-package/re1999-wallpaper-crawler-v<version>.zip`) |
 | WebUI (local page) | `pnpm webui` (`cd build && node server.js`, flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
 | Tests | `pnpm test` (`vitest run`) |
@@ -109,7 +110,7 @@ Run never got there".
 
 ## Architecture
 
-Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard and the build, and `packaging/` holds the one file the portable package places at its archive root (the launcher, #85).
+Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard, the build and the packager, and `packaging/` holds what the portable package places at its archive root (the launcher, #85) plus the site-constants template that becomes `app\.env`.
 
 ```
 core/                        — the crawler
@@ -179,8 +180,10 @@ tests/                       — mirrors the sources it tests
 │       ├── report.test.ts
 │       ├── list-run-report.test.ts
 │       └── run-log.test.ts
-├── scripts/                 — the build's own readings of its metafile
-│   └── bundle-externals.test.ts
+├── scripts/                 — the build's and the packager's own readings
+│   ├── bundle-externals.test.ts
+│   ├── package-layout.test.ts
+│   └── zip.test.ts
 └── web/                     — the Console's tests
     ├── server/              — the service's tests (and their two helpers)
     └── src/                 — the page's tests
@@ -193,14 +196,29 @@ tests/                       — mirrors the sources it tests
 scripts/
 ├── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ├── build.ts          — the build: Vite's page + two esbuild entries into `build/`, one `RE1999_VERSION` define, the tree's package.json, and a refusal when a bundle left an undeclared import
-└── bundle-externals.ts — the build's two pure readings of esbuild's metafile: undeclared externals (`sharp` is the only allowed one) and the packages that did bundle (unit-tested)
+├── bundle-externals.ts — the build's two pure readings of esbuild's metafile: undeclared externals (`sharp` is the only allowed one) and the packages that did bundle (unit-tested)
+├── package-version.ts — the one `package.json` version reader, shared by the build and the packager
+├── package-layout.ts — the archive's whitelist and the packager's pure decisions: which archived paths may exist, the root files taken generically from `packaging/`, the generated `app/.env` template, and the `node.exe` source (`RE1999_NODE_EXE` is #88's seam) (unit-tested)
+├── package.ts        — `pnpm package`: collect `build/` + `packaging/` + Node + sharp's closure into `dist-package/re1999-wallpaper-crawler-v<version>.zip`, asserting the whitelist before the zip is written
+└── zip.ts            — the hand-written zip writer (node:zlib, UTF-8 names, no zip64) (unit-tested)
 packaging/
-└── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, `pause` on failure. #86 copies it to the archive root verbatim
+├── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, `pause` on failure. #86 copies it to the archive root byte for byte
+└── site.env          — the committed site constants the packager writes as `app\.env`; the repository's own `.env` is the owner's and is never read by a release build
 ```
 
 `build/` itself is generated, never source: `pnpm build` writes it and
 `.gitignore` keeps it out of the tree. It is a complete application root, which
 is what a package ships (#86) and what `pnpm webui` runs.
+
+`pnpm package` adds `dist-package/` (gitignored): one zip whose root is
+`启动.bat` beside `app\`, with **no `data\`** — the launcher creates it (#85).
+`app\.env` is generated from `packaging/site.env`, never copied from the working
+tree; the archive root's files are every `.bat`/`.txt` in `packaging/`, so #87
+and #89 add a file and no packager code. `app\node_modules` is `sharp` **and the
+four packages sharp itself loads** (`@img/colour`, `@img/sharp-win32-x64`,
+`detect-libc`, `semver`): shipping `sharp` alone boots but answers every
+thumbnail with a 500. The whitelist predicate and a real `pnpm package` run are
+what keep a release from carrying the owner's data.
 
 A Run's data lives in the data directory, never in the program directory: `<data>/images` (the Mirror), `<data>/logs` (the Run logs) and `<data>/cache/thumbnails` (the disposable thumbnail cache, outside the Mirror by ADR 0010), with `data/user.env` from #78. `core/data-layout.ts` owns that arrangement and the `layout.json` version marker; a pre-#80 checkout is migrated by a same-volume rename on the first start, and an unrecognised or newer layout refuses to start instead of guessing. The built tree (`build/`) is what travels with the program — two bundles and the page — and no source file does; there is no other root directory — the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76). Nothing under the data directory is ever deleted by the program (ADR 0019).
 

@@ -43,6 +43,7 @@ import { build as buildPage } from 'vite'
 import { RUN_ENTRY_FILE, SERVER_ENTRY_FILE } from '../web/server/build-artifacts.js'
 import type { BundleOutputImports } from './bundle-externals.js'
 import { ALLOWED_EXTERNALS, bundledPackages, undeclaredExternals } from './bundle-externals.js'
+import { packageVersion } from './package-version.js'
 
 /** The repository root: this script's parent, which is also a source app root. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
@@ -71,25 +72,6 @@ const ENTRIES: readonly Entry[] = [
   { label: 'the Console', source: 'web/server/console.ts', output: SERVER_ENTRY_FILE },
   { label: 'a Run', source: 'core/main.ts', output: RUN_ENTRY_FILE },
 ]
-
-/**
- * The release's version, or a failure.
- *
- * Read, never written: `package.json` stays the one place a version number
- * exists, and a build without one must not produce a program that reports
- * "no version" — that is the number a reader quotes in a bug report (#79).
- */
-function versionOfPackage(file: string = PACKAGE_FILE): string {
-  const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
-  const version =
-    typeof parsed === 'object' && parsed !== null && 'version' in parsed
-      ? parsed.version
-      : undefined
-  if (typeof version !== 'string' || version.trim() === '') {
-    throw new Error(`${file} carries no version`)
-  }
-  return version.trim()
-}
 
 /**
  * The one line an ESM bundle of CommonJS packages cannot do without.
@@ -180,7 +162,7 @@ function sizeOf(file: string): string {
 
 /** The build, in the order the tree needs: clean, page, entries, check, report. */
 async function main(): Promise<void> {
-  const version = versionOfPackage()
+  const version = packageVersion(PACKAGE_FILE)
 
   fs.rmSync(BUILD_DIR, { recursive: true, force: true })
   fs.mkdirSync(BUILD_DIR, { recursive: true })

@@ -9,6 +9,7 @@
     "core:run": "tsx core/main.ts",
     "check-run": "tsx core/check-run.ts",
     "build": "tsx scripts/build.ts",
+    "package": "pnpm build && tsx scripts/package.ts",
     "build:web": "vite build --config web/vite.config.ts",
     "webui": "cd build && node server.js",
     "dev:web": "vite --config web/vite.config.ts",
