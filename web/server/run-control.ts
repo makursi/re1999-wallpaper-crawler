@@ -28,10 +28,10 @@ export interface RunLauncher {
   /** `true` while the child this launcher started is still running. */
   isAlive(): boolean
   /**
-   * Kills the whole tree the launcher started — the tsx loader, the browser CLI
-   * and the real browser — because on Windows a parent's death does not take
-   * its children (ADR 0009). A no-op when nothing is alive. #36 completes the
-   * tree kill; the seam exists here so no caller has to invent one.
+   * Kills the whole tree the launcher started — the tsx loader and whatever it
+   * spawned — because on Windows a parent's death does not take its children
+   * (ADR 0009). A no-op when nothing is alive. #36 completes the tree kill; the
+   * seam exists here so no caller has to invent one.
    */
   stop(): void
 }
@@ -131,13 +131,12 @@ export interface KillTreeDeps {
 /**
  * The whole-tree kill (ADR 0009; conventions §6). On Windows, `taskkill /T` is
  * the OS's own tree walk: a parent's death does not take its children there, so
- * killing only the launcher's child would leave the run-time loader, the
- * browser CLI and a real Chrome window behind. Elsewhere the Run leads its own
- * process group (`detached: true` at spawn) and a negative pid signals the
- * whole group.
+ * killing only the launcher's child would leave the tsx loader behind. Elsewhere
+ * the Run leads its own process group (`detached: true` at spawn) and a negative
+ * pid signals the whole group.
  *
  * The pid is always the one the Console recorded when it started the Run, never
- * an image name: a browser the owner opened by hand is not ours to kill.
+ * an image name: a process the owner started by hand is not ours to kill.
  */
 export function killProcessTree(pid: number, deps: KillTreeDeps = {}): void {
   const platform = deps.platform ?? process.platform
@@ -179,8 +178,9 @@ export interface RunStarterDeps {
   launcher: RunLauncher
   /**
    * Whether the newest Run log says a Run is in flight. A Run started from a
-   * terminal is as real as one this Console started, and holds the same
-   * session — the state comes from the log, never from a handle (ADR 0009).
+   * terminal is as real as one this Console started, and writes the same Mirror
+   * and log directory — the state comes from the log, never from a handle
+   * (ADR 0009).
    */
   isRunInFlight: () => boolean
   /** The codes of the global prerequisites this machine is missing (#34 §2). */
@@ -200,9 +200,8 @@ export interface RunStarterDeps {
  * prerequisites' codes when one is absent.
  *
  * The prerequisites are checked here rather than left to the child so a missing
- * `playwright-cli` or Chrome is a named code; `pwc('close-all')` swallows
- * that failure, so the Run would otherwise die at `pwc('open …')` with the
- * reason buried in stderr.
+ * configuration or tsx entry is a named code; otherwise the spawn fails with an
+ * ENOENT buried in the Console's stderr.
  */
 export function createRunStarter(deps: RunStarterDeps): RunStarter {
   return async (): Promise<RunStartResult> => {
@@ -254,58 +253,9 @@ export function stopDecision(state: ConsoleRunState): StopDecision {
   return state === 'running' ? 'confirm' : 'stop-now'
 }
 
-export interface BrowserSessionCloserDeps {
-  /** The pipeline's named Browser session (`SESSION_NAME`, default `bluepoch`). */
-  sessionName: string
-  /** Injected so a test can assert each platform's own launch shape. */
-  platform?: NodeJS.Platform
-  /** Injected so a test can assert the argv without launching anything. */
-  spawn?: typeof import('node:child_process').spawn
-  /** The global CLI on `PATH`; overridable so a test needs no install. */
-  command?: string
-}
-
-/**
- * Close the Run's persistent Browser session through the global browser CLI —
- * the cleanup's one effect on the machine (#36). It is the same command the
- * pipeline runs as its first step (`npx playwright-cli -s=<session>
- * close-all`), minus `npx`.
- *
- * Why Windows needs `cmd.exe`: npm installs the global CLI as
- * `playwright-cli.cmd`/`.ps1`, and `CreateProcess` cannot start either —
- * measured on this machine, `spawn('playwright-cli', …, { shell: false })` is
- * `ENOENT`, while `cmd /c playwright-cli --version` exits 0. This is the only
- * shell the Console uses, and it carries the two arguments the brief names (no
- * page hash, no quotes, nothing cmd.exe can mangle). The pipeline's own `pwc()`
- * goes through a shell for this exact command too.
- *
- * A failure to launch is swallowed, exactly as the pipeline's own
- * `pwc('close-all')` swallows it: the acknowledgement still has to happen,
- * because the alternative is a page that offers the same cleanup forever.
- */
-export function createBrowserSessionCloser(deps: BrowserSessionCloserDeps): () => void {
-  const spawn = deps.spawn ?? defaultSpawn
-  const platform = deps.platform ?? process.platform
-  const command = deps.command ?? 'playwright-cli'
-  const args = [`-s=${deps.sessionName}`, 'close-all']
-
-  return () => {
-    const [file, argv] =
-      platform === 'win32'
-        ? ['cmd.exe', ['/d', '/s', '/c', [command, ...args].join(' ')]]
-        : [command, args]
-    const child = spawn(file, argv, { stdio: 'ignore', windowsHide: true })
-    child.on('error', () => {
-      // Nothing to fall back to; the log is the truth either way.
-    })
-  }
-}
-
 export interface RunCleanerDeps {
   /** Whether a Run is in flight — from the Run log, never from a handle. */
   isRunInFlight: () => boolean
-  /** `createBrowserSessionCloser`: the leftover session's one cost. */
-  closeBrowserSession: () => void
   /** Records, in memory, that the newest log's claim was acknowledged. */
   acknowledgeOrphan: () => void
 }
@@ -315,13 +265,13 @@ export interface RunCleanerDeps {
  *
  * What it does, and what it deliberately does not:
  *
- *   - It is refused with `409` while a Run is in flight: closing the session
- *     under a live Run would destroy the very state the one-at-a-time rule
- *     protects.
- *   - It closes the leftover Browser session and then **acknowledges** the
- *     log's claim. The acknowledgement is in memory, so a Console restart
- *     re-reports the leftover — the log is still there, and still says what it
- *     always said.
+ *   - It is refused with `409` while a Run is in flight: acknowledging a log
+ *     that a live Run is still writing would destroy the state the
+ *     one-at-a-time rule protects.
+ *   - It **acknowledges** the log's claim. The acknowledgement is in memory, so
+ *     a Console restart re-reports the leftover — the log is still there, and
+ *     still says what it always said. #76 removed the browser session the old
+ *     cleanup also closed; a Run no longer opens one.
  *   - It never deletes or rewrites a Run log. The log is the audit trail
  *     (ADR 0007) and the Console does not own it: a missing Run report is a
  *     defect in the log, not something to tidy away. Cleaning up removes the
@@ -337,7 +287,6 @@ export function createRunCleaner(deps: RunCleanerDeps): RunCleaner {
       return { cleaned: false, status: 409, refusal: refusal('run-busy') }
     }
 
-    deps.closeBrowserSession()
     deps.acknowledgeOrphan()
     return { cleaned: true, status: 200, refusal: null }
   }

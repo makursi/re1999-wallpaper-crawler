@@ -39,7 +39,6 @@ import { createImageSizeCache } from './image-sizes.js'
 import { missingPrerequisites, runEnvFileAvailable, tsxEntryPath } from './prerequisites.js'
 import type { RunLauncher } from './run-control.js'
 import {
-  createBrowserSessionCloser,
   createRunCleaner,
   createRunLauncher,
   createRunStarter,
@@ -194,8 +193,8 @@ interface StopDeps {
  * closing it never stops anything, because it is a view and the truth is on
  * disk. A signal with no Run in flight shuts down at once; with a Run in flight
  * it asks first — the one gesture most likely to be made must not kill twenty
- * minutes of work. Accepting kills the whole child tree (a headed browser and a
- * truncated Run log are what killing only the first leaves behind); declining
+ * minutes of work (a download in flight and a truncated Run log are what killing
+ * only the first leaves behind); declining
  * leaves both the service and the Run running, and says so.
  *
  * Glue, deliberately: the decision itself is the pure `stopDecision`, and this
@@ -226,7 +225,7 @@ function installStopHandlers(deps: StopDeps): void {
       }
     }
 
-    // The whole tree the launcher started: tsx, the browser CLI, the browser.
+    // The whole tree the launcher started: the tsx loader and its children.
     deps.launcher.stop()
     await deps.service.close()
     process.exit(0)
@@ -299,9 +298,9 @@ async function main(options: ConsoleOptions): Promise<void> {
   })
   const startRun = createRunStarter({
     launcher,
-    // A Run in flight and an Orphaned Run both hold — or may hold — the one
-    // persistent Browser session, so neither may be started over; the reason
-    // the page shows differs, because the actions differ.
+    // A Run in flight and an Orphaned Run both write the one Mirror and log
+    // directory, so neither may be started over; the reason the page shows
+    // differs, because the actions differ.
     isRunInFlight: () => runLogSource.facts().state !== 'idle',
     refusalCode: () => (runLogSource.facts().state === 'orphaned' ? 'orphaned-run' : null),
     missingPrerequisites: () => missingPrerequisites({ appRoot: config.appRoot, dataRoot }),
@@ -309,7 +308,6 @@ async function main(options: ConsoleOptions): Promise<void> {
   const cleanupRun = createRunCleaner({
     // Never clean under a live Run; that is the one refusal (ADR 0009).
     isRunInFlight: () => runLogSource.facts().state === 'running',
-    closeBrowserSession: createBrowserSessionCloser({ sessionName: site.sessionName }),
     acknowledgeOrphan: () => runLogSource.acknowledgeOrphan(),
   })
 

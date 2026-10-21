@@ -39,12 +39,9 @@ import { dataRootOf } from './app-root.js'
 
 // The schema's defaults, named: `siteConfig` has to resolve the same directories
 // for a Console that never read a `.env`, so the fallbacks cannot be two literals.
-const DEFAULT_SESSION_NAME = 'bluepoch'
 const DEFAULT_IMAGES_DIR = 'images'
 const DEFAULT_LOG_DIR = 'logs'
-const DEFAULT_PLAYWRIGHT_CONFIG = '.playwright/config.json'
 const DEFAULT_BATCH_SIZE = 4
-const RUN_CACHE_DIR_NAME = '.run-cache'
 const GALLERY_STATE_FILE_NAME = '.gallery-state.json'
 const APP_ENV_FILE_NAME = '.env'
 const USER_ENV_FILE_NAME = 'user.env'
@@ -53,11 +50,8 @@ const GALLERY_LIST_PATH = '/activity/official/websites/picture/query'
 
 export const configSchema = z.object({
   BASE_ORIGIN: z.url(),
-  PAGE_PATH: z.string().min(1),
-  SESSION_NAME: z.string().min(1).default(DEFAULT_SESSION_NAME),
   IMAGES_DIR: z.string().min(1).default(DEFAULT_IMAGES_DIR),
   BATCH_SIZE: z.coerce.number().int().positive().max(20).default(DEFAULT_BATCH_SIZE),
-  PLAYWRIGHT_CONFIG: z.string().min(1).default(DEFAULT_PLAYWRIGHT_CONFIG),
   LOG_DIR: z.string().min(1).default(DEFAULT_LOG_DIR),
 })
 
@@ -204,16 +198,14 @@ export function readLayeredConfig(options: LayeredConfigOptions): LayeredConfigR
 // ── the tree-relative values ──────────────────────────────────────
 
 /**
- * Where a Run's data lives and the Browser session it reuses. Everything here
- * has a default, which is what lets the Console serve the Mirror, the Run log
- * directory and the Gallery state without any configuration.
+ * Where a Run's data lives. Everything here has a default, which is what lets
+ * the Console serve the Mirror, the Run log directory and the Gallery state
+ * without any configuration.
  */
 export interface SiteConfig {
-  sessionName: string
   imagesDir: string
   logDir: string
   galleryStateFile: string
-  runCacheDir: string
 }
 
 /**
@@ -228,17 +220,11 @@ export interface SiteConfig {
 export function siteConfig(appRoot: string, values: ConfigValues | null): SiteConfig {
   const imagesDir = path.resolve(appRoot, values?.IMAGES_DIR ?? DEFAULT_IMAGES_DIR)
   return {
-    sessionName: values?.SESSION_NAME ?? DEFAULT_SESSION_NAME,
     imagesDir,
     logDir: path.resolve(appRoot, values?.LOG_DIR ?? DEFAULT_LOG_DIR),
     // The cross-run memory of the list, kept beside the mirror it describes
     // (docs/adr/0006); not a log, and deleted together with `images/`.
     galleryStateFile: path.join(imagesDir, GALLERY_STATE_FILE_NAME),
-    // Where a Run materializes the Discovery script copy that `run-code
-    // --filename` needs. Gitignored, and the one directory in this tree that
-    // only the crawler reads: the copy is written when its content changes and
-    // never deleted.
-    runCacheDir: path.resolve(appRoot, RUN_CACHE_DIR_NAME),
   }
 }
 

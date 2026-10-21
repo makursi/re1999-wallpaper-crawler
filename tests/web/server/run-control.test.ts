@@ -83,8 +83,6 @@ function launcherWith(
 
 /** Every global prerequisite satisfied, as a machine with them all looks. */
 const ALL_PRESENT: PrerequisiteChecks = {
-  playwrightCli: () => true,
-  chrome: () => true,
   envFile: () => true,
   tsxEntry: () => true,
 }
@@ -113,37 +111,33 @@ describe('missingPrerequisites', () => {
   }
 
   const otherChecks: Partial<PrerequisiteChecks> = {
-    playwrightCli: () => true,
-    chrome: () => true,
     tsxEntry: () => true,
   }
 
-  const requiredLines = 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html'
+  const requiredLines = 'BASE_ORIGIN=https://re.bluepoch.com'
 
   it('names what is absent, in the order the notes list it', () => {
     const missing = missingPrerequisites({
       appRoot: 'C:\\root',
-      checks: { ...ALL_PRESENT, playwrightCli: () => false, tsxEntry: () => false },
+      checks: { ...ALL_PRESENT, tsxEntry: () => false },
     })
 
-    expect(missing).toEqual(['playwright-cli', 'tsx-entry'])
+    expect(missing).toEqual(['tsx-entry'])
   })
 
   it('names the whole gap rather than the first thing it finds', () => {
     const missing = missingPrerequisites({
       appRoot: 'C:\\root',
       checks: {
-        playwrightCli: () => false,
-        chrome: () => false,
         envFile: () => false,
         tsxEntry: () => false,
       },
     })
 
-    expect(missing).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
+    expect(missing).toEqual(['env-file', 'tsx-entry'])
   })
 
-  it('names nothing when the machine has all four', () => {
+  it('names nothing when the machine has both', () => {
     expect(missingPrerequisites({ appRoot: 'C:\\root', checks: ALL_PRESENT })).toEqual([])
   })
 
@@ -240,7 +234,7 @@ describe('createRunStarter', () => {
     const starter = createRunStarter({
       launcher: bound.launcher,
       isRunInFlight: () => false,
-      missingPrerequisites: () => ['chrome', 'tsx-entry'],
+      missingPrerequisites: () => ['env-file', 'tsx-entry'],
     })
 
     const result = await starter()
@@ -249,7 +243,7 @@ describe('createRunStarter', () => {
     expect(result.status).toBe(412)
     expect(result.refusal).toEqual({
       code: 'missing-prerequisite',
-      missing: ['chrome', 'tsx-entry'],
+      missing: ['env-file', 'tsx-entry'],
     })
     expect(bound.starts()).toBe(0)
   })
@@ -259,7 +253,7 @@ describe('createRunStarter', () => {
     const starter = createRunStarter({
       launcher: bound.launcher,
       isRunInFlight: () => false,
-      missingPrerequisites: () => ['chrome'],
+      missingPrerequisites: () => ['env-file'],
     })
 
     expect((await starter()).status).toBe(409)

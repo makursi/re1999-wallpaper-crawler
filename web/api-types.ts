@@ -26,8 +26,13 @@ export const REFUSAL_CODES = ['run-busy', 'orphaned-run', 'missing-prerequisite'
 /** A refusal's stable code. */
 export type RefusalCode = (typeof REFUSAL_CODES)[number]
 
-/** One global prerequisite a Run needs; the names used to be English prose. */
-export const PREREQUISITE_CODES = ['playwright-cli', 'chrome', 'env-file', 'tsx-entry'] as const
+/**
+ * One global prerequisite a Run needs; the names used to be English prose.
+ *
+ * #76 removed `playwright-cli` and `chrome` with the browser crawl they served:
+ * a Run asks the Gallery list and downloads, so neither can be missing.
+ */
+export const PREREQUISITE_CODES = ['env-file', 'tsx-entry'] as const
 
 /** A prerequisite's stable code. */
 export type PrerequisiteCode = (typeof PREREQUISITE_CODES)[number]

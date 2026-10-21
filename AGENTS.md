@@ -2,18 +2,16 @@
 
 ## Project identity
 
-Wallpaper scraper for [Bluepoch](https://re.bluepoch.com) using **Playwright CLI** (`@playwright/cli`), _not_ Playwright Test or the Playwright library. It launches a real Chrome browser, clicks through a SPA page, captures image URLs from network traffic, and downloads them in parallel.
+Wallpaper scraper for [Bluepoch](https://re.bluepoch.com). A Run asks the site's
+own Gallery list for every Wallpaper URL in one unauthenticated request, then
+downloads them in parallel. There is no browser in the pipeline: no Chrome, no
+`@playwright/cli`, no session (ADR 0018).
 
 ## Prerequisites
 
-`@playwright/cli` must be installed globally:
-
-```bash
-npm install -g @playwright/cli
-npx playwright-cli install
-```
-
-Then `pnpm install` for project dependencies.
+Node 22 and pnpm, then `pnpm install` for project dependencies. A Run needs one
+line in `.env` — `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup
+notice says so when it is missing.
 
 ## Commands
 
@@ -102,7 +100,7 @@ Run never got there".
 
 ## Architecture
 
-Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the run-code payload and the pre-commit guard.
+Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard.
 
 ```
 core/                        — the crawler
@@ -111,14 +109,14 @@ core/                        — the crawler
 ├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the tree-relative defaults, the Gallery list URL (unit-tested)
 ├── version.ts               — the one current version: the build-injected constant (`RE1999_VERSION`, ticket #84's define seam) with the app root's package metadata as the source run's fallback (unit-tested)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
-├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
+├── main.ts                  — orchestration: ask the gallery list → download its URLs → check the list → report
 ├── check-run.ts             — the verdict CLI: newest Run log + Gallery state + file probe → print, exit 0/1
-├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, wallpaperNameOf, isWallpaperFile, Site asset rules, splitWallpaperUrls (unit-tested)
+├── wallpaper-url.ts         — the Wallpaper URL set's vocabulary: isImageUrl, wallpaperNameOf, isWallpaperFile, Site asset rules, splitWallpaperUrls (unit-tested; the rules are vocabulary now, off the Run's path — ADR 0018)
 ├── run-log-file.ts          — the newest Run log's name and the file probe, shared by check-run and the Console (unit-tested)
 ├── discovery/
-│   └── discovery-loader.ts  — materializes the run-code payload into .run-cache/ (writes only when its content changed; never deleted) and reports its sha256 (unit-tested)
+│   └── discovery.ts         — Discovery: turns the Gallery list into the Run's URL set and the report's counters/capture audit (the list request itself stays in gallery-source.ts; unit-tested)
 ├── download/
-│   └── download.ts          — parallel batch downloads via undici, cookie auth, 403 retry
+│   └── download.ts          — parallel batch downloads via undici (injected client), no session, 403 retry (unit-tested)
 ├── gallery/
 │   ├── gallery-source.ts    — the site's gallery list endpoint: fetch + validate (unit-tested)
 │   └── gallery-state.ts     — cross-run id set + mirror check, writes images/.gallery-state.json (unit-tested)
@@ -151,14 +149,18 @@ tests/                       — mirrors the sources it tests
 │   ├── logger.test.ts
 │   ├── config-read.test.ts
 │   ├── version.test.ts
-│   ├── discovery-loader.test.ts
 │   ├── wallpaper-url.test.ts
 │   ├── run-log-file.test.ts
+│   ├── discovery/
+│   │   └── discovery.test.ts
+│   ├── download/
+│   │   └── download.test.ts
 │   ├── gallery/
 │   │   ├── gallery-source.test.ts
 │   │   └── gallery-state.test.ts
 │   └── report/
 │       ├── report.test.ts
+│       ├── list-run-report.test.ts
 │       └── run-log.test.ts
 └── web/                     — the Console's tests
     ├── server/              — the service's tests (and their two helpers)
@@ -169,59 +171,41 @@ tests/                       — mirrors the sources it tests
         │   └── console-api.test.ts
         └── i18n/
             └── messages.test.ts
-.run-cache/                  — the Discovery script copy a Run materializes for `run-code --filename` (gitignored; written only when its content changed, never deleted)
 scripts/
-├── run-discovery.js  — Playwright CLI run-code script (async (page) => { ... })
 └── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ```
 
-A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010). `.run-cache/` is the one root directory only the crawler reads: `run-code --filename` can only be handed a file, so a Run materializes the Discovery script copy there — written only when its content differs from what is on disk, and never deleted.
+A Run's data stays at the repository root, because both layers read it: the Mirror (`images/`) and the Run log directory (`logs/`). Everything the Console owns travels with it — the built page (`web/dist/`) and the thumbnail cache (`web/.console-cache/`, outside the Mirror by ADR 0010). There is no other root directory: the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76).
 
 Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the six files at `tests/web/server/`, which drive the bound service over a real socket.
 
-**Network-first design**: image URLs are captured via `page.on("response")` listening for `content-type: image/*`, _not_ from DOM scanning. DOM is only used to drive scrolling/clicking to trigger lazy loads.
-
-**The gallery list is the authority** (ADR 0006): the site's own list endpoint
-returns every entry in one unauthenticated request, and it is what makes
-`gallery.officialTotal` exact, the new-vs-known delta id-keyed, and the Site
-asset filter checkable. Download still consumes the browser capture — read the
-discovery-coverage open question in HISTORY.md before assuming that stays true.
+**Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
+the site's own list endpoint returns every entry and every `pictureUrl` in one
+unauthenticated request, and before #76 that list was only the authority the
+browser capture was checked against. Now it *is* the URL set — one Run covers the
+whole gallery — which also makes `gallery.officialTotal` exact and the
+new-vs-known delta id-keyed. A Run has no browser, no session and no captured
+traffic to filter; the Site asset rules in `core/wallpaper-url.ts` remain the
+vocabulary for "is this a Wallpaper", off the Run's path.
 
 ## Gotchas
 
-### Playwright CLI, not Playwright
-
-Commands use `npx playwright-cli -s=<session>` (CLI tool), not `npx playwright test` or `import { chromium } from 'playwright'`. The CLI manages a persistent browser session by name (default: `bluepoch`).
-
-### Windows: run-code uses --filename, never inline
-
-cmd.exe mangles multi-line strings with `#` and quotes, so the payload never
-travels as a CLI argument: `core/discovery/discovery-loader.ts` materializes it
-into `.run-cache/run-discovery.generated.js` and `--filename` points there. The
-copy is compared before it is written, so a Run whose payload and page hash are
-unchanged writes nothing, and nothing is ever deleted. A `--filename` target
-must also sit inside the CLI's allowed roots — its output directory or its
-working directory — which `.run-cache/` does and the OS temp directory does not
-(reaching `%TEMP%` works only because the CLI hardcodes its skill mode). Never
-pass inline code via CLI arguments. Because the copy is materialized before the
-Run log's first record, a payload that cannot be materialized fails with no Run
-log at all — by design, since the Run never started.
-
-### run-code context is Node.js, not browser
-
-The function passed to `playwright-cli run-code` runs in Node.js and receives a Playwright `page` object. Browser APIs (`window`, `document`) only work inside `page.evaluate()`.
-
-### .env hash trap
-
-`#` is a comment character in `.env` (dotenv). The page hash `#wallpaper` is hardcoded in `core/config.ts`, not read from `.env`.
-
-### Viewport matters
-
-The target site renders different layouts based on viewport. The Playwright config uses `viewport: null` + `--window-size=1920,1080` so the real window size determines the viewport, ensuring the desktop version loads.
-
 ### 403 CDN retry
 
-Download first attempt uses cookies + UA + Referer. If 403, retries with full browser headers (`Sec-Fetch-Dest`, `Sec-Fetch-Mode`, `Sec-Fetch-Site`, `Accept`).
+Download first attempt sends the UA and a Referer (the site origin). If 403,
+retries once with the full browser headers (`Sec-Fetch-Dest`, `Sec-Fetch-Mode`,
+`Sec-Fetch-Site`, `Accept`, `Accept-Language`). No session cookie is sent — the
+CDN answers anonymously, so the retry is the CDN's header policy, not auth.
+
+### The report's shape is a contract, even when a field stops varying
+
+#76 re-pointed the report's capture fields at the list without dropping a key.
+`discovery.coverage` is `1` or `null`, `siteAssets` and `discoveryLeak` are
+always empty, and `siteAssetFalsePositive` is `{count: 0, urls: []}` whenever the
+list was read — **not** `null`, because the run-log reader ties that `null` to
+the Mirror gap's and would refuse every new report. A new report key also has to
+be declared in `web/api-types.ts`; the `Same<>` checks in
+`web/server/status.ts` make the compiler say so.
 
 ### pnpm 12 refuses just-published versions
 
@@ -256,35 +240,6 @@ git cat-file --batch-check='%(objectsize)' <<< "$sha"   # vs wc -c on the file
 
 A blob smaller than its file by roughly one byte per line is LF.
 
-### The run-code script is a protocol payload, not ordinary source
-
-`scripts/run-discovery.js` is read from disk and handed to
-`playwright-cli run-code --filename=…`, which evaluates it as
-`(\n<file contents>\n)(page);`. Its **exact** shape is therefore load-bearing:
-the file must stay a bare `async (page) => { … }` expression. Consequences:
-
-- It is excluded from **oxfmt** (`.oxfmtrc.json`): the formatter inserts a
-  protective leading `;` before a bare expression statement, and
-  `(;async (page) => …)(page)` is a `SyntaxError: Unexpected token ';'` — the
-  whole crawl then discovers nothing. Proven against a live session; do not
-  re-try this by "just formatting it once".
-- It is excluded from **oxlint** (`.oxlintrc.json`) as well, and not for a style
-  reason: the file *is* a bare expression statement, so `no-unused-expressions`
-  fires on line 1 as an unfixable error (measured: read-only lint reports 1
-  error + 5 warnings, `oxlint --fix` changes nothing and still exits 1). Since
-  `lint-staged` runs `--deny-warnings`, that would block every commit touching
-  the file, and silencing it would need either a disable comment or a rule
-exception — neither worth it for a file no tool may rewrite anyway.
-- lint-staged calls both tools with `--no-error-on-unmatched-pattern`, so
-  committing a change to this file is not blocked by them having nothing to do.
-- **Verify an edit the way the payload is consumed**, not by `node --check` on the
-  file alone: write `(` + newline + the file + newline + `)(page);` to a scratch
-  file and check *that*, because the wrapper is what catches the known failure
-  mode (a leading `;`). A comment-only change is proven by the wrapper check;
-  anything that touches the expression itself — a statement, a name, a
-  control-flow path — is proven by running the scraper, since a crawl that
-  discovers nothing looks exactly like a site with nothing new.
-
 ### The Run log is written synchronously, and must stay that way
 
 `core/logger.ts` writes the JSONL Run log through `pino.destination({ sync: true })`
@@ -318,13 +273,12 @@ commit on `main`: it must be refused.
   (`eqeqeq` ignoring `!= null`, `import/no-unassigned-import` allowing
   `dotenv/config`, `virtual:uno.css` and the `@fontsource-variable/*` families —
   the virtual module *is* the stylesheet and a font import *is* its `@font-face`
-  rules, so neither has a binding to assign). `scripts/run-discovery.js` is the
-  one deliberate exclusion, for the reason above.
+  rules, so neither has a binding to assign).
 - Format: **oxfmt** (`pnpm fmt` → `oxfmt`, `pnpm fmt:check` gates CI), configured
   in `.oxfmtrc.json`: no semicolons, single quotes, no parens on a sole arrow
-  parameter, 100 columns, LF, sorted imports. Markdown is not formatted yet, and
-  neither is the run-code payload. Formatting is not a matter of taste here —
-  run `pnpm fmt` instead of hand-aligning.
+  parameter, 100 columns, LF, sorted imports. Markdown is not formatted yet.
+  Formatting is not a matter of taste here — run `pnpm fmt` instead of
+  hand-aligning.
 - TypeScript strict mode, ESM module system, run via `tsx` (ADR 0003)
 - The page's files sort by what they hold, not by feature: reactive state or a
   lifecycle belongs in `web/src/composables/`, a stateless pure function in

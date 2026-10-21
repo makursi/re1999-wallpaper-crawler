@@ -14,10 +14,9 @@ import {
   siteConfig,
 } from '../../core/config-read.js'
 
-/** The two keys a Run's `.env` must supply; every other key has a default. */
+/** The one key a Run's `.env` must supply; every other key has a default. */
 const REQUIRED_ENV: NodeJS.ProcessEnv = {
   BASE_ORIGIN: 'https://re.bluepoch.com',
-  PAGE_PATH: '/home/detail.html',
 }
 
 /** The validated values of an environment this file means to be valid. */
@@ -55,18 +54,15 @@ function installationWith(files: { app?: string | null; user?: string | null } =
   return { appRoot, dataRoot }
 }
 
-/** The two lines a minimal usable `.env` carries. */
-const REQUIRED_LINES = `BASE_ORIGIN=${REQUIRED_ENV.BASE_ORIGIN}\nPAGE_PATH=${REQUIRED_ENV.PAGE_PATH}`
+/** The one line a minimal usable `.env` carries. */
+const REQUIRED_LINES = `BASE_ORIGIN=${REQUIRED_ENV.BASE_ORIGIN}`
 
 describe('readConfig', () => {
   it('reads a complete environment with the schema’s defaults filled in', () => {
     expect(valuesOf()).toEqual({
       BASE_ORIGIN: 'https://re.bluepoch.com',
-      PAGE_PATH: '/home/detail.html',
-      SESSION_NAME: 'bluepoch',
       IMAGES_DIR: 'images',
       BATCH_SIZE: 4,
-      PLAYWRIGHT_CONFIG: '.playwright/config.json',
       LOG_DIR: 'logs',
     })
   })
@@ -74,18 +70,14 @@ describe('readConfig', () => {
   it('reads the values the environment does supply instead of the defaults', () => {
     const values = valuesOf({
       ...REQUIRED_ENV,
-      SESSION_NAME: 'other-session',
       IMAGES_DIR: 'mirror',
       BATCH_SIZE: '8',
-      PLAYWRIGHT_CONFIG: '.playwright/other.json',
       LOG_DIR: 'runs',
     })
 
     expect(values).toMatchObject({
-      SESSION_NAME: 'other-session',
       IMAGES_DIR: 'mirror',
       BATCH_SIZE: 8,
-      PLAYWRIGHT_CONFIG: '.playwright/other.json',
       LOG_DIR: 'runs',
     })
   })
@@ -97,13 +89,24 @@ describe('readConfig', () => {
 
   it('answers “no usable configuration” for a malformed value rather than throwing', () => {
     expect(readConfig({ ...REQUIRED_ENV, BASE_ORIGIN: 'not-a-url' })).toBeNull()
-    expect(readConfig({ ...REQUIRED_ENV, PAGE_PATH: '' })).toBeNull()
     expect(readConfig({ ...REQUIRED_ENV, BATCH_SIZE: '0' })).toBeNull()
   })
 
   it('answers “no usable configuration” when a required key is missing', () => {
-    expect(readConfig({ BASE_ORIGIN: 'https://re.bluepoch.com' })).toBeNull()
-    expect(readConfig({ PAGE_PATH: '/home/detail.html' })).toBeNull()
+    expect(readConfig({ IMAGES_DIR: 'images' })).toBeNull()
+  })
+
+  it('ignores keys the schema no longer carries, so a legacy .env keeps working', () => {
+    // #76 dropped PAGE_PATH, SESSION_NAME and PLAYWRIGHT_CONFIG with the browser
+    // crawl. A file still carrying them validates; the keys simply mean nothing.
+    const values = readConfig({
+      ...REQUIRED_ENV,
+      PAGE_PATH: '/home/detail.html',
+      SESSION_NAME: 'bluepoch',
+      PLAYWRIGHT_CONFIG: '.playwright/config.json',
+    })
+
+    expect(values).toEqual(valuesOf())
   })
 })
 
@@ -149,7 +152,7 @@ describe('readLayeredConfig', () => {
   it.each(['abc', '0'])(
     'answers null when a defaulted key in the app file is malformed (BATCH_SIZE=%s)',
     batchSize => {
-      // The two required keys are fine; this is the file that used to pass the
+      // The required key is fine; this is the file that used to pass the
       // two-key check and then die in the Run's own parse (#60).
       const { appRoot, dataRoot } = installationWith({
         app: `${REQUIRED_LINES}\nBATCH_SIZE=${batchSize}`,
@@ -161,7 +164,7 @@ describe('readLayeredConfig', () => {
 
   it('answers null when the app file is missing a required key', () => {
     const { appRoot, dataRoot } = installationWith({
-      app: `BASE_ORIGIN=${REQUIRED_ENV.BASE_ORIGIN}`,
+      app: 'IMAGES_DIR=shipped-images',
     })
 
     expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toBeNull()
@@ -169,7 +172,7 @@ describe('readLayeredConfig', () => {
 
   it('answers null when a required value is malformed', () => {
     const { appRoot, dataRoot } = installationWith({
-      app: `BASE_ORIGIN=not-a-url\nPAGE_PATH=${REQUIRED_ENV.PAGE_PATH}`,
+      app: 'BASE_ORIGIN=not-a-url',
     })
 
     expect(readLayeredConfig({ appRoot, dataRoot, env: {} }).values).toBeNull()
@@ -283,11 +286,9 @@ describe('siteConfig', () => {
     // The Console's defaults are the schema's: the page degrades to "not read",
     // never to a different Mirror than the Run writes into.
     expect(siteConfig(projectRoot, null)).toEqual({
-      sessionName: 'bluepoch',
       imagesDir: defaultImagesDir,
       logDir: path.join(projectRoot, 'logs'),
       galleryStateFile: path.join(defaultImagesDir, '.gallery-state.json'),
-      runCacheDir: path.join(projectRoot, '.run-cache'),
     })
   })
 

@@ -101,12 +101,13 @@ const zhCN = {
   'run.refusedStart': '本地控制台拒绝启动(HTTP {status})',
   // The setup notice (#60): with no usable `.env` the panel says what to create
   // before the reader clicks start. The file name is a data cell, so it travels
-  // as a parameter; the two lines are the site's constants, not translatable
-  // prose, and are the same two lines README.md's quick start gives.
+  // as a parameter; the line is the site's constant, not translatable prose, and
+  // is the same line README.md's quick start gives. #76 removed the page path
+  // with the browser crawl that needed it, so one line is all a Run requires.
   'run.setup.heading': '先完成站点配置',
   'run.setup.body': '这个控制台还没有可用的站点配置,所以暂时不能开始运行。',
-  'run.setup.file': '请在仓库根目录创建 {file} 文件,写入以下两行:',
-  'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html',
+  'run.setup.file': '请在仓库根目录创建 {file} 文件,写入以下一行:',
+  'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
   'run.setup.note': '保存后刷新页面,提示就会消失,就可以开始运行了。',
 
   // The verdict is `check-run`'s three-state enum, mapped here because the page
@@ -120,7 +121,7 @@ const zhCN = {
   'orphan.line': '孤儿运行 {runId} — 运行日志 {logName} 没有运行报告,且是最近写入的。',
   'orphan.newestLog': '它最新的运行日志',
   'orphan.explanation':
-    '清理是可选项,不是强制项:它可能仍是一个正在写入的运行,而仅凭日志目录分不清这两种情况。清理会关闭残留的浏览器会话并撤回这条提示;运行日志本身永不修改、也不删除,因为它是这次运行的审计轨迹。',
+    '清理是可选项,不是强制项:它可能仍是一个正在写入的运行,而仅凭日志目录分不清这两种情况。清理会撤回这条提示;运行日志本身永不修改、也不删除,因为它是这次运行的审计轨迹。',
   'orphan.clean': '清理',
   'orphan.refusedCleanup': '本地控制台拒绝清理(HTTP {status})',
 
@@ -166,14 +167,11 @@ const zhCN = {
   // prove every code resolves here. The refusal sentences explain the rule;
   // the prerequisite names are what the reader has to install.
 
-  'refusal.runBusy':
-    '已有一个运行正在进行:管线第一步就会清理并删除唯一的浏览器会话,两个运行同时进行会互相摧毁状态。',
+  'refusal.runBusy': '已有一个运行正在进行:两个运行会同时写同一个镜像与日志目录,互相摧毁状态。',
   'refusal.orphanedRun':
     '存在一个孤儿运行:它的运行日志没有运行报告,且是最近写入的,所以它可能仍在写入。如果它只是残留,请先在页面上清理;之后才能开始新的运行。',
   'refusal.missingPrerequisite': '缺少前置条件:{missing}',
 
-  'prerequisite.playwrightCli': '@playwright/cli(全局命令行工具)',
-  'prerequisite.chrome': 'Chrome 浏览器',
   'prerequisite.envFile': '.env 配置文件',
   'prerequisite.tsxEntry': 'tsx 入口(node_modules/tsx/dist/cli.mjs)',
 
@@ -184,8 +182,8 @@ const zhCN = {
   // the values out, instead of printing the raw record.
   'defect.none': '未发现缺陷。',
   'defect.discoveryLeak': '发现泄漏:{count} 个 URL',
-  'defect.nonConverged': '发现未收敛',
-  'defect.emptyResult': '发现结果为空',
+  'defect.nonConverged': '发现未完成:官网清单没有回答',
+  'defect.emptyResult': '没有可下载的壁纸',
   'defect.persistentFailures': '持续失败:{count} 个',
   'defect.emptyFiles': '空文件:{files}',
   'defect.siteAssetNotChecked': '站点资源误报检查:未检查',
@@ -263,8 +261,8 @@ const en = {
   'run.refusedStart': 'the Console refused the start (HTTP {status})',
   'run.setup.heading': 'Set up the site first',
   'run.setup.body': 'This Console has no usable site configuration yet, so a Run cannot start.',
-  'run.setup.file': 'Create the {file} file at the repository root with these two lines:',
-  'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html',
+  'run.setup.file': 'Create the {file} file at the repository root with this line:',
+  'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
   'run.setup.note': 'After saving it, refresh the page: the notice goes away and a Run can start.',
 
   'verdict.clean': 'clean',
@@ -275,7 +273,7 @@ const en = {
     'Orphaned Run {runId} — the Run log {logName} has no Run report and was written recently.',
   'orphan.newestLog': 'its newest Run log',
   'orphan.explanation':
-    "Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log directory alone cannot tell the two apart. The cleanup closes the leftover Browser session and withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's audit trail.",
+    "Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log directory alone cannot tell the two apart. The cleanup withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's audit trail.",
   'orphan.clean': 'Clean up',
   'orphan.refusedCleanup': 'the Console refused the cleanup (HTTP {status})',
 
@@ -306,13 +304,11 @@ const en = {
   'viewer.zoomPercent': 'Zoom {percent}%',
 
   'refusal.runBusy':
-    "A Run is already in flight: the pipeline clears and deletes its one persistent Browser session as its first step, so two concurrent Runs would destroy each other's state.",
+    'A Run is already in flight: two Runs would write the same Mirror and log directory and destroy each other’s state.',
   'refusal.orphanedRun':
     'An Orphaned Run is present: its Run log has no Run report and was written recently, so it may still be writing. Clean it up from the page if it is a leftover; a new Run starts after that.',
   'refusal.missingPrerequisite': 'missing prerequisites: {missing}',
 
-  'prerequisite.playwrightCli': '@playwright/cli (the global command-line tool)',
-  'prerequisite.chrome': 'Chrome',
   'prerequisite.envFile': 'the .env file',
   'prerequisite.tsxEntry': 'the tsx entry (node_modules/tsx/dist/cli.mjs)',
 
@@ -322,8 +318,8 @@ const en = {
 
   'defect.none': 'No defects found.',
   'defect.discoveryLeak': 'discovery leak: {count} URLs',
-  'defect.nonConverged': 'discovery did not converge',
-  'defect.emptyResult': 'discovery returned nothing',
+  'defect.nonConverged': 'Discovery did not finish: the Gallery list did not answer',
+  'defect.emptyResult': 'nothing to download',
   'defect.persistentFailures': 'persistent failures: {count}',
   'defect.emptyFiles': 'empty files: {files}',
   'defect.siteAssetNotChecked': 'Site asset false-positive check: not checked',
@@ -348,8 +344,6 @@ export const REFUSAL_MESSAGE_KEYS: Record<RefusalCode, MessageKey> = {
 
 /** The prerequisite code → message key map (#47), same guarantee as above. */
 export const PREREQUISITE_MESSAGE_KEYS: Record<PrerequisiteCode, MessageKey> = {
-  'playwright-cli': 'prerequisite.playwrightCli',
-  chrome: 'prerequisite.chrome',
   'env-file': 'prerequisite.envFile',
   'tsx-entry': 'prerequisite.tsxEntry',
 }

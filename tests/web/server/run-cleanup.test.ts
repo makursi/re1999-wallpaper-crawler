@@ -42,8 +42,6 @@ interface Harness {
   source: RunLogSource
   /** How many starts were accepted; a refusal must leave this at 0. */
   starts: () => number
-  /** How many times the cleanup asked the browser CLI to close the session. */
-  sessionCloses: () => number
 }
 
 function writeLog(config: ConsoleConfig, text: string): void {
@@ -55,8 +53,8 @@ function logPath(config: ConsoleConfig): string {
 }
 
 /**
- * The real service over a fixture repository, with the launcher, the browser
- * CLI and the prerequisite check injected so nothing is spawned.
+ * The real service over a fixture repository, with the launcher and the
+ * prerequisite check injected so nothing is spawned.
  *
  * `seed` runs before the log source exists, so what it writes is in the
  * Console's start-up listing — which is exactly what makes it a leftover rather
@@ -89,19 +87,15 @@ async function serve(seed: (config: ConsoleConfig) => void = () => {}): Promise<
   })
   const startRun = createRunStarter({
     launcher,
-    // A Run in flight or a leftover that may still be writing: both hold the
-    // one persistent Browser session, so neither lets a new Run start.
+    // A Run in flight or a leftover that may still be writing: both may be
+    // writing the one log directory, so neither lets a new Run start.
     isRunInFlight: () => source.facts().state !== 'idle',
     missingPrerequisites: () => [],
     refusalCode: () => (source.facts().state === 'orphaned' ? 'orphaned-run' : null),
   })
 
-  let sessionCloses = 0
   const cleanupRun = createRunCleaner({
     isRunInFlight: () => source.facts().state === 'running',
-    closeBrowserSession: () => {
-      sessionCloses++
-    },
     acknowledgeOrphan: () => source.acknowledgeOrphan(),
   })
 
@@ -120,7 +114,6 @@ async function serve(seed: (config: ConsoleConfig) => void = () => {}): Promise<
     config,
     source,
     starts: () => starts,
-    sessionCloses: () => sessionCloses,
   }
 }
 
@@ -174,8 +167,6 @@ describe('an Orphaned Run over HTTP', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ cleaned: true, refusal: null })
-    // The leftover Browser session is closed through the CLI, once.
-    expect(harness.sessionCloses()).toBe(1)
 
     expect(await getStatus(harness)).toMatchObject({ state: 'idle' })
     // The log keeps saying what it always said: the claim was acknowledged, the
@@ -205,8 +196,6 @@ describe('cleaning up under a Run in flight', () => {
     const body: unknown = await response.json()
     expect(body).toMatchObject({ cleaned: false })
     expect(body).toMatchObject({ refusal: { code: 'run-busy' } })
-    // A live Run's Browser session is never closed under it.
-    expect(harness.sessionCloses()).toBe(0)
     expect(fs.readFileSync(logPath(harness.config)).equals(before)).toBe(true)
   })
 })

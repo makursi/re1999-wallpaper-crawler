@@ -8,11 +8,9 @@ The tool downloads every wallpaper from the [official gallery](https://re.bluepo
 
 ## Before you start
 
-Install Node 22, pnpm and Chrome. Open a terminal at the project root (on Windows, PowerShell) and run these lines one at a time:
+Install Node 22 and pnpm. Open a terminal at the project root (on Windows, PowerShell) and run:
 
 ```bash
-npm install -g @playwright/cli
-npx playwright-cli install
 pnpm install
 ```
 
@@ -34,7 +32,7 @@ WebUI: http://127.0.0.1:8791/?token=…
 
 ## While a Run is going
 
-The Chrome window pages through the gallery by itself. Do not click in it, and do not close it.
+A Run asks the site for its complete list once, then downloads every entry in parallel: there is no browser window, and no login is needed.
 
 Press Ctrl+C to end the service, and unfinished downloads stop with it.
 
@@ -45,16 +43,15 @@ Files already on disk are skipped; only new wallpapers are fetched.
 When a Run ends, the Run panel gives one of three verdicts:
 
 - clean: nothing was flagged.
-- explained: a routine case, such as the site’s own background art being filtered out correctly, or a few local files the gallery has since removed. These are recorded without affecting your copy.
-- defect: this Run did not see everything, or some files failed. Running it once more usually settles it.
+- explained: a routine case, such as a few local files the gallery has since removed. These are recorded without affecting your copy.
+- defect: this Run could not read the site's list, or some files failed. Running it once more usually settles it.
 
 ## Common problems
 
-- “Set up the site first”: the `.env` file is missing. Create a file at the project root named `.env` and write these two lines.
+- “Set up the site first”: the `.env` file is missing. Create a file at the project root named `.env` and write this line.
 
   ```
   BASE_ORIGIN=https://re.bluepoch.com
-  PAGE_PATH=/home/detail.html
   ```
 
 ## Where files go

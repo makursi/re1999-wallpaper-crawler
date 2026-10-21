@@ -122,14 +122,15 @@ describe('the locale dictionary', () => {
 
 /**
  * The setup notice (#60): with no usable `.env`, the Run panel has to tell a
- * first-time reader what to create before they click anything. The two lines
- * are the site's constants, not copy to be translated — the same two lines
- * `README.md`'s quick start gives — so both locales carry them verbatim, and
- * the sentence that introduces them names the file the reader creates.
+ * first-time reader what to create before they click anything. The line is the
+ * site's constant, not copy to be translated — the same line `README.md`'s quick
+ * start gives — so both locales carry it verbatim, and the sentence that
+ * introduces it names the file the reader creates. #76 dropped the page path
+ * with the browser crawl, so one line is all a Run needs.
  */
 describe('the setup notice', () => {
-  it('gives the two .env lines verbatim in both locales', () => {
-    const lines = 'BASE_ORIGIN=https://re.bluepoch.com\nPAGE_PATH=/home/detail.html'
+  it('gives the .env line verbatim in both locales', () => {
+    const lines = 'BASE_ORIGIN=https://re.bluepoch.com'
     for (const locale of LOCALES) {
       expect(translate(locale, 'run.setup.lines')).toBe(lines)
     }
@@ -187,7 +188,7 @@ describe('every service code has copy in both locales', () => {
         GALLERY_ROW_STATES.length,
     )
     expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
-    expect([...PREREQUISITE_CODES]).toEqual(['playwright-cli', 'chrome', 'env-file', 'tsx-entry'])
+    expect([...PREREQUISITE_CODES]).toEqual(['env-file', 'tsx-entry'])
     expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
     expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
   })

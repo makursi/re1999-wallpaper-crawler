@@ -45,16 +45,9 @@ export { APP_ROOT }
 export const USER_CONFIG_NOTICE = layered.notice
 
 export const BASE_ORIGIN = parsed.BASE_ORIGIN
-export const PAGE_PATH = parsed.PAGE_PATH
-export const PAGE_URL = `${BASE_ORIGIN}${PAGE_PATH}`
-// Hash is page logic, not env config (# is comment char in .env)
-export const PAGE_HASH = '#wallpaper'
 export const IMAGES_DIR = site.imagesDir
-export const SESSION = site.sessionName
 export const BATCH_SIZE = parsed.BATCH_SIZE
-export const PLAYWRIGHT_CONFIG = parsed.PLAYWRIGHT_CONFIG
 export const LOG_DIR = site.logDir
-export const RUN_CACHE_DIR = site.runCacheDir
 export const GALLERY_LIST_URL = galleryListUrlOf(BASE_ORIGIN)
 export const GALLERY_STATE_FILE = site.galleryStateFile
 

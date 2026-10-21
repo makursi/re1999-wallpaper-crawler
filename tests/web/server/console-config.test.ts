@@ -6,10 +6,9 @@ import { describe, expect, it } from 'vitest'
 import { parseConfig, siteConfig } from '../../../core/config-read.js'
 import { consoleConfigOf } from '../../../web/server/console-config.js'
 
-/** The two keys a Run's configuration must supply. */
+/** The one key a Run's configuration must supply. */
 const VALUES = parseConfig({
   BASE_ORIGIN: 'https://re.bluepoch.com',
-  PAGE_PATH: '/home/detail.html',
 })
 
 /** The app root a packaged layout would hand the entry point. */

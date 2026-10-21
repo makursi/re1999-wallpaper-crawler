@@ -36,7 +36,6 @@
     "logs",
     ".playwright",
     ".playwright-cli",
-    "scripts/run-discovery.js",
     "**/*.md"
   ]
 }

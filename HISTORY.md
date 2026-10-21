@@ -572,6 +572,32 @@
 
 ---
 
+### 2026-10-21 — Discovery 坍缩成官网清单：浏览器、会话、run-code 载荷整条退役（#76 / ADR 0018）
+
+**触因**：09-15 晚记下的 (C)「整体坍缩成接口客户端 + 下载器」终于满足了自己的立项门槛。门槛就是 `discovery.coverage`：单轮实测覆盖官网清单 **0.1798 / 0.4496 / 29.7%**，而清单接口一次给出全部 **1001** 条、约 **160 ms**、无需任何会话。这个数字不是性能问题，是产品问题——第一次点「开始抓取」的玩家只会跑一次，而那一轮只拿到清单的一小半。
+
+**决策**：
+- **Discovery 就是清单请求**。`core/gallery/gallery-source.ts` 仍是这个请求的唯一实现（不重写），新增 `core/discovery/discovery.ts` 把一份清单变成一轮 Run 的 Discovery：URL 集 = 全部 `pictureUrl`（去重），报告字段由它计算并有单测。`fetchGalleryList` 失败时 URL 集为空、`coverage: null`，报告照写、退出码不改——那是缺陷，不是「瘦一轮」。
+- **整条浏览器路径删除**：清会话、开浏览器、`run-code` 载荷、滚动稳定性循环、DOM 合并、cookie 提取全部退役；`scripts/run-discovery.js`、`core/discovery/discovery-loader.ts`、`tests/core/discovery-loader.test.ts`、`.run-cache/` 一并删除，两个工具配置里对载荷的排除也删掉。
+- **配置收缩，层结构不动**：`PAGE_PATH`、`SESSION_NAME`、`PLAYWRIGHT_CONFIG` 移出 schema（page hash 从来不是键）。分层读取、优先级、`data/user.env` 都归 #78，本轮不碰。旧的 `.env` 仍能通过校验：zod 忽略未知键；新装只需 `BASE_ORIGIN` 一行，i18n 的 setup 文案与 README 同步成一行。
+- **前置条件只剩两个**：`playwright-cli` 与 `chrome`（含注册表 App Paths 检查）删除，`PrerequisiteCode` 变为 `env-file` / `tsx-entry`；孤儿清理不再关闭浏览器会话（已无会话可关），只撤回日志的声明。
+- **Download 不再带 cookie**：`extractCookies` 与 `Cookie` 头删除，403 重试与完整浏览器头保留（那是 CDN 的头部策略，不是鉴权）。HTTP 客户端改为可注入，契约第一次有了自己的测试；`Referer` 从页面 URL 改为站点 origin（页面已不存在）。
+- **报告形状一个键都不删，语义重指**：`coverage` 读清单时为 1、读不到为 null；`converged` = 清单是否回答；`networkCount`/`combinedCount`/`discoveryDurationMs` = 清单响应自己的计数与耗时；`stableRounds`/`totalIdleSec`/`domCount`/`thumbnailsClicked` 恒为 0；`siteAssets` 与 `discoveryLeak` 保留但恒空；`siteAssetFalsePositive` 在读清单时是 `{count: 0, urls: []}`、读不到时才是 `null`——**不能**因为「没有丢东西」就写 `null`，那是「未检查」的既有含义，而且 run-log 读取器把它与 `mirrorGap` 的 null 绑定，写错会让每一份新报告被整份拒收、每轮都判缺陷。`emptyResult` 现在等价于「清单没读到」。三态语义与 `check-run` 退出码不变。
+- **ADR 0018 同轮**：记录坍缩、已满足的门槛、被驳回的替代（保留浏览器捕获作回退 / 双源 / 删报告键 / `siteAssetFalsePositive: null` / 留着载荷不调用 / 留着 cookie），以及报告契约的决定。
+
+**验证**：
+- 四件套（sandbox 直跑二进制）：`tsc --noEmit` 0、`vue-tsc --noEmit -p web/tsconfig.web.json` 0、`oxlint --type-aware .` **0 warning 0 error**、`vitest run` **37 文件 / 384 tests 通过**。格式化对 `.ts`/`.json` 用 `oxfmt --threads=1`（`.vue` 在本沙箱无法 spawn，未改）。
+- 新增测试：`tests/core/discovery/discovery.test.ts` 6 条（URL 集、计数器、清单不可用、空审计、规则不再过滤清单、重复 URL 去重）；`tests/core/download/download.test.ts` 7 条（无 `Cookie`、403 重试带全头、非 403 不重试、已存在跳过、失败携带 `retried`、相对 URL、批内继续）；`tests/core/report/list-run-report.test.ts` 2 条——把 discovery → `buildRunReport` → JSONL → `parseRunReport` → `assessRun` 串起来，证明读取器的 null 不变式仍成立、干净轮仍是 `clean`、清单不可用仍是 `defect`。
+- **没有真跑**：一轮真下载约 2 GB，本沙箱明确不跑。因此未证明的是站点行为与跨轮稳定性：连续两轮真实运行的条目数一致（票的稳定性验收），以及 `pageSize: 2000` 是否被服务端悄悄截断（`parseGalleryList` 会拒收短于 total 的响应，不会把缺的一半报成新增）。
+
+**教训**：
+- **门槛指标达到之日，就是它失去意义之日**。`coverage` 存在的唯一理由是回答「还要不要爬页面」；URL 集等于清单后它恒为 1。把它继续当测量值打印，会让人以为它还可能下降；把「测量」改成「契约里的常量」必须在 ADR 里明说，而不是悄悄写死。
+- **「保持报告形状」比「保留字段」更细**。字段保住了，含义也会咬人：`siteAssetFalsePositive` 的 `null` 早就有「清单不可用、未检查」的含义，且被 run-log 读取器与 `mirrorGap` 绑定。按「没东西可过滤」写成 `null`，新报告会整份不可读、每轮判缺陷——这不是类型错误，单测也只在跑整条 round trip 时才抓得到。
+- **删协议载荷要删它的边角**：载荷、loader、`.run-cache/` 之外，还有两个工具配置里的路径排除、AGENTS 里的 gotchas、runbook 的 preflight 与读取陷阱。只删主文件会留下指向不存在文件的规则与描述。
+- **注入 HTTP 客户端让「去掉 cookie」第一次可证**：测试直接断言请求头里没有 `Cookie`、403 第二次请求带全 `Sec-Fetch-*`，比真跑更能定位；但站点侧的稳定性仍只有真跑能证，别把单测当站点的保证。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -630,6 +656,12 @@
 | 页面按特性分目录（`features/gallery`、`features/run`） | 一面墙 + 一个抽屉，目录数会超过它组织的代码 | 2026-10-20 / #69 |
 | 让页面继续自己判断 tile 能不能显示 | 与 `core/wallpaper-url.ts` 的扩展名清单是手抄副本，漂移的症状是每个 tile 一次注定 400 的请求 | 2026-10-20 / #70 |
 | 引入 vue-query / swrv / @vueuse/core 做页面数据层 | 两个 GET + 一个 5 秒轮询，库带来缓存键/重试/invalidate 语义却换不掉那 30 行；页面不为两个函数背一个包 | 2026-10-20 / #69 |
+| 清单失败时回退到浏览器捕获 | 一轮 Run 里两套 URL 集就是 ADR 0002 否决过的重复表示；而且捕获到的只是一小半画廊，不叫回退。清单失败就响亮地报缺陷（`gallerySourceUnavailable` + `emptyResult`），不下载任何东西 | 2026-10-21 / #76 / ADR 0018 |
+| 保留浏览器捕获、同时把清单当第二个真源 | 同一个理由，而且它会把全局 CLI 与 Chrome 两个前置条件留下来，只为产出一个没人该据此行动的数字 | 2026-10-21 / #76 / ADR 0018 |
+| 删掉报告里不再变化的键（`siteAssets`、`stableRounds`、`discoveryLeak`…） | `check-run`、`web/api-types.ts`、Console 与 run-log 读取器都消费这个形状，读取器还会拒收缺键的报告；票的验收就是格式不动。诚实的常量比契约版本便宜 | 2026-10-21 / #76 / ADR 0018 |
+| 因为「没有丢东西」就把 `siteAssetFalsePositive` 写成 `null` | `null` 在这个块里的既有含义是「清单不可用、未检查」，且 run-log 读取器把它与 `mirrorGap` 的 null 绑定；写错会让每份新报告整份不可读、每轮判缺陷。读清单时用 `{count: 0, urls: []}` | 2026-10-21 / #76 / ADR 0018 |
+| 删掉 `scripts/run-discovery.js` 但保留 loader / `.run-cache/` | 它们只为 `run-code` 存在；留着会继续维护两个工具排除项和一个根目录，还诱导别人把爬取恢复回来。连引用一起删 | 2026-10-21 / #76 / ADR 0018 |
+| 保留 cookie 头以防万一 | CDN 与清单都匿名可用（2026-09-15 的 12/12 抽样），会话是 Run 已不再拥有的状态；Download 的第一个单测就断言请求里没有 `Cookie`，403 重试保留 | 2026-10-21 / #76 / ADR 0018 |
 
 ## 验证规范（所有迭代通用）
 
@@ -640,16 +672,17 @@
 
 ## 开放问题
 
-- **`scripts/` 该不该属于某一层（2026-10-19 记录）**：布局收成两层后，`scripts/` 是仓根剩下的第三棵树 —— run-code 协议载荷（`run-discovery.js`）与提交护栏（`check-branch.mjs`）。本轮**明确不解决**：载荷的排除按字面路径钉在两个工具配置里、目录名又被 `core/discovery/discovery-loader.ts` 指名，搬它要么连带改这两处排除方式，要么冒静默失联的风险，而收益只是名字好看。留给将来单独一轮（连同载荷排除方式一起重新钉），或就承认它是「协议载荷与工具」的第三棵树。
+- ~~**`scripts/` 该不该属于某一层（2026-10-19 记录）**~~ **已解决（2026-10-21）**：#76 删除了 run-code 协议载荷，`scripts/` 只剩提交护栏 `check-branch.mjs`，「协议载荷与工具」那棵第三棵树随之消失；两个工具配置里对载荷的排除也一并移除。
 
 - ~~**捕获量持续下滑（972 → 502 → 21）**~~ **2026-09-04 定性，2026-09-15 修正：该结论只在当时成立。** 09-04 的读数是「官网资源被爬完」：磁盘 971 文件、页面仅存 15 个缩略图、URL 止于 `20260729/976` 批次。09-15 复盘发现官网 09-07 批次已上新 36 张（977–1012），`npm run save-wallpapers` 重跑即自动捕获（幂等：已有走 Content-hash skip，新增下载），磁盘 971→1007 文件 / 1001 张壁纸。**以后不再人工判定「是否全量」——看 `run_report.gallery.officialTotal` 与 `newSinceLastRun`。**
 - ~~**过滤逻辑分两道**~~ **已解决（2026-09-15 晚）**：`scripts/run-discovery.js` 的 `shouldKeep` 只剩 `data:`/`blob:`（它们不是可抓取的 URL），23 个 UI 图标文件名与 SVG 判定归入 `src/wallpaper-url.ts`（新增 `filenameIn` 规则）。`combinedCount` 因此真的是原始捕获——真跑实测 172 → 484，多出来的就是以前被静默丢掉的图标 URL，它们现在出现在 `siteAssets`（7 → 34）。
-- **(C) 整体坍缩成「接口客户端 + 下载器」**：清单接口已能一次给出全部 1001 个 `pictureUrl`（ADR 0006），CDN 匿名抽样 12/12 也是 206——也就是说浏览器、会话、滚动稳定性循环、cookie 提取、Site asset 过滤、甚至 `@playwright/cli` 这个全局依赖都不再是必需的。**立项门槛是 `discovery.coverage`**：真跑实测单轮只覆盖官方清单的 **45%**，而接口是 100%/160ms。先让它跑几轮取数，再单独开一轮 + 单独一份 ADR，不要在功能评审里顺手做掉。
+- ~~**(C) 整体坍缩成「接口客户端 + 下载器」**~~ **已完成（2026-10-21，#76 / ADR 0018）**：门槛 `discovery.coverage` 的实测值 0.1798 / 0.4496 / 29.7% 与清单的 1001 条 / 160 ms 一起作为证据，浏览器、会话、滚动稳定性循环、cookie 提取、Site asset 过滤、`@playwright/cli` 与 Chrome 全部退出运行期。`coverage` 保留在报告里、恒为 1（读不到清单时为 null），作为那道门槛的存档。
+- **单轮覆盖全清单的跨轮稳定性未验证（2026-10-21 记录）**：票的验收要求「连续两轮真实运行证明条目数不随机波动」，而一轮真下载约 2 GB，本沙箱不跑。逻辑上 URL 集逐条来自清单、无随机性，但站点侧是否稳定（`pageSize` 被截断、WAF、合集变化）只有真跑能证；首轮真跑后应对比两轮 `gallery.officialTotal` 与 `discovery.combinedCount`。
 - **清单接口的稳定性未验证**：未公开文档，`pageSize` 上限、WAF/限流、`collectionId` 是否会随新合集变化都未知。失败模式是响的（`gallerySourceUnavailable` defect + `officialTotal: null`），但 `pageSize: 2000` 一旦被服务端悄悄截断，`parseGalleryList` 会直接拒收而不是把缺的那半报成「新增」。
 - **镜像缺口只报警、不自动补**：`missingFromDisk` 现在能把缺的条目列出来，而清单里带着它们的 URL——自动补下是可行的（且不受 `images/` 文件名不含批次日期的限制），留给后续一轮。
-- ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化，`scripts/run-discovery.js` 永久排除（见 Gotchas）。
+- ~~**oxfmt 全量重排待做**~~ **已完成（2026-09-15 晚）**：`oxfmt 0.67` + `.oxfmtrc.json`（`semi: false` / `singleQuote: true` / `arrowParens: avoid` / `printWidth: 100` / `endOfLine: lf` / `sortImports: true`），`pnpm fmt:check` 进 CI；`**/*.md` 暂不格式化。原先对 `scripts/run-discovery.js` 的永久排除随 #76 删除该载荷一并移除。
 - ~~**行尾政策待定**~~ **已解决（2026-09-15 晚）**：本仓一直存 LF，`git ls-files --eol` 报的 `i/lf` 是对的；`git cat-file` 的 CRLF 读数是量具故障。已加 `.gitattributes`（`* text=auto eol=lf`）把 Windows 工作区也钉到 LF，并用 `git checkout-index -a -f` 把工作区刷新为 LF。
 - ~~**`autofix.yml` 未接**~~ **已接（2026-09-15 晚）**：`.github/workflows/autofix.yml` 在 PR 上跑 `pnpm lint:fix && pnpm fmt`，再由 `autofix-ci/action@v1.3.4` 把结果提交回 PR 分支（App 已由用户安装）。之所以手写而不是用 `sxzz/workflows` 的 autofix reusable：它的默认命令只有 `pnpm run lint --fix`（不含格式化），且与 `ci.yml` 的 setup 写法保持一致更好读。注意：机器人会往你的分支推提交，改完先 `git pull`，别用 `--force-with-lease` 把它的提交打掉。
-- **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（`--filename` 那段正是 Windows 专属坑），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
+- **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（#76 之前还有 `--filename` 那段 Windows 专属坑，现在已随载荷删除），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。

@@ -1,15 +1,17 @@
 // ── The pipeline's global prerequisites, checked before a Run starts ─
 //
-// The Run dies cryptically when one of these is missing: `pwc('close-all')` and
-// `pwc('delete-data')` swallow a failed `playwright-cli` silently, so the Run
-// only fails later at `pwc('open …')`, and a missing `.env` throws a `ZodError`
-// at module load before any record is written. Checking the four here turns each of
-// those into a stable code the page can name in the reader's language (#47).
+// A Run now needs two things a source checkout does not guarantee: a usable
+// layered configuration, and the tsx entry the Console launches it with. A
+// missing `.env` throws a `ZodError` at module load before any record is
+// written; a missing tsx entry makes the spawn fail with an ENOENT nobody sees
+// until the page's start appears to do nothing. Checking the two here turns each
+// into a stable code the page can name in the reader's language (#47).
 //
-// Notes on the two machine-shaped checks:
-//   - Chrome is looked up through the registry's App Paths entry, because the
-//     Playwright config asks for the `chrome` channel: the `ms-playwright`
-//     chromium under `%LOCALAPPDATA%` is present but is not what a Run uses.
+// #76 removed the two machine-shaped checks with the browser crawl they served:
+// `@playwright/cli` on `PATH`, and Chrome through the registry's App Paths entry.
+// A Run no longer launches a browser, so neither can be missing.
+//
+// Notes on what remains:
 //   - The configuration is the layered pair (the app's `.env` and the user's
 //     `data/user.env`), read through `core/config-read.ts`'s file-reading
 //     predicate: dotenv's own parser, the process environment merged over the
@@ -18,11 +20,11 @@
 //     configuration usable here cannot then fail a Run at startup. `core/config.ts`
 //     itself is still not imported: it parses the environment at import time and
 //     would break the test suite's no-`.env` property.
+//   - The tsx entry is a file existence test.
 //
-// Nothing here launches a browser or runs `playwright-cli`: the checks are a
-// PATH scan, a registry read, a file read and a file existence test.
+// Nothing here launches a browser or runs a child process: the checks are a file
+// read and a file existence test.
 
-import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import process from 'node:process'
@@ -32,10 +34,6 @@ import { readLayeredConfig } from '../../core/config-read.js'
 import type { PrerequisiteCode } from '../api-types.js'
 
 export interface PrerequisiteChecks {
-  /** The globally installed `@playwright/cli`, found on `PATH`. */
-  playwrightCli: () => boolean
-  /** Real Chrome, via the registry's App Paths entry (the `chrome` channel). */
-  chrome: () => boolean
   /** The layered configuration is usable: the whole schema a Run parses validates. */
   envFile: () => boolean
   /** `<appRoot>/node_modules/tsx/dist/cli.mjs`, the Run's loader entry. */
@@ -49,14 +47,11 @@ export interface PrerequisiteDeps {
   dataRoot?: string
   /** Injected so a test can satisfy the checks without a real machine. */
   checks?: Partial<PrerequisiteChecks>
-  /** The environment whose `PATH` and `PATHEXT` are read. */
+  /** The environment whose values the configuration check reads. */
   env?: NodeJS.ProcessEnv
-  platform?: NodeJS.Platform
 }
 
 const ORDER: readonly { name: PrerequisiteCode; key: keyof PrerequisiteChecks }[] = [
-  { name: 'playwright-cli', key: 'playwrightCli' },
-  { name: 'chrome', key: 'chrome' },
   { name: 'env-file', key: 'envFile' },
   { name: 'tsx-entry', key: 'tsxEntry' },
 ]
@@ -73,78 +68,13 @@ export function tsxEntryPath(appRoot: string): string {
  */
 export function missingPrerequisites(deps: PrerequisiteDeps): PrerequisiteCode[] {
   const env = deps.env ?? process.env
-  const platform = deps.platform ?? process.platform
   const real: PrerequisiteChecks = {
-    playwrightCli: () => onPath(['playwright-cli'], env, platform),
-    chrome: () => realChrome(env, platform),
     envFile: () => runEnvFileAvailable(deps.appRoot, deps.dataRoot, env),
     tsxEntry: () => fs.existsSync(tsxEntryPath(deps.appRoot)),
   }
   const checks: PrerequisiteChecks = { ...real, ...deps.checks }
 
   return ORDER.filter(({ key }) => !checks[key]()).map(({ name }) => name)
-}
-
-/** Whether one of `names` is an executable on the environment's `PATH`. */
-function onPath(
-  names: readonly string[],
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
-): boolean {
-  const pathValue = env.PATH ?? env.Path ?? ''
-  const dirs = pathValue.split(path.delimiter).filter(dir => dir.length > 0)
-  // On Windows npm installs a `.cmd` and a `.ps1` shim beside the bare name; a
-  // shell finds the command through one of them, so all of them count.
-  const suffixes =
-    platform === 'win32' ? ['', '.ps1', ...(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')] : ['']
-  return dirs.some(dir =>
-    names.some(name => suffixes.some(suffix => fs.existsSync(path.join(dir, name + suffix)))),
-  )
-}
-
-const CHROME_APP_PATH_KEYS = [
-  'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe',
-  'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe',
-]
-
-/**
- * Real Chrome: the registry's App Paths entry, whose default value is the
- * `chrome.exe` Playwright's `chrome` channel launches. The bundled
- * `ms-playwright` chromium is deliberately not accepted — the config asks for
- * the channel, so a Run cannot use it.
- */
-function realChrome(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): boolean {
-  if (platform !== 'win32') {
-    return onPath(
-      ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'],
-      env,
-      platform,
-    )
-  }
-  for (const key of CHROME_APP_PATH_KEYS) {
-    const executable = registryDefaultValue(key)
-    if (executable !== null && fs.existsSync(executable)) return true
-  }
-  return false
-}
-
-/**
- * One registry key's default value, or `null`. `reg.exe` is part of Windows, so
- * this is a cheap read; it starts nothing and launches no browser.
- */
-function registryDefaultValue(key: string): string | null {
-  try {
-    const output = execFileSync('reg', ['query', key, '/ve'], {
-      encoding: 'utf8',
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-    // "    (Default)    REG_SZ    C:\Program Files\Google\Chrome\Application\chrome.exe"
-    const match = /REG_SZ\s+(.+?)\s*$/m.exec(output)
-    return match?.[1] ?? null
-  } catch {
-    return null
-  }
 }
 
 /**
