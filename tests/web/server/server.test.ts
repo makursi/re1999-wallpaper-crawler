@@ -8,7 +8,10 @@ import type { ConsoleConfig } from '../../../web/server/console-config.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
-import { consoleConfigIn, fixtureAppRoot, TOKEN } from './run-fixtures.js'
+import { consoleConfigIn, fixtureAppRoot, packageVersion, TOKEN } from './run-fixtures.js'
+
+/** The version the repository's package metadata declares (#79). */
+const PACKAGE_VERSION = packageVersion()
 
 /** The names Vite emits: one content hash per asset, referenced relatively. */
 const ASSET_JS = 'assets/index-BO_xJMyK.js'
@@ -179,6 +182,9 @@ describe('GET /api/status', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8')
     expect(await response.json()).toEqual({
+      // #79: the one version, read from the application root's package
+      // metadata — this fixture copies the repository's own file.
+      version: PACKAGE_VERSION,
       runId: null,
       state: 'idle',
       startedAt: null,
@@ -196,6 +202,19 @@ describe('GET /api/status', () => {
       report: null,
       reportPresent: false,
     })
+  })
+
+  it('reports the version the package metadata declares, in semver form', async () => {
+    // #79: the page shows this number, so the socket has to carry it. The
+    // expected value is the one file that owns the number, never a literal
+    // repeated here; the shape is what a reader can quote in a chat group.
+    const service = await serve()
+
+    const response = await fetch(`${service.origin}/api/status?token=${TOKEN}`)
+    const body: unknown = await response.json()
+
+    expect(body).toMatchObject({ version: PACKAGE_VERSION })
+    expect(body).toMatchObject({ version: expect.stringMatching(/^\d+\.\d+\.\d+(?:[-+].*)?$/) })
   })
 
   it('reports that a Run’s configuration is unavailable when the configuration has no endpoint', async () => {

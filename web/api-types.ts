@@ -216,6 +216,17 @@ export interface ConsoleVerdictReasons {
 
 /** `GET /api/status` — the Console's whole view (spec decision 16). */
 export interface ConsoleStatusPayload {
+  /**
+   * Which version this Console is (#79): `core/version.ts`'s answer — the
+   * build's injected value, or the application root's package metadata. `null`
+   * when neither names a version, which is "no version to report", never a
+   * made-up number.
+   *
+   * The page shows it so a reader can quote it when reporting a problem; the
+   * service reports the same string the module resolved, so there is one
+   * number and not a second copy here.
+   */
+  version: string | null
   /** The Run the verdict is about; `null` when no Run log names one. */
   runId: string | null
   state: ConsoleRunState

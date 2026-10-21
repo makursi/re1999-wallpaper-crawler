@@ -110,6 +110,12 @@ export interface ConsoleGalleryFacts {
 
 /** Everything the payload is built from. */
 export interface ConsoleStatusFacts {
+  /**
+   * The version this Console is running (#79), as `core/version.ts` resolved it
+   * for the application root. `null` when the install carries neither an
+   * injected version nor readable package metadata.
+   */
+  version: string | null
   run: ConsoleRunFacts
   /** The Mirror's non-dot entry count (web/server/mirror.ts). */
   mirrorCount: number
@@ -245,12 +251,16 @@ export function galleryFactsOf(list: GalleryList | null): ConsoleGalleryFacts {
  * has to be made here as well.
  */
 export function buildStatus({
+  version,
   run,
   mirrorCount,
   gallery,
   runConfigAvailable,
 }: ConsoleStatusFacts): ConsoleStatusPayload {
   const payload: ConsoleStatusPayload = {
+    // #79: the one current version, carried as resolved — never re-derived or
+    // re-written here, so the page, the service and package.json cannot drift.
+    version,
     runId: run.runId,
     state: run.state,
     startedAt: run.startedAt,

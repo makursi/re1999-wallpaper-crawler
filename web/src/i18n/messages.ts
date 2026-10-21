@@ -66,6 +66,10 @@ const zhCN = {
   // renders through `Message.vue`, as every count does.
   'nav.mirrorCount': '镜像 {count}',
   'nav.run': '运行',
+  // The one number a reader quotes when reporting a problem (#79). The version
+  // is a data cell, so the sentence takes it as a `{version}` parameter and
+  // `Message.vue` renders it in the numeral role.
+  'nav.version': '版本 {version}',
   'drawer.title': '运行面板',
   'drawer.close': '关闭(Esc)',
 
@@ -228,6 +232,7 @@ const en = {
 
   'nav.mirrorCount': 'Mirror {count}',
   'nav.run': 'Run',
+  'nav.version': 'version {version}',
   'drawer.title': 'Run panel',
   'drawer.close': 'Close (Esc)',
 

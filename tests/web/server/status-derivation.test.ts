@@ -10,6 +10,7 @@ import {
   galleryState,
   LOG_NAME,
   NEW_FILES,
+  packageVersion,
   plainLine,
   runLog,
   runReport,
@@ -19,6 +20,7 @@ import {
 
 /** The raw Run facts plus the facts the assembly takes from the service. */
 type RawStatusFacts = ConsoleRunLogFacts & {
+  version: string | null
   mirrorCount: number
   officialTotal: number | null
   listAvailable: boolean
@@ -34,6 +36,7 @@ type RawStatusFacts = ConsoleRunLogFacts & {
 function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
   const {
     logText,
+    version = packageVersion(),
     mirrorCount = 1013,
     officialTotal = 1010,
     listAvailable = true,
@@ -41,6 +44,7 @@ function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
     ...run
   } = over
   return buildStatus({
+    version,
     run: deriveRunFacts({
       logName: LOG_NAME,
       reportPresent: true,

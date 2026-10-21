@@ -109,6 +109,7 @@ core/                        — the crawler
 ├── app-root.ts              — the one application root: RE1999_APP_ROOT or the caller's fallback, plus the sibling data directory; nothing derives it from module position (unit-tested)
 ├── config.ts                — the pipeline's eager configuration: reads the two layers at import (an unusable pair fails a Run before it starts) and exports the constants the pipeline imports
 ├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the tree-relative defaults, the Gallery list URL (unit-tested)
+├── version.ts               — the one current version: the build-injected constant (`RE1999_VERSION`, ticket #84's define seam) with the app root's package metadata as the source run's fallback (unit-tested)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: clear session → open browser → run discovery → extract URLs → filter Site assets → download → check the list → report
 ├── check-run.ts             — the verdict CLI: newest Run log + Gallery state + file probe → print, exit 0/1
@@ -149,6 +150,7 @@ tests/                       — mirrors the sources it tests
 │   ├── app-root.test.ts
 │   ├── logger.test.ts
 │   ├── config-read.test.ts
+│   ├── version.test.ts
 │   ├── discovery-loader.test.ts
 │   ├── wallpaper-url.test.ts
 │   ├── run-log-file.test.ts

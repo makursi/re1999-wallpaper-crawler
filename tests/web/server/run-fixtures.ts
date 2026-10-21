@@ -23,6 +23,26 @@ import type { RunLogSourceOptions } from '../../../web/server/run-log-source.js'
 /** The access token every Console test presents; the service generates a real one. */
 export const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 
+/** The repository's own package metadata: the one file that declares a version. */
+const REPO_PACKAGE_FILE = path.resolve(import.meta.dirname, '..', '..', '..', 'package.json')
+
+/**
+ * The version the repository's `package.json` declares (#79).
+ *
+ * A fixture app root is a stand-in for a source checkout, so it carries this
+ * file verbatim and the Console reads it the way a source run does. The value
+ * is read here rather than written down: a second hand-written number is exactly
+ * what the version module exists to prevent.
+ */
+export function packageVersion(): string {
+  const parsed: unknown = JSON.parse(fs.readFileSync(REPO_PACKAGE_FILE, 'utf8'))
+  if (typeof parsed === 'object' && parsed !== null && 'version' in parsed) {
+    const { version } = parsed
+    if (typeof version === 'string' && version.length > 0) return version
+  }
+  throw new Error(`${REPO_PACKAGE_FILE} carries no version`)
+}
+
 export const RUN_ID = '2026-10-18T01-03-31'
 export const STARTED_AT = '2026-10-18T01:03:31.856Z'
 /** The name today's writer emits: `core/logger.ts`'s `run-<runId>.jsonl`. */
@@ -136,6 +156,10 @@ export function fixtureAppRoot(prefix: string): string {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
   fs.mkdirSync(path.join(projectRoot, 'images'))
   fs.mkdirSync(path.join(projectRoot, 'logs'))
+  // A checkout carries its package metadata, and the Console's version is read
+  // from it relative to the app root (#79). Copied verbatim so the fixture's
+  // version is the repository's, never a second number written here.
+  fs.copyFileSync(REPO_PACKAGE_FILE, path.join(projectRoot, 'package.json'))
   return projectRoot
 }
 

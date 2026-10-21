@@ -2,8 +2,8 @@
 // ── The navigation pill ─────────────────────────────────────────────
 //
 // The floating glass navigation the page shell floats on (#48): the product
-// name, the one number worth having at a glance, the way into the Run panel and
-// the language switch.
+// name, the one number worth having at a glance, the way into the Run panel,
+// the language switch, and the version this build is (#79).
 //
 // The blur filter appears exactly once, on this pill, which is fixed. It is
 // never used on content that scrolls: a blurred scrolling surface is the one
@@ -65,6 +65,15 @@ const { status } = useConsoleStatus()
       </DialogTrigger>
 
       <LocaleSwitch />
+
+      <span class="h-5 w-px bg-border" aria-hidden="true" />
+
+      <!-- The number to quote when reporting a problem (#79): which build this
+           page is. Quiet, because it is reference rather than status, but on
+           the fixed pill so it is always in view; the value is a data cell. -->
+      <p v-if="status?.version" class="text-xs text-muted">
+        <Message message="nav.version" :params="{ version: status.version }" />
+      </p>
     </header>
   </div>
 </template>
