@@ -11,7 +11,7 @@
     "build": "tsx scripts/build.ts",
     "package": "pnpm build && tsx scripts/package.ts",
     "build:web": "vite build --config web/vite.config.ts",
-    "webui": "cd build && node server.js",
+    "webui": "tsx scripts/webui.ts",
     "dev:web": "vite --config web/vite.config.ts",
     "lint": "oxlint --type-aware .",
     "lint:fix": "oxlint --type-aware --fix .",

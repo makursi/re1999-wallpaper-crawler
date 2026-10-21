@@ -49,7 +49,7 @@ function successLines(outcome: {
   return [
     `已更新:${outcome.installRoot}`,
     ...(version === null ? [] : [version]),
-    '旧的程序留在 app.old\\,新版本打不开时可以关掉程序,把 app.old\\ 改名回 app\\ 再启动。',
+    '旧的程序留在 app.old\\\\。新版本打不开时:关掉程序,先把现在的 app\\\\ 改名成 app.broken,再把 app.old\\\\ 改名成 app\\\\,然后双击 启动.bat。',
     'data\\ 目录没有被改动。现在可以双击 启动.bat 打开新版本。',
   ]
 }

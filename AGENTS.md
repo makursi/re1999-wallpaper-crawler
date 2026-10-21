@@ -17,8 +17,7 @@ never `pnpm install`.
 **Developers and agents** need Node 22 and pnpm, then `pnpm install` for project
 dependencies. A source Run needs one line in `.env` —
 `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup notice says so
-when it is missing. `pnpm webui` runs `build/` as its application root, so that
-tree reads `build/.env` and writes `build/data/`; `pnpm build` recreates
+when it is missing. `pnpm webui` runs the built program in `build/` but points the data root at the repository's `data/` (`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the page shows: the packaged shape's `app\\` beside `data\\`, reproduced. `pnpm build` recreates
 `build/`, and the README's developer section says so rather than implying the
 repository's `.env` is used.
 
@@ -30,7 +29,7 @@ repository's `.env` is used.
 | Check the newest Run | `pnpm check-run` (`tsx core/check-run.ts`) |
 | Build the program | `pnpm build` (`tsx scripts/build.ts` → `build/`; needed before `webui`) |
 | Package the portable release | `pnpm package` (`pnpm build` + `tsx scripts/package.ts` → `dist-package/re1999-wallpaper-crawler-v<version>.zip`) |
-| WebUI (local page) | `pnpm webui` (`cd build && node server.js`, flags `--port`, `--no-open`) |
+| WebUI (local page) | `pnpm webui` (`tsx scripts/webui.ts` — build/ as the program, the repository's data/ as its data; flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
 | Tests | `pnpm test` (`vitest run`) |
 | Typecheck | `pnpm typecheck` (`tsc --noEmit` + `vue-tsc --noEmit -p web/tsconfig.web.json`) |
@@ -150,9 +149,9 @@ web/                         — the Console, whole
 ├── vite.config.ts           — the page's bundler config (root = this directory, output web/dist/)
 ├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts + uno.config.ts)
 ├── src/                     — the page (Vue 3). The entry and its views stay at this level — `App.vue`, `GalleryView.vue`, `RunPanel.vue`, `OrphanPanel.vue`, `FullSizeView.vue` — because they are what the page is; everything they compose lives in three buckets, one rule: reactive state or a lifecycle → `composables/`; a stateless pure function → `lib/`; markup only → `components/`
-│   ├── components/          — markup only; flat, prefixed names; no feature subdirectories: `ConsoleNav` + `LocaleSwitch` + `ConsoleDrawer` (the shell), `WallHeader` + `WallTile` (the wall), `RunSetupNotice` + `RunVerdict` + `RunReportBlock` + `RunDefectList` (the Run panel)
-│   ├── composables/         — the page's shared state: `useConsoleStatus` (one status read, the Run poll), `useGallery` (the wall's one read)
-│   ├── lib/                 — stateless: `console-api.ts` (the only place a request carries the token), `masonry.ts` (the wall's columns — unit-tested), `poll.ts` (whether to read again)
+│   ├── components/          — markup only; flat, prefixed names; no feature subdirectories: `ConsoleNav` + `LocaleSwitch` + `ConsoleDrawer` (the shell), `WallStart` + `WallHeader` + `WallTile` (the wall), `RunSetupNotice` + `RunVerdict` + `RunReportBlock` + `RunDefectList` (the Run panel)
+│   ├── composables/         — the page's shared state: `useConsoleStatus` (one status read, the Run poll), `useGallery` (the wall's one read), `useRunStart` (the page's one start action — only a click starts a Run)
+│   ├── lib/                 — stateless: `console-api.ts` (the only place a request carries the token), `masonry.ts` (the wall's columns — unit-tested), `poll.ts` (whether to read again), `wall-state.ts` + `run-start.ts` (which band the wall is in, and what the start control is called — both unit-tested)
 │   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
 │   └── console-token.ts     — the token the page was opened with, read from its own URL
 └── server/                  — the service, and the one command that starts it

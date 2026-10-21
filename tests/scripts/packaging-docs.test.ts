@@ -111,7 +111,10 @@ describe('the licence', () => {
   it('is MIT, and package.json declares the same licence', () => {
     const licence = fs.readFileSync(LICENCE_FILE, 'utf8')
     expect(licence).toContain('MIT License')
-    expect(licence).toMatch(/Copyright \(c\) 2026 ChoriaKiinweill/)
+    // The holder is the maintainer's to choose and may change; what must not
+    // change is that a year and a name are actually there. Pinning the name
+    // here would make renaming the copyright a test failure.
+    expect(licence).toMatch(/Copyright \(c\) \d{4} \S/)
 
     const packageJson: unknown = JSON.parse(
       fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'),
