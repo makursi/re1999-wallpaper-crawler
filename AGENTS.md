@@ -50,6 +50,31 @@ bundle build and `test` on every PR and on pushes to `main`. `.github/workflows/
 a PR does not have to be formatted by hand — it needs the
 [autofix.ci App](https://github.com/apps/autofix-ci) installed on the repo.
 
+## Releasing
+
+A release is a tag and then a human decision. `git tag vX.Y.Z && git push
+origin vX.Y.Z` runs `.github/workflows/release.yml` on **windows-latest**: it
+checks the tag against `package.json` (`scripts/release-tag.ts`), cuts the
+matching section out of `CHANGELOG.md` (`scripts/release-notes.ts`), runs the
+same gates CI runs, packages the zip with the runner's own `node.exe` through
+`RE1999_NODE_EXE`, and creates a **draft** GitHub Release named for the tag with
+the extracted notes as its body. It never publishes, and `workflow_dispatch` is
+the dry run that builds everything but creates no Release.
+
+`CHANGELOG.md` is the one user-readable record — Chinese, player-facing, with
+its extraction rule stated in its own header: each version is exactly
+`## X.Y.Z`, and its body runs to the next `## ` heading. Bump
+`package.json`, write that section, commit, then tag. The draft Release is where
+the maintainer downloads the zip, extracts it on a clean Windows machine without
+Node or pnpm, double-clicks `启动.bat`, checks the page, the version and a
+thumbnail — and only then publishes the draft. A failed smoke test means
+deleting the draft and the tag, not publishing a package nobody ran.
+
+The version discipline is semver with one deliberate reading (ADR 0021):
+**MAJOR** when the data layout or the configuration keys stop being compatible,
+**MINOR** for a new capability, **PATCH** for a fix — including a site redesign
+that broke the crawl. The first public release is `1.0.0`.
+
 ## Git Conventions (every iteration)
 
 All work lands on `main` only through a merged PR. **Never commit on `main`
@@ -194,6 +219,8 @@ tests/                       — mirrors the sources it tests
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
 │   ├── packaging-docs.test.ts — the manual's encoding and the licence's agreement with package.json (#89)
+│   ├── release-notes.test.ts  — the changelog's extraction rule (#88)
+│   ├── release-tag.test.ts    — the tag/version agreement (#88)
 │   └── zip.test.ts
 └── web/                     — the Console's tests
     ├── server/              — the service's and the updater's tests (and their two helpers)
@@ -211,6 +238,8 @@ scripts/
 ├── package-version.ts — the one `package.json` version reader, shared by the build and the packager
 ├── package-layout.ts — the archive's whitelist and the packager's pure decisions: which archived paths may exist, the root files taken generically from `packaging/`, the generated `app/.env` template, and the `node.exe` source (`RE1999_NODE_EXE` is #88's seam) (unit-tested)
 ├── package.ts        — `pnpm package`: collect `build/` + `packaging/` + Node + sharp's closure into `dist-package/re1999-wallpaper-crawler-v<version>.zip`, asserting the whitelist before the zip is written
+├── release-notes.ts  — the Release body: exactly one `## X.Y.Z` section of `CHANGELOG.md`, failing loudly when it is missing, empty or duplicated; CLI prints it or writes `--out` (#88, unit-tested)
+├── release-tag.ts    — the tag/version agreement: a `vX.Y.Z` tag must equal `package.json`'s version, checked by function rather than inline YAML; CLI prints the version, `--package` is the dry run (#88, unit-tested)
 └── zip.ts            — the hand-written zip writer (node:zlib, UTF-8 names, no zip64) (unit-tested)
 packaging/
 ├── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, `pause` on failure. #86 copies it to the archive root byte for byte
