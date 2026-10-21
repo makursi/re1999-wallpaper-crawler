@@ -198,6 +198,57 @@ The first log record of a Run carrying runId, timestamps, and a config
 snapshot, so cross-run analysis is not confounded by config drift.
 _Avoid_: header, preamble
 
+### Distribution
+
+**Portable package (便携包)**:
+The folder a player gets from the release zip: the program, its launcher, its
+updater and its manual, with the player's own data beside them.
+_Avoid_: installer, app, 安装包
+
+**Program directory (程序目录)**:
+The part of the portable package the program owns and an update replaces whole;
+in the package it is `app\`.
+_Avoid_: install directory, program folder
+
+**Data directory (数据目录)**:
+The part of the portable package that belongs to the player: the Mirror, the Run
+logs, the cache and their overrides. No update writes to it, and deleting it is
+the player's own act.
+_Avoid_: storage, workspace, user folder
+
+**Artifact (制品)**:
+A built file a release carries — the Console entry, the Run entry, the updater
+entry and the page — as opposed to source. A shipped program runs its artifacts
+as they are and compiles nothing.
+_Avoid_: build output, bundle, binary
+
+**Launcher (启动器)**:
+The one file a player double-clicks to start the program; in the package it is
+`启动.bat`.
+_Avoid_: entry point, starter, shortcut
+
+**Updater (更新器)**:
+The one file a player double-clicks to replace the program directory with a newer
+release; in the package it is `更新.bat`.
+_Avoid_: installer, patcher, update package (the release is the package)
+
+**Fallback point (回退点)**:
+The previous program directory, kept beside the current one after an update so the
+player can rename it back when a new version does not start. One generation only;
+in the package it is `app.old\`.
+_Avoid_: backup, snapshot, rollback
+
+**Install pointer (安装指针)**:
+The program's own note, outside the package folder, of where the installation it
+last started from lives — so the updater can still find a folder that has been
+renamed or moved.
+_Avoid_: install record, registry entry, config
+
+**Site-constants template (站点常量模板)**:
+The committed source of the configuration a release carries: the game's site
+constants, never the owner's local settings.
+_Avoid_: .env, default config, sample config
+
 ## Architecture
 
 ### The Gallery list is Discovery (the core principle)

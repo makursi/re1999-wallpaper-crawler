@@ -32,6 +32,17 @@
   that tree. The thumbnail cache is not a Console artifact any more: it is
   `<data>/cache/thumbnails/` (ADR 0019).
   Vocabulary in CONTEXT.md → Console.
+- **Distribution** — how the program reaches a player: one portable package, the
+  program directory an update replaces, the data directory it never touches, the
+  version a release carries, and the one request that says a newer release
+  exists.
+  Owns: `packaging/` (the archive's root files and the site-constants template),
+  `scripts/build.ts` + `scripts/bundle-externals.ts` (the built tree and its one
+  allowed external), `scripts/package.ts` + `scripts/package-layout.ts` (the
+  archive's whitelist and assembly), `web/server/installation.ts`,
+  `web/server/updater.ts` and `web/server/update-entry.ts` (the install pointer
+  and the swap), `web/server/update-check.ts` and `core/version.ts` (the one
+  version and the one outbound request). Vocabulary in CONTEXT.md → Distribution.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `core/wallpaper-url.ts`; Download's input, the Console's
   tile check and the mirror check all read it, while Discovery's URL set comes
@@ -66,6 +77,15 @@
 - **Gallery list → Console**: the gallery view is one row per Gallery list
   entry, and it degrades to the Mirror alone when the list is unreachable,
   reporting the list as unread rather than as nothing missing.
+- **Distribution → Console**: the package's launcher starts the Console from
+  `app\` with both roots injected, and the Console's boot writes the data
+  directory and the install pointer the updater reads (ADR 0019, ADR 0020).
+- **Distribution → Gallery tracking / Download**: a release carries no `data\`
+  and an update replaces only the program directory, so the Mirror, the Run logs
+  and the cache survive it (ADR 0019, ADR 0021).
+- **Distribution ↔ Release**: the version is one number from the tag through the
+  build to the page, and the page's notice is the only thing that tells a player
+  a newer release exists.
 
 ## Where things live
 
