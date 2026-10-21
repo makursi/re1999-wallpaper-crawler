@@ -9,9 +9,18 @@ downloads them in parallel. There is no browser in the pipeline: no Chrome, no
 
 ## Prerequisites
 
-Node 22 and pnpm, then `pnpm install` for project dependencies. A Run needs one
-line in `.env` — `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup
-notice says so when it is missing.
+**Players install nothing.** The portable release ships its own Node runtime and
+a prebuilt page; the user-facing path is the download in `README.md` and the
+manual inside the package, `packaging/使用说明.txt` (#89) — never a terminal, and
+never `pnpm install`.
+
+**Developers and agents** need Node 22 and pnpm, then `pnpm install` for project
+dependencies. A source Run needs one line in `.env` —
+`BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup notice says so
+when it is missing. `pnpm webui` runs `build/` as its application root, so that
+tree reads `build/.env` and writes `build/data/`; `pnpm build` recreates
+`build/`, and the README's developer section says so rather than implying the
+repository's `.env` is used.
 
 ## Commands
 
@@ -110,7 +119,7 @@ Run never got there".
 
 ## Architecture
 
-Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard, the build and the packager, and `packaging/` holds what the portable package places at its archive root (the launcher, #85) plus the site-constants template that becomes `app\.env`.
+Two layers, one directory each at the root: `core/` is the crawler, `web/` is the Console. Nothing else at the root claims to be source — `scripts/` holds the pre-commit guard, the build and the packager, and `packaging/` holds what the portable package places at its archive root (`启动.bat` #85, `更新.bat` #87, `使用说明.txt` #89) plus the site-constants template that becomes `app\.env`.
 
 ```
 core/                        — the crawler
@@ -185,6 +194,7 @@ tests/                       — mirrors the sources it tests
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
+│   ├── packaging-docs.test.ts — the manual's encoding and the licence's agreement with package.json (#89)
 │   └── zip.test.ts
 └── web/                     — the Console's tests
     ├── server/              — the service's and the updater's tests (and their two helpers)
@@ -206,16 +216,23 @@ scripts/
 packaging/
 ├── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, `pause` on failure. #86 copies it to the archive root byte for byte
 ├── 更新.bat          — the updater's entry point (#87): the same ASCII/CRLF shape, `app\node.exe app\update.js "%~dp0." %*` — the package root plus the path the user dragged, if any
+├── 使用说明.txt      — the player's manual (#89): UTF-8 with a BOM and CRLF, read in Notepad. Start and stop, the first download's size/time, update, rollback, uninstall, where `data\` is, Mark-of-the-Web, and where to ask; the packager takes it from here generically
 └── site.env          — the committed site constants the packager writes as `app\.env`; the repository's own `.env` is the owner's and is never read by a release build
 ```
+
+`LICENSE` at the root is MIT, with a plain statement that the wallpapers belong
+to the official site and that this project stores or distributes none;
+`package.json`'s `license` field is the same word rather than a second truth.
+`tests/scripts/packaging-docs.test.ts` pins that agreement and the manual's
+reader-facing facts.
 
 `build/` itself is generated, never source: `pnpm build` writes it and
 `.gitignore` keeps it out of the tree. It is a complete application root, which
 is what a package ships (#86) and what `pnpm webui` runs.
 
 `pnpm package` adds `dist-package/` (gitignored): one zip whose root is
-`启动.bat` and `更新.bat` beside `app\`, with **no `data\`** — the launcher
-creates it (#85) and the updater only ever swaps `app\` (#87).
+`启动.bat`, `更新.bat` and `使用说明.txt` beside `app\`, with **no `data\`** — the
+launcher creates it (#85) and the updater only ever swaps `app\` (#87).
 `app\.env` is generated from `packaging/site.env`, never copied from the working
 tree; the archive root's files are every `.bat`/`.txt` in `packaging/`, so #87
 and #89 add a file and no packager code. `app\node_modules` is `sharp` **and the
@@ -296,6 +313,19 @@ are pure ASCII — `cd`, the two root variables (or the package root and `%*`),
 updater answer) is Node's, which writes Unicode to the console. Do not add
 Chinese to a script, and do not let its line endings be normalized: they are
 stored with CRLF, and `.gitattributes` marks `*.bat -text`.
+
+### The user manual is UTF-8 with a BOM, and CRLF
+
+`packaging/使用说明.txt` is the one document a player opens after unzipping, in
+Notepad. A BOM is Notepad's one unambiguous "this is UTF-8" signal — without it
+the reader uses a heuristic, and a wrong guess is mojibake; CRLF is one line per
+line. `.gitattributes` marks `packaging/*.txt -text` so git neither normalizes
+nor rewrites those bytes, and the packager copies the file verbatim. Measured on
+this machine: Notepad's status bar reports `UTF-8 BOM` and `Windows (CRLF)`, and
+the document reads back through UI Automation with no replacement character and
+the Chinese intact. `tests/scripts/packaging-docs.test.ts` pins the BOM, the line
+endings, the facts the manual must name, and `LICENSE`'s agreement with
+`package.json`. Do not let a formatter or an editor "fix" the encoding.
 
 ### Git history is LF, the Windows worktree is CRLF
 

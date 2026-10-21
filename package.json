@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Wallpaper scraper for Bluepoch's official gallery (re.bluepoch.com)",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "core:run": "tsx core/main.ts",
