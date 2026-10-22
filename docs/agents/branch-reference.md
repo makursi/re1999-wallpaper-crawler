@@ -11,6 +11,36 @@ The bundling lesson below is now also carried by a check: CI builds the program
 and boots it (`pnpm build`, then `pnpm smoke:boot`), so a missing banner fails on
 the PR that removes it instead of first on a tag.
 
+## The boot check (`pnpm smoke:boot`)
+
+`scripts/smoke-boot.ts` is the command CI runs after `pnpm build`. It stages the
+built tree into a temporary root, starts `server.js` on an OS-assigned port with
+the browser suppressed, and drives the program only through the page's own API
+with the boot token: `/api/status` must report the version the build injected,
+`<data>/instance.json` must name this boot's port, token and pid, and
+`/api/exit` must answer `202` and end the process with code 0. A second case
+stages the same tree with `run.js` removed and requires the boot refusal, and a
+third runs `update.js` against a package with no installation pointer and
+requires its Chinese, non-zero refusal.
+
+**What the CI claim covers.** All three entries compile; the check boots the
+Console and runs the updater's refusal. `run.js` is compiled but never executed,
+so a bundling failure that only `run.js` has stays green.
+
+**What "no network" means.** No `.env`, no browser and no real Run: the staged
+tree has no configuration, so the status read never asks the Gallery list. The
+boot does make one outbound request — the Console's own courtesy update check,
+bounded at three seconds and never fatal — and the check neither silences it nor
+pretends it does not happen.
+
+**The blocked-port retry.** `--port 0` lets the OS choose, and on this machine
+the dynamic range (1024–15000) includes ports `fetch` refuses (`bad port`), so
+the console case retries the whole boot with a fresh port twice before failing.
+
+**What it cannot cover.** The Windows-only surfaces stay manual: the two
+launchers, the updater's real folder swap, a `node_modules` junction, and the
+manual's rendering.
+
 ## The six lessons
 
 ### An ESM bundle of CommonJS packages needs `createRequire`
