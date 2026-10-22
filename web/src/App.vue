@@ -15,13 +15,23 @@
 // rule that keeps its fonts and its logo out (spec #43, docs/adr/0013).
 
 import { DialogRoot } from 'reka-ui'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import ConsoleDrawer from './components/ConsoleDrawer.vue'
 import ConsoleNav from './components/ConsoleNav.vue'
+import { useConsoleStatus } from './composables/useConsoleStatus'
 import GalleryView from './GalleryView.vue'
 
 const drawerOpen = ref(false)
+
+// Opening the drawer re-reads the status (#95): the reader who created the
+// missing `.env` after the page loaded finds the setup notice already gone,
+// with no reload. The drawer's click is the shell's fact, so the wiring is the
+// shell's; the read itself stays the store's one read.
+const { refresh } = useConsoleStatus()
+watch(drawerOpen, open => {
+  if (open) void refresh()
+})
 </script>
 
 <template>
