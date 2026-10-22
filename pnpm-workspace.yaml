@@ -5,3 +5,13 @@
 allowBuilds:
   esbuild: true
   simple-git-hooks: true
+
+# A git worktree borrows the parent checkout's installed dependencies through a
+# junction, and pnpm 12's pre-script install refuses to write through it
+# ("workspace hoist directory is not a real directory"). Every script in every
+# worktree then fails its install first and prints a warning that points at the
+# wrong problem — an iteration's fan-out paid that 53 times and each agent
+# pasted two `npm_config_*` variables onto every command.
+# What the check stands in for — a lockfile that disagrees with the manifest —
+# is enforced where it actually runs: the frozen install in CI (#107).
+verifyDepsBeforeRun: false
