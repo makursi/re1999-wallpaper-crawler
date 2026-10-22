@@ -5,9 +5,9 @@
 // service logic — so the page's `import type` is erased and no service code
 // reaches the browser bundle (spec decision 27). The exception is the code
 // vocabularies: every code the service can emit — refusals, prerequisites,
-// explained reasons, verdicts and gallery row states — is a runtime tuple,
-// because the dictionary test has to enumerate them to prove that each one has
-// copy in both locales (#47). They are data, not behaviour.
+// explained reasons and verdicts — is a runtime tuple, because the dictionary
+// test has to enumerate them to prove that each one has copy in both locales
+// (#47). They are data, not behaviour.
 
 /** Which Run the Console is looking at (spec decision 16). */
 export type ConsoleRunState = 'idle' | 'running' | 'orphaned'
@@ -346,12 +346,6 @@ export interface ConsoleStatusPayload {
   runLogName?: string
 }
 
-/** How a gallery row stands against the Mirror (spec decision 17). */
-export const GALLERY_ROW_STATES = ['on-disk', 'missing', 'not-in-gallery'] as const
-
-/** A gallery row's stable state code. */
-export type ConsoleGalleryRowState = (typeof GALLERY_ROW_STATES)[number]
-
 /**
  * One Wallpaper's own pixel size (#48).
  *
@@ -365,35 +359,35 @@ export interface ConsoleImageSize {
   height: number
 }
 
-/** One row of the gallery: a Gallery list entry, or a Mirror extra. */
+/**
+ * One row of the gallery: a Wallpaper really on disk.
+ *
+ * The service decides the row set — the file exists in the Mirror and its name
+ * is one the Wallpaper URL set accepts — so the page never asks "can this be
+ * shown": a row is showable, and an entry with no file is not a row at all. The
+ * page used to keep a hand-copied extension list to reach that answer, which is
+ * exactly the kind of duplicate that drifts; a non-image Mirror extra then
+ * produced one guaranteed-400 thumbnail request per paint.
+ */
 export interface ConsoleGalleryRow {
-  /** The gallery's own id; `null` for a Mirror file the list does not contain. */
+  /** The gallery's own id; `null` for a retired Wallpaper the list dropped. */
   id: number | null
-  /** The Wallpaper's file name (the secondary label). */
+  /** The Wallpaper's file name. */
   name: string
-  state: ConsoleGalleryRowState
-  /**
-   * Whether the page can show this row at all: the file is in the Mirror *and*
-   * its name is one the Wallpaper URL set accepts.
-   *
-   * Computed by the service, not the page. The two answers it needs — the row's
-   * state and the Wallpaper URL set's vocabulary — are the service's already,
-   * and the page used to keep a hand-copied extension list to reach the second
-   * one. A copy drifts: when the crawler's list grows, the page's lags silently,
-   * and the symptom is one guaranteed-400 thumbnail request per tile.
-   */
-  viewable: boolean
 }
 
 /**
- * `GET /api/gallery` — the Gallery list read against the Mirror.
+ * `GET /api/gallery` — the Mirror, with the Gallery list read against it.
  *
  * The row model is `web/server/gallery-view.ts`'s `GalleryView`, which is
  * checked against this declaration at compile time (`toGalleryPayload`), plus
  * the Mirror's count.
  */
 export interface ConsoleGalleryPayload {
-  /** One row per Gallery list entry, then the Mirror's extras, sorted. */
+  /**
+   * One row per Wallpaper really on disk: the Gallery list's downloaded entries
+   * in the list's order, then the Mirror's retired extras, sorted.
+   */
   rows: ConsoleGalleryRow[]
   /** What the Gallery list says the gallery holds; `null` = not read. */
   officialTotal: number | null

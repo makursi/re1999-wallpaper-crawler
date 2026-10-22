@@ -13,7 +13,6 @@ import { describe, expect, it } from 'vitest'
 import {
   CONSOLE_VERDICTS,
   EXPLAINED_REASON_KINDS,
-  GALLERY_ROW_STATES,
   PREREQUISITE_CODES,
   REFUSAL_CODES,
 } from '../../../../web/api-types.js'
@@ -21,7 +20,6 @@ import type { Locale, MessageKey } from '../../../../web/src/i18n/messages.js'
 import {
   DEFAULT_LOCALE,
   EXPLAINED_REASON_MESSAGE_KEYS,
-  GALLERY_ROW_STATE_MESSAGE_KEYS,
   LOCALES,
   PREREQUISITE_MESSAGE_KEYS,
   REFUSAL_MESSAGE_KEYS,
@@ -120,14 +118,29 @@ describe('the locale dictionary', () => {
 })
 
 /**
- * The setup notice (#60): with no usable `.env`, the Run panel has to tell a
- * first-time reader what to create before they click anything. The line is the
- * site's constant, not copy to be translated — the same line `README.md`'s quick
- * start gives — so both locales carry it verbatim, and the sentence that
- * introduces it names the file the reader creates. #76 dropped the page path
- * with the browser crawl, so one line is all a Run needs.
+ * The setup notice (#93, ticket #95): it shows only while the configuration is
+ * really unusable, and then it is two lines — one sentence saying why a Run
+ * cannot start, and the line to write. The file is the `.env` beside the
+ * program, because a Portable package has no repository root to send a player
+ * looking for, and nothing says "refresh the page" any more: the page re-reads
+ * the status itself when the drawer opens or the window regains focus. The
+ * retired lines of the old four-line notice are gone from both locales.
  */
 describe('the setup notice', () => {
+  /** The notice's keys in one locale, sorted; `run.setup.*` is the notice whole. */
+  function setupKeysOf(locale: Locale): string[] {
+    return keysOf(locale).filter(key => key.startsWith('run.setup.'))
+  }
+
+  it('is exactly two lines in both locales — the sentence and the line to write', () => {
+    for (const locale of LOCALES) {
+      expect(setupKeysOf(locale), `${locale}: setup keys`).toEqual([
+        'run.setup.body',
+        'run.setup.lines',
+      ])
+    }
+  })
+
   it('gives the .env line verbatim in both locales', () => {
     const lines = 'BASE_ORIGIN=https://re.bluepoch.com'
     for (const locale of LOCALES) {
@@ -135,9 +148,49 @@ describe('the setup notice', () => {
     }
   })
 
-  it('names the file the reader creates', () => {
+  it('names the .env beside the program, never a repository root', () => {
     for (const locale of LOCALES) {
-      expect(translate(locale, 'run.setup.file', { file: '.env' })).toContain('.env')
+      const copy = translate(locale, 'run.setup.body', { file: '.env' })
+      expect(copy, `${locale}: ${copy}`).toContain('.env')
+      // A Portable package is unzipped anywhere and has no repository root; the
+      // file the program reads is the one beside the program itself.
+      expect(copy, `${locale}: ${copy}`).not.toMatch(/repository root|repo root|仓库根目录|仓库根/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /程序旁边/ : /beside the program/i,
+      )
+    }
+  })
+
+  it('says why a Run cannot start', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'run.setup.body', { file: '.env' })
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /不能开始运行|还不能运行/ : /cannot start|can’t start|can't start/i,
+      )
+    }
+  })
+
+  it('no longer tells the reader to refresh the page', () => {
+    for (const locale of LOCALES) {
+      const body = translate(locale, 'run.setup.body', { file: '.env' })
+      const lines = translate(locale, 'run.setup.lines')
+      expect(body, `${locale}: ${body}`).not.toMatch(/refresh|刷新/i)
+      expect(lines, `${locale}: ${lines}`).not.toMatch(/refresh|刷新/i)
+    }
+  })
+
+  it('does not contradict the env-file refusal a start click returns', () => {
+    // The notice is guidance and the click's refusal is the error, but both send
+    // the reader after the same file; a refusal that named a different place
+    // would make the notice a lie the moment the reader clicked start.
+    for (const locale of LOCALES) {
+      const notice = translate(locale, 'run.setup.body', { file: '.env' })
+      const refusal = translate(locale, PREREQUISITE_MESSAGE_KEYS['env-file'])
+      expect(notice, `${locale}: ${notice}`).toContain('.env')
+      expect(refusal, `${locale}: ${refusal}`).toContain('.env')
+      expect(refusal, `${locale}: ${refusal}`).not.toMatch(
+        /repository root|repo root|仓库根目录|仓库根/i,
+      )
     }
   })
 })
@@ -169,12 +222,12 @@ describe('the update notice', () => {
 /**
  * The service's codes, and the page's words for them (#47).
  *
- * The contract exports all five vocabularies as runtime tuples — refusals,
- * prerequisites, explained reasons, verdicts and gallery row states — precisely
- * so this loop can be exhaustive: a code added to `web/api-types.ts` without a
- * message is a failure here, in both locales, not an English sentence discovered
- * in a browser. The `Record<Code, MessageKey>` maps are what tie a code to a key
- * at compile time; this is the data half of the same promise.
+ * The contract exports all four vocabularies as runtime tuples — refusals,
+ * prerequisites, explained reasons and verdicts — precisely so this loop can be
+ * exhaustive: a code added to `web/api-types.ts` without a message is a failure
+ * here, in both locales, not an English sentence discovered in a browser. The
+ * `Record<Code, MessageKey>` maps are what tie a code to a key at compile time;
+ * this is the data half of the same promise.
  */
 describe('every service code has copy in both locales', () => {
   const codeKeys: [string, MessageKey][] = [
@@ -194,10 +247,6 @@ describe('every service code has copy in both locales', () => {
       `verdict:${code}`,
       VERDICT_MESSAGE_KEYS[code],
     ]),
-    ...GALLERY_ROW_STATES.map((state): [string, MessageKey] => [
-      `row-state:${state}`,
-      GALLERY_ROW_STATE_MESSAGE_KEYS[state],
-    ]),
   ]
 
   it('covers the whole vocabulary the contract exports', () => {
@@ -207,8 +256,7 @@ describe('every service code has copy in both locales', () => {
       REFUSAL_CODES.length +
         PREREQUISITE_CODES.length +
         EXPLAINED_REASON_KINDS.length +
-        CONSOLE_VERDICTS.length +
-        GALLERY_ROW_STATES.length,
+        CONSOLE_VERDICTS.length,
     )
     expect([...REFUSAL_CODES]).toEqual([
       'run-busy',
@@ -218,7 +266,6 @@ describe('every service code has copy in both locales', () => {
     ])
     expect([...PREREQUISITE_CODES]).toEqual(['env-file'])
     expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
-    expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
   })
 
   it('resolves each code to written-out copy in zh-CN and en', () => {
@@ -271,6 +318,44 @@ describe('the page’s exit', () => {
     for (const locale of LOCALES) {
       expect(translate(locale, 'refusal.exitConfirmRequired').trim()).not.toBe('')
     }
+  })
+})
+
+/**
+ * The wall's figures line (#94): one line, each count its own data cell, and
+ * the same sentence the Run panel shows. The numbers are
+ * `web/src/lib/gallery-figures.ts`'s; the dictionary owes the words and the
+ * separators, in both locales, and the exact English the acceptance criteria
+ * name.
+ */
+describe('the wall’s figures line', () => {
+  it('names the three counts in one line, in both locales', () => {
+    const params = { officialTotal: 1013, downloaded: 1001, missing: 12 }
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'gallery.figures', params)
+      expect(copy, `${locale}: ${copy}`).toContain('1013')
+      expect(copy, `${locale}: ${copy}`).toContain('1001')
+      expect(copy, `${locale}: ${copy}`).toContain('12')
+      expect(copy, `${locale}: ${copy}`).toContain('·')
+    }
+    expect(translate('en', 'gallery.figures', params)).toBe(
+      'Gallery 1013 · downloaded 1001 · missing 12',
+    )
+  })
+
+  it('offers the extra count as its own clause, appended only when extras exist', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'gallery.figuresExtra', { extra: 3 })
+      expect(copy, `${locale}: ${copy}`).toContain('3')
+      expect(copy, `${locale}: ${copy}`).toContain('·')
+    }
+    expect(translate('en', 'gallery.figuresExtra', { extra: 3 })).toBe(' · extra 3')
+  })
+
+  it('says the list is unread, in both locales, and never a missing count', () => {
+    expect(translate('en', 'gallery.unread')).toBe('Gallery unread')
+    expect(translate('zh-CN', 'gallery.unread')).not.toBe('')
+    expect(translate('zh-CN', 'gallery.unread')).not.toBe(translate('en', 'gallery.unread'))
   })
 })
 
@@ -385,7 +470,6 @@ describe('the verdicts in the reader’s words', () => {
 describe('a failure speaks plainly', () => {
   const failureKeys: MessageKey[] = [
     'wall.readFailed',
-    'gallery.listUnavailable',
     'run.siteUnreachable',
     'error.connection',
     'console.readFailed',
@@ -405,9 +489,6 @@ describe('a failure speaks plainly', () => {
   it('offers a retry affordance in words', () => {
     for (const locale of LOCALES) {
       expect(translate(locale, 'action.retry')).not.toBe('')
-      expect(translate(locale, 'gallery.listUnavailable')).toMatch(
-        locale === 'zh-CN' ? /再试|重试/ : /try again/i,
-      )
       expect(translate(locale, 'run.siteUnreachable')).toMatch(
         locale === 'zh-CN' ? /再抓|重试/ : /try again|fetch again/i,
       )

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// ── The wall (#48) ──────────────────────────────────────────────────
+// ── The wall (#48, #94) ─────────────────────────────────────────────
 //
 // The gallery is the page's hero: five columns of Wallpapers, sorted into the
-// shortest column, at their own proportions and uncropped. Everything else the
-// page used to stack above it — the Run panel and the Orphan panel — lives in
-// the drawer (`App.vue`), so this view is the wall and a one-band caption that
-// reads it: what the list said, what the Mirror holds, and what the two
-// disagree about.
+// shortest column, at their own proportions and uncropped. And the wall is the
+// Mirror: every tile is a Wallpaper that really exists on this computer — the
+// Gallery list's entries already downloaded, plus the ones the site retired that
+// are still local. An entry with no file is not a tile, so the wall never shows a
+// broken box and never asks for a thumbnail that cannot exist. The gap between
+// the list and the disk is one line in the header, not a row.
 //
 // The layout is a pure function of the Mirror's own numbers. Each row carries
 // the file's pixel size (`/api/gallery`'s `sizes`, measured by the service), so
@@ -32,6 +33,7 @@ import { useGallery } from './composables/useGallery'
 import { consoleToken } from './console-token'
 import FullSizeView from './FullSizeView.vue'
 import { withQueryToken } from './lib/console-api'
+import { galleryFiguresOf } from './lib/gallery-figures'
 import { columnsOf } from './lib/masonry'
 import { wallBandOf, type WallFacts } from './lib/wall-state'
 
@@ -49,39 +51,41 @@ const PLACEHOLDER_BOX = '3 / 4'
 /** The same guess as a height-to-width ratio, which is what the columns add up. */
 const PLACEHOLDER_HEIGHT_RATIO = 4 / 3
 
-// `/api/gallery` is read once, by the wall's own composable; the client it uses
-// is the page's only place a request carries this start's token. The status is
-// read beside it because the wall's band (#83) speaks in the live Mirror count
-// and the list's total — the two numbers the Run poll keeps current.
+// `/api/gallery` is the page's one read (module-scoped, shared with the Run
+// panel); the client it uses is the page's only place a request carries this
+// start's token. The status is read beside it for the two things the wall cannot
+// learn from the wall itself: whether a Run is in flight or was interrupted, and
+// the live Mirror count that the running band's progress moves with.
 const { gallery, failure, load } = useGallery()
 const { status, refresh } = useConsoleStatus()
 
+/** The figures line's counts, from the same payload the tiles come from. */
+const figures = computed(() => galleryFiguresOf(gallery.value))
+
 /**
- * The wall's band facts. The status is the freshest answer while it is there —
- * its Mirror count updates as a Run writes, and its Gallery total is the same
- * list the wall read — and the wall's own read stands in between the two.
+ * The wall's band facts. The counts are the gallery read's own — the header and
+ * the band speak the same numbers — and the status supplies only what a disk
+ * listing cannot: the Run in flight, the interrupted Run, and the live count a
+ * Run in flight is writing.
  *
- * `null` until one of them has landed: "not read yet" is not an empty wall, and
+ * `null` until the gallery read lands: "not read yet" is not an empty wall, and
  * a cold page that flashed "the wall is empty" before its first read would be
- * the exact broken look #83 exists to prevent. The caption above already says
+ * the exact broken look #83 exists to prevent. The header above already says
  * what is being read.
  */
 const wallFacts = computed<WallFacts | null>(() => {
-  const current = status.value
-  if (current !== null) {
-    return {
-      mirrorCount: current.mirrorCount,
-      officialTotal: current.officialTotal,
-      running: current.state === 'running',
-      orphaned: current.state === 'orphaned',
-    }
-  }
-  if (gallery.value === null) return null
+  const current = gallery.value
+  if (current === null) return null
+  const counts = figures.value
+  const live = status.value
   return {
-    mirrorCount: gallery.value.mirrorCount,
-    officialTotal: gallery.value.officialTotal,
-    running: false,
-    orphaned: false,
+    wallpaperCount: current.rows.length,
+    downloaded: counts?.downloaded ?? null,
+    officialTotal: counts?.officialTotal ?? null,
+    missing: counts?.missing ?? null,
+    liveMirrorCount: live?.mirrorCount ?? current.mirrorCount,
+    running: live?.state === 'running',
+    orphaned: live?.state === 'orphaned',
   }
 })
 

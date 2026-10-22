@@ -23,7 +23,6 @@
 // plugin and a second way to name a string, and the page needs none of it.
 
 import type {
-  ConsoleGalleryRowState,
   ConsoleVerdict,
   ExplainedReasonKind,
   PrerequisiteCode,
@@ -120,16 +119,16 @@ const zhCN = {
   'run.reportUnreadable': '这次运行的记录是旧格式,这个页面读不懂,所以得不出结论。',
   'run.refusedStart': '没能开始抓取:本地控制台没有接受这次请求。刷新页面后再试一次。',
   'run.siteUnreachable': '连不上官网,这次一张也没能拿到。检查网络后再抓一次。',
-  // The setup notice (#60): with no usable `.env` the panel says what to create
-  // before the reader clicks start. The file name is a data cell, so it travels
-  // as a parameter; the line is the site's constant, not translatable prose, and
-  // is the same line README.md's quick start gives. #76 removed the page path
-  // with the browser crawl that needed it, so one line is all a Run requires.
-  'run.setup.heading': '先完成站点配置',
-  'run.setup.body': '这个控制台还没有可用的站点配置,所以暂时不能开始运行。',
-  'run.setup.file': '请在仓库根目录创建 {file} 文件,写入以下一行:',
+  // The setup notice (#60, #95): with no usable `.env` the panel says why a Run
+  // cannot start, and gives the one line to write — two lines, no more. The file
+  // is the `.env` **beside the program**, because a Portable package is unzipped
+  // anywhere and has no repository root; the file name is a data cell, so it
+  // travels as a parameter. Nothing here says "refresh the page": creating the
+  // file and reopening the panel (or returning to the window) is enough, because
+  // the page re-reads the status (#95). The line is the site's constant, not
+  // translatable prose, and is the same line README.md's quick start gives.
+  'run.setup.body': '程序旁边没有可用的 {file},所以还不能开始运行;补上下面这一行就可以了。',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
-  'run.setup.note': '保存后刷新页面,提示就会消失,就可以开始运行了。',
 
   // The verdict is `check-run`'s three-state enum, mapped here because the page
   // owns every word the reader sees (docs/adr/0014). #83 puts them in a
@@ -148,25 +147,23 @@ const zhCN = {
   'orphan.clean': '清理',
   'orphan.refusedCleanup': '本地控制台没有接受这次清理。刷新页面后再试一次。',
 
-  // The gallery: the official list read against the Mirror, and the three
-  // states a row can be in.
+  // The gallery: the Mirror's Wallpapers, and the one line that answers "is the
+  // Mirror complete?" (#94). The figures line is shared by the wall header and
+  // the Run panel, so the two cannot disagree about the same numbers; every
+  // count is a data cell. `gallery.unread` is the honest answer when the list
+  // could not be read: no missing count is claimed.
   'gallery.heading': '官方清单',
   // The wall's display mark: a logotype, not a phrase, so it is the same word
   // in both locales and is translated nowhere (docs/adr/0015, story 20).
   'wall.mark': 'WALLPAPER',
   'gallery.reading': '正在读取官方清单……',
-  'gallery.counts': '官方清单有 {officialTotal} 条;镜像有 {mirrorCount} 个文件。',
-  'gallery.notRead': '未读取到',
+  'gallery.figures': '官方清单 {officialTotal} · 已下载 {downloaded} · 缺失 {missing}',
+  // Appended to the line only when the Mirror holds retired files: a leading
+  // separator of its own, so the sentence is the whole clause.
+  'gallery.figuresExtra': ' · 本地多出 {extra}',
+  'gallery.unread': '官方清单未读取',
   'gallery.newestRunAdded': '最近一次运行新增了 {newSinceLastRun} 条。',
-  'gallery.listUnavailable': '暂时连不上官网,所以不知道还有哪些壁纸没下载。检查网络后再试一次。',
-  'gallery.mirrorGap':
-    '官方清单中列出、镜像里却没有的壁纸有 {missing} 张;镜像里有 {extra} 个文件已不在官方清单中。',
   'gallery.tileShow': '全尺寸查看 {name}',
-  'gallery.tileNotOnDisk': '{name} 未落盘',
-  'gallery.notOnDisk': '未落盘',
-  'gallery.state.onDisk': '已落盘',
-  'gallery.state.missing': '缺失',
-  'gallery.state.notInGallery': '已不在官方清单',
 
   // ── The wall's own band (#83) ─────────────────────────────────────
   //
@@ -330,11 +327,9 @@ const en = {
     'The fetch did not start: the Console did not accept the request. Refresh the page and try again.',
   'run.siteUnreachable':
     'The site could not be reached, so nothing was downloaded. Check the connection and fetch again.',
-  'run.setup.heading': 'Set up the site first',
-  'run.setup.body': 'This Console has no usable site configuration yet, so a Run cannot start.',
-  'run.setup.file': 'Create the {file} file at the repository root with this line:',
+  'run.setup.body':
+    'There is no usable {file} beside the program, so a Run cannot start; add the line below.',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
-  'run.setup.note': 'After saving it, refresh the page: the notice goes away and a Run can start.',
 
   'verdict.clean': 'Finished — nothing wrong',
   'verdict.explained': 'Finished — a few routine notes, not failures',
@@ -352,20 +347,11 @@ const en = {
   'gallery.heading': 'Gallery list',
   'wall.mark': 'WALLPAPER',
   'gallery.reading': 'Reading the Gallery list…',
-  'gallery.counts':
-    'The Gallery list holds {officialTotal} entries; the Mirror holds {mirrorCount} files.',
-  'gallery.notRead': 'not read',
+  'gallery.figures': 'Gallery {officialTotal} · downloaded {downloaded} · missing {missing}',
+  'gallery.figuresExtra': ' · extra {extra}',
+  'gallery.unread': 'Gallery unread',
   'gallery.newestRunAdded': 'The newest Run added {newSinceLastRun}.',
-  'gallery.listUnavailable':
-    'The site cannot be reached right now, so it is unknown which wallpapers are still missing. Check the connection and try again.',
-  'gallery.mirrorGap':
-    '{missing} listed Wallpapers are missing from the Mirror; {extra} Mirror files are not in the gallery any more.',
   'gallery.tileShow': 'Show {name} at full size',
-  'gallery.tileNotOnDisk': '{name} is not on disk',
-  'gallery.notOnDisk': 'not on disk',
-  'gallery.state.onDisk': 'on disk',
-  'gallery.state.missing': 'missing',
-  'gallery.state.notInGallery': 'not in the gallery',
 
   'wall.start': 'Start the fetch',
   'wall.continue': 'Continue the fetch',
@@ -462,13 +448,6 @@ export const VERDICT_MESSAGE_KEYS: Record<ConsoleVerdict, MessageKey> = {
   clean: 'verdict.clean',
   explained: 'verdict.explained',
   defect: 'verdict.defect',
-}
-
-/** The gallery row state → message key map, same guarantee as the others. */
-export const GALLERY_ROW_STATE_MESSAGE_KEYS: Record<ConsoleGalleryRowState, MessageKey> = {
-  'on-disk': 'gallery.state.onDisk',
-  missing: 'gallery.state.missing',
-  'not-in-gallery': 'gallery.state.notInGallery',
 }
 
 const dictionaries: Record<Locale, Record<MessageKey, string>> = { 'zh-CN': zhCN, en }
