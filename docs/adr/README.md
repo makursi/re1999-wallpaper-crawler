@@ -1,0 +1,25 @@
+# Find a decision by its subject here
+
+- [0001](0001-network-first-capture.md) `network-first-capture` — Discovery captures Wallpaper URLs from network responses, not the DOM, because virtual scroll unmounts off-screen images.
+- [0002](0002-run-report-in-jsonl.md) `run-report-in-jsonl` — A Run's results are one structured `run_report` record inside the same JSONL as the rest of its log, not a separate report file.
+- [0003](0003-esm-with-tsx.md) `esm-with-tsx` — The crawler's TypeScript runs as native ESM under tsx, type-checked with `tsc --noEmit` and never emitted.
+- [0004](0004-filter-site-assets.md) `filter-site-assets` — Resources that are not Wallpapers are dropped between capture and Download as Site assets, by structural URL rules rather than filenames.
+- [0005](0005-persist-gallery-total.md) `persist-gallery-total` — The Gallery total is persisted across Runs as the Mirror's monotone file count (superseded by 0006).
+- [0006](0006-gallery-list-is-the-source.md) `gallery-list-is-the-source` — The site's Gallery list is the source for the Gallery total, the new-entry delta and the Mirror check, not a file count.
+- [0007](0007-run-log-is-written-synchronously.md) `run-log-is-written-synchronously` — The Run log is written synchronously on the main thread, so no worker can stop and leave a Run without its `run_report`.
+- [0008](0008-console-is-the-human-entry.md) `console-is-the-human-entry` — The Console is the human entry point, and the CLI entries keep their own names, files and exit codes rather than a dispatcher.
+- [0009](0009-a-run-is-its-run-log.md) `a-run-is-its-run-log` — A Run's truth is its Run log, not a process handle: one Run at a time, a whole-tree stop, and an Orphaned Run as a state.
+- [0010](0010-thumbnails-live-outside-the-mirror.md) `thumbnails-live-outside-the-mirror` — Thumbnails are generated on demand into a cache outside the Mirror, so viewing the page never changes the Mirror gap.
+- [0011](0011-first-build-artifact.md) `first-build-artifact` — The Console's page is the repository's first build artifact, built by its start command, git-ignored and scoped to the Console.
+- [0012](0012-the-human-entry-point-is-webui.md) `the-human-entry-point-is-webui` — The human entry command is `webui`, not `console`, while the domain term Console and its file names stay.
+- [0013](0013-the-design-system-is-unocss-tokens.md) `the-design-system-is-unocss-tokens` — The page's design system is UnoCSS semantic tokens in `web/uno.config.ts`, dark only, with reka-ui for behaviour and no component library.
+- [0014](0014-the-interface-speaks-two-languages.md) `the-interface-speaks-two-languages` — The interface speaks Chinese and English from a hand-rolled typed dictionary, and the service emits codes while the page owns every word.
+- [0015](0015-the-pages-type-is-three-self-hosted-ofl-roles.md) `the-pages-type-is-three-self-hosted-ofl-roles` — The page's type is three self-hosted OFL roles — serif headings, system sans body and tabular Geist numerals — with no font file in the repository.
+- [0016](0016-the-webui-is-the-only-human-entry.md) `the-webui-is-the-only-human-entry` — The WebUI is the only human entry and the command line belongs to agents, with Run logs named `run-<runId>.jsonl`.
+- [0017](0017-the-http-surface-routes-with-a-library.md) `the-http-surface-routes-with-a-library` — The Console's HTTP surface routes with hono but keeps its own token guard, response headers, stylesheet rewrite and port fallback.
+- [0018](0018-discovery-is-the-gallery-list.md) `discovery-is-the-gallery-list` — Discovery is the Gallery list request itself, not a browser crawl, and the Run report keeps every key with its meaning re-pointed.
+- [0019](0019-data-lives-beside-the-program.md) `data-lives-beside-the-program` — The user's data lives in an injected data directory, versioned by `layout.json`, migrated by rename only and never deleted.
+- [0020](0020-one-program-one-service-one-window.md) `one-program-one-service-one-window` — One program, one service, one window: an instance record and a probe hand a second double-click back to the page already running.
+- [0021](0021-the-release-is-one-portable-zip.md) `the-release-is-one-portable-zip` — The release is one Portable package for Windows x64 whose update replaces only `app\`, with the data layout, version rule and single outbound request fixed.
+- [0022](0022-the-page-owns-an-exit.md) `the-page-owns-an-exit` — The page owns one control, an exit of the whole program, which reuses the terminal's stop decision and asks first while a Run is in flight.
+- [0023](0023-the-release-body-is-one-fixed-template.md) `the-release-body-is-one-fixed-template` — The Release body is the changelog's section in one fixed seven-section template, refused before a tag builds anything when it breaks the shape.
