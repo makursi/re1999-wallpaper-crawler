@@ -9,12 +9,16 @@ import { refusalFromError, refusalOf, refusalTextOf } from './i18n/refusal'
 import { postJson } from './lib/console-api'
 
 /**
- * An Orphaned Run, and the one action the page offers for it (#36).
+ * An Orphaned Run, and the one action the page offers for it (#36, #97).
  *
- * This is a view, like the rest of the page: the cleanup closes the leftover
- * Browser session and acknowledges the log's claim, and it never touches the
- * Run log. The log is the audit trail (ADR 0007); the acknowledgement is in
- * memory, so a Console restart reports the same leftover again.
+ * One sentence and the control — the long explanation paragraph is gone. The
+ * cleanup closes the leftover Browser session and acknowledges the log's claim,
+ * and it never touches the Run log: the log is the audit trail (ADR 0007), and
+ * the acknowledgement is in memory, so a Console restart reports the same
+ * leftover again. That the cleanup refuses to run under a Run in flight is the
+ * service's decision; the page only words the refusal.
+ *
+ * This is a view, like the rest of the page.
  */
 const props = defineProps<{ status: ConsoleStatusPayload }>()
 const emit = defineEmits<{ cleaned: [] }>()
@@ -60,7 +64,6 @@ async function cleanUp(): Promise<void> {
     <p>
       <Message message="orphan.line" :params="{ runId: status.runId ?? '', logName: logName }" />
     </p>
-    <p class="text-muted text-sm">{{ t('orphan.explanation') }}</p>
     <p>
       <button type="button" class="action-button" :disabled="cleaning" @click="cleanUp">
         <span class="i-ph-broom mr-1" aria-hidden="true" />{{ t('orphan.clean') }}

@@ -6,7 +6,7 @@
 // exists in one locale and not the other fails `tsc` here (the English
 // dictionary carries `satisfies Record<MessageKey, string>`, which rejects a
 // missing key *and* an extra one) as well as the parity test in
-// `tests/web/i18n/messages.test.ts`. A Chinese sentence can therefore never
+// `tests/web/src/i18n/messages.test.ts`. A Chinese sentence can therefore never
 // surface inside the English page as a surprise at runtime.
 //
 // This module is pure data plus a lookup: no Vue, no DOM, no `localStorage`.
@@ -22,13 +22,7 @@
 // message-format syntax beyond `{name}`; a framework would add a runtime, a
 // plugin and a second way to name a string, and the page needs none of it.
 
-import type {
-  ConsoleGalleryRowState,
-  ConsoleVerdict,
-  ExplainedReasonKind,
-  PrerequisiteCode,
-  RefusalCode,
-} from '../../api-types.js'
+import type { ConsoleVerdict, PrerequisiteCode, RefusalCode } from '../../api-types.js'
 
 /** The locales the page speaks, in the order the switch offers them. */
 export const LOCALES = ['zh-CN', 'en'] as const
@@ -68,48 +62,71 @@ const zhCN = {
   // is a data cell, so the sentence takes it as a `{version}` parameter and
   // `Message.vue` renders it in the numeral role.
   'nav.version': '版本 {version}',
-  // The update notice (#81): one discreet line, one link to the project's
-  // Releases page. There is no download and no mirror, so the copy names the
-  // version and where to read about it — never an action the Console takes.
+  // #96: the page's way out — the one control that stops the program, next to
+  // the drawer's Run facts. Quiet on purpose: it is not an action a reader takes
+  // often, and it must not compete with the start.
+  'nav.exit': '退出',
+  // The confirmation, shown only when the service refuses an unconfirmed exit
+  // because a Run is in flight — the page never decides that for itself. The
+  // body says the consequence the next start will meet, not a generic "are you
+  // sure": a truncated Run log is the thing the reader has to clean up.
+  'exit.confirmTitle': '退出程序?',
+  'exit.confirmBody':
+    '有一个运行正在进行。现在退出会停止服务,并可能中断这次运行:运行日志会被截断,下次启动时需要在运行面板里清理这条中断的记录。确定要退出吗?',
+  'exit.confirmAction': '退出',
+  'exit.cancelAction': '继续运行',
+  // After the service accepted the exit. The heading is the whole instruction:
+  // the page is done, and a tab left open cannot do anything else.
+  'exit.exitedHeading': '已退出 — 可以关闭这个页面',
+  'exit.exitedBody': '程序已经停止,可以关闭这个页面了。',
+  // When a Run was in flight at the exit: the page cannot know whether this
+  // Console started it, so it states both consequences rather than claiming a
+  // kill (the terminal, which does know, says the precise one).
+  'exit.exitedInterrupted':
+    '程序已经停止。退出时有一个运行正在进行:如果它是由本程序启动的,它已经停止、运行日志被截断,下次启动时请在运行面板里清理这条中断的记录;如果它是在别的终端里启动的,它可能还在继续写入。',
+  'exit.failed': '没能退出:本地控制台没有接受这次请求。刷新页面后再试一次。',
   'update.available': '有新版本 {version}',
   'update.releases': 'Releases 页面',
   'drawer.title': '运行面板',
   'drawer.close': '关闭(Esc)',
 
-  // The Run panel. Every value the service used to send as prose is now a code
-  // (#47); what is here is the panel's own words, and the code → message maps
-  // at the bottom of this file hold each service code to its copy.
+  // The Run panel (#97) holds four lines: one verdict sentence, `ok N · failed N`,
+  // the figures line the wall's header shows (#94), and at most one problem line.
+  // The run id, the timestamps, the Discovery counters, the success rate, the
+  // defect rows and the routine notes are not here because the panel no longer
+  // shows them — what is here is the whole of what it says.
   'run.heading': '运行',
   'run.readingLog': '正在读取运行日志……',
   'run.noLog': '尚未读取到任何运行日志。',
-  'run.line': '运行 {runId} — 结论:{verdict}',
-  'run.why': '原因:{causes}',
+  // The counts line: `ok N`, and the failure clause only when something failed
+  // (#97). The clause carries its own separator, so the line reads
+  // `ok 1013 · failed 3` — and `ok 1013` when nothing failed.
+  'run.counts': '成功 {ok}',
+  'run.countsFailed': ' · 失败 {failed}',
+  // The verdict's own causes: the last branch of the one problem line, shown one
+  // at a time. The `reasons:` clause that joined them all retired (#97); the
+  // separator stays because a refusal's missing prerequisites still join with it.
   'run.causeSeparator': ';',
   'run.cause.stateNamesAnotherRun': '官网记录和这次运行对不上(可能来自另一次运行)',
   'run.cause.stateUnreadable': '官网记录没读到,没法核对这次运行',
   'run.cause.missingOnDisk': '记录里说新下载了这些文件,磁盘上却找不到:{files}',
-  'run.explained': '这几处是常规情况,已经记下来了,不算失败:',
-  'run.gallery': '官方清单:{line}',
-  'run.galleryReport':
-    '官方总数 {officialTotal} · 上次运行后新增 {newSinceLastRun} · 新增文件 {newFiles}',
-  'run.download': '下载:{line}',
-  'run.downloadReport': '成功 {ok} · 跳过 {skipped} · 失败 {failed} · 成功率 {successRate}',
-  'run.unknown': '未知',
-  'run.defects': '发现的问题:',
   'run.reportMissing': '这次运行的记录没有写完,所以得不出结论。可以再抓一次;已经下载好的会跳过。',
   'run.reportUnreadable': '这次运行的记录是旧格式,这个页面读不懂,所以得不出结论。',
   'run.refusedStart': '没能开始抓取:本地控制台没有接受这次请求。刷新页面后再试一次。',
+  // The site never answered: one sentence, and the start control below it is the
+  // retry. It replaced the defect row that said the same thing without an action
+  // (#97).
   'run.siteUnreachable': '连不上官网,这次一张也没能拿到。检查网络后再抓一次。',
-  // The setup notice (#60): with no usable `.env` the panel says what to create
-  // before the reader clicks start. The file name is a data cell, so it travels
-  // as a parameter; the line is the site's constant, not translatable prose, and
-  // is the same line README.md's quick start gives. #76 removed the page path
-  // with the browser crawl that needed it, so one line is all a Run requires.
-  'run.setup.heading': '先完成站点配置',
-  'run.setup.body': '这个控制台还没有可用的站点配置,所以暂时不能开始运行。',
-  'run.setup.file': '请在仓库根目录创建 {file} 文件,写入以下一行:',
+  // The setup notice (#60, #95): with no usable `.env` the panel says why a Run
+  // cannot start, and gives the one line to write — two lines, no more. The file
+  // is the `.env` **beside the program**, because a Portable package is unzipped
+  // anywhere and has no repository root; the file name is a data cell, so it
+  // travels as a parameter. Nothing here says "refresh the page": creating the
+  // file and reopening the panel (or returning to the window) is enough, because
+  // the page re-reads the status (#95). The line is the site's constant, not
+  // translatable prose, and is the same line README.md's quick start gives.
+  'run.setup.body': '程序旁边没有可用的 {file},所以还不能开始运行;补上下面这一行就可以了。',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
-  'run.setup.note': '保存后刷新页面,提示就会消失,就可以开始运行了。',
 
   // The verdict is `check-run`'s three-state enum, mapped here because the page
   // owns every word the reader sees (docs/adr/0014). #83 puts them in a
@@ -119,34 +136,31 @@ const zhCN = {
   'verdict.explained': '完成,有几处常规情况已记录,不算失败',
   'verdict.defect': '出现了问题',
 
-  // The Orphaned Run panel: the one state with an action, so its copy has to
-  // explain both what cleaning up does and what it refuses to do.
+  // The Orphaned Run: one sentence and the cleanup control (#97). The long
+  // explanation paragraph retired; what a cleanup does not do is the refusal's
+  // business, not a paragraph's.
   'orphan.line': '孤儿运行 {runId} — 运行日志 {logName} 没有运行报告,且是最近写入的。',
   'orphan.newestLog': '它最新的运行日志',
-  'orphan.explanation':
-    '清理是可选项,不是强制项:它可能仍是一个正在写入的运行,而仅凭日志目录分不清这两种情况。清理会撤回这条提示;运行日志本身永不修改、也不删除,因为它是这次运行的审计轨迹。',
   'orphan.clean': '清理',
   'orphan.refusedCleanup': '本地控制台没有接受这次清理。刷新页面后再试一次。',
 
-  // The gallery: the official list read against the Mirror, and the three
-  // states a row can be in.
+  // The gallery: the Mirror's Wallpapers, and the one line that answers "is the
+  // Mirror complete?" (#94). The figures line is shared by the wall header and
+  // the Run panel, so the two cannot disagree about the same numbers; every
+  // count is a data cell. `gallery.unread` is the honest answer when the list
+  // could not be read: no missing count is claimed.
   'gallery.heading': '官方清单',
   // The wall's display mark: a logotype, not a phrase, so it is the same word
   // in both locales and is translated nowhere (docs/adr/0015, story 20).
   'wall.mark': 'WALLPAPER',
   'gallery.reading': '正在读取官方清单……',
-  'gallery.counts': '官方清单有 {officialTotal} 条;镜像有 {mirrorCount} 个文件。',
-  'gallery.notRead': '未读取到',
+  'gallery.figures': '官方清单 {officialTotal} · 已下载 {downloaded} · 缺失 {missing}',
+  // Appended to the line only when the Mirror holds retired files: a leading
+  // separator of its own, so the sentence is the whole clause.
+  'gallery.figuresExtra': ' · 本地多出 {extra}',
+  'gallery.unread': '官方清单未读取',
   'gallery.newestRunAdded': '最近一次运行新增了 {newSinceLastRun} 条。',
-  'gallery.listUnavailable': '暂时连不上官网,所以不知道还有哪些壁纸没下载。检查网络后再试一次。',
-  'gallery.mirrorGap':
-    '官方清单中列出、镜像里却没有的壁纸有 {missing} 张;镜像里有 {extra} 个文件已不在官方清单中。',
   'gallery.tileShow': '全尺寸查看 {name}',
-  'gallery.tileNotOnDisk': '{name} 未落盘',
-  'gallery.notOnDisk': '未落盘',
-  'gallery.state.onDisk': '已落盘',
-  'gallery.state.missing': '缺失',
-  'gallery.state.notInGallery': '已不在官方清单',
 
   // ── The wall's own band (#83) ─────────────────────────────────────
   //
@@ -167,7 +181,8 @@ const zhCN = {
   'wall.resumeBody':
     '还差 {remaining} 张。再点「继续抓取」会从上次停下的地方接着下载:已经下载好的会跳过,不会从头再来。',
   'wall.runningHeading': '正在抓取壁纸…',
-  'wall.runningHint': '关闭窗口即停止;下次打开点「继续抓取」,已经下载好的会跳过。',
+  'wall.runningHint':
+    '关闭窗口或点页面上的「退出」都会停止(有运行时会先确认);下次打开点「继续抓取」,已经下载好的会跳过。',
   'wall.interruptedHeading': '上次抓取中断了',
   'wall.interruptedBody':
     '先打开导航上的「运行」面板,清理上次中断留下的记录,然后就能接着抓;已经下载好的会跳过。',
@@ -205,27 +220,21 @@ const zhCN = {
   'refusal.orphanedRun':
     '存在一个孤儿运行:它的运行日志没有运行报告,且是最近写入的,所以它可能仍在写入。如果它只是残留,请先在页面上清理;之后才能开始新的运行。',
   'refusal.missingPrerequisite': '缺少前置条件:{missing}',
+  // #96: the page's exit while a Run is in flight. The page turns this into its
+  // confirmation question; the service never writes the sentence.
+  'refusal.exitConfirmRequired': '有一个运行正在进行:要退出,请再确认一次。',
 
   'prerequisite.envFile': '.env 配置文件',
 
-  'run.explained.discoveryLeak': '有几个不是壁纸的链接混了进来,都已确认来自站点本身:{urls}',
-  'run.explained.mirrorGapExtra': '本地有 {count} 个文件已不在官网清单里',
-
-  // The Run report's defect block, as rows: the page names each class and lays
-  // the values out, instead of printing the raw record. The words are the
-  // wall's, not the report's: "发现了什么" rather than the field's own name.
-  'defect.none': '没有发现问题。',
-  'defect.discoveryLeak': '抓到了 {count} 个不是壁纸的链接',
-  'defect.nonConverged': '没有拿到官网的完整清单',
-  'defect.emptyResult': '一张壁纸也没找到',
-  'defect.persistentFailures': '{count} 张反复下载失败',
+  // The Run report's defects, as the four sentences the panel's one problem line
+  // can say (#97). The nine-row list went with the rest of the panel's log dump;
+  // these remain because the priority in `web/src/lib/run-panel.ts` names them,
+  // and `defect.none` went too: a clean Run's verdict sentence already says so,
+  // and a second "nothing went wrong" line was the noise #97 removed.
   'defect.emptyFiles': '有文件是空的:{files}',
-  'defect.siteAssetNotChecked': '没有核对哪些链接不是壁纸',
-  'defect.siteAssetFalsePositive': '把 {count} 个不是壁纸的链接当成了壁纸',
-  'defect.gallerySourceUnavailable': '没能连上官网,没拿到清单',
-  'defect.mirrorGapNotChecked': '没有核对本地和官网的数量',
+  'defect.persistentFailures': '{count} 张反复下载失败',
+  'defect.emptyResult': '一张壁纸也没找到',
   'defect.mirrorGapMissing': '官网列出的 {count} 张壁纸还没下载',
-  'defect.mirrorGapExtra': '本地有 {count} 个文件已不在官网清单里',
 } as const
 
 /**
@@ -263,6 +272,17 @@ const en = {
   'nav.mirrorCount': 'Mirror {count}',
   'nav.run': 'Run',
   'nav.version': 'version {version}',
+  'nav.exit': 'Exit',
+  'exit.confirmTitle': 'Exit the program?',
+  'exit.confirmBody':
+    'A Run is in flight. Exiting now stops the service and may interrupt it: its Run log is truncated, and the next start needs to clean up the interrupted record. Exit anyway?',
+  'exit.confirmAction': 'Exit',
+  'exit.cancelAction': 'Keep running',
+  'exit.exitedHeading': 'Exited — you can close this page',
+  'exit.exitedBody': 'The program has stopped. You can close this page.',
+  'exit.exitedInterrupted':
+    'The program has stopped. A Run was in flight: if this program started it, it has stopped and its Run log is truncated — clean up the interrupted record on the next start. If it was started in another terminal, it may still be writing.',
+  'exit.failed': 'The Console did not accept the exit. Refresh the page and try again.',
   'update.available': 'Version {version} is available',
   'update.releases': 'Releases page',
   'drawer.title': 'Run panel',
@@ -271,8 +291,8 @@ const en = {
   'run.heading': 'Run',
   'run.readingLog': 'Reading the Run log…',
   'run.noLog': 'No Run log has been read.',
-  'run.line': 'Run {runId} — verdict: {verdict}',
-  'run.why': 'Why: {causes}',
+  'run.counts': 'ok {ok}',
+  'run.countsFailed': ' · failed {failed}',
   'run.causeSeparator': '; ',
   'run.cause.stateNamesAnotherRun':
     'the site record does not match this Run (it may belong to another Run)',
@@ -280,14 +300,6 @@ const en = {
     'the site record could not be read, so this Run was not cross-checked',
   'run.cause.missingOnDisk':
     'the log says these files were downloaded, but they are not on disk: {files}',
-  'run.explained': 'These are routine — recorded, not counted as failures:',
-  'run.gallery': 'Gallery: {line}',
-  'run.galleryReport':
-    'officialTotal {officialTotal}, newSinceLastRun {newSinceLastRun}, newFiles {newFiles}',
-  'run.download': 'Download: {line}',
-  'run.downloadReport': 'ok {ok}, skipped {skipped}, failed {failed}, successRate {successRate}',
-  'run.unknown': 'unknown',
-  'run.defects': 'Problems found:',
   'run.reportMissing':
     'This Run’s log stops before its report, so there is no verdict. You can fetch again; wallpapers already downloaded are skipped.',
   'run.reportUnreadable':
@@ -296,11 +308,9 @@ const en = {
     'The fetch did not start: the Console did not accept the request. Refresh the page and try again.',
   'run.siteUnreachable':
     'The site could not be reached, so nothing was downloaded. Check the connection and fetch again.',
-  'run.setup.heading': 'Set up the site first',
-  'run.setup.body': 'This Console has no usable site configuration yet, so a Run cannot start.',
-  'run.setup.file': 'Create the {file} file at the repository root with this line:',
+  'run.setup.body':
+    'There is no usable {file} beside the program, so a Run cannot start; add the line below.',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
-  'run.setup.note': 'After saving it, refresh the page: the notice goes away and a Run can start.',
 
   'verdict.clean': 'Finished — nothing wrong',
   'verdict.explained': 'Finished — a few routine notes, not failures',
@@ -309,8 +319,6 @@ const en = {
   'orphan.line':
     'Orphaned Run {runId} — the Run log {logName} has no Run report and was written recently.',
   'orphan.newestLog': 'its newest Run log',
-  'orphan.explanation':
-    "Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log directory alone cannot tell the two apart. The cleanup withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's audit trail.",
   'orphan.clean': 'Clean up',
   'orphan.refusedCleanup':
     'The Console did not accept the cleanup. Refresh the page and try again.',
@@ -318,20 +326,11 @@ const en = {
   'gallery.heading': 'Gallery list',
   'wall.mark': 'WALLPAPER',
   'gallery.reading': 'Reading the Gallery list…',
-  'gallery.counts':
-    'The Gallery list holds {officialTotal} entries; the Mirror holds {mirrorCount} files.',
-  'gallery.notRead': 'not read',
+  'gallery.figures': 'Gallery {officialTotal} · downloaded {downloaded} · missing {missing}',
+  'gallery.figuresExtra': ' · extra {extra}',
+  'gallery.unread': 'Gallery unread',
   'gallery.newestRunAdded': 'The newest Run added {newSinceLastRun}.',
-  'gallery.listUnavailable':
-    'The site cannot be reached right now, so it is unknown which wallpapers are still missing. Check the connection and try again.',
-  'gallery.mirrorGap':
-    '{missing} listed Wallpapers are missing from the Mirror; {extra} Mirror files are not in the gallery any more.',
   'gallery.tileShow': 'Show {name} at full size',
-  'gallery.tileNotOnDisk': '{name} is not on disk',
-  'gallery.notOnDisk': 'not on disk',
-  'gallery.state.onDisk': 'on disk',
-  'gallery.state.missing': 'missing',
-  'gallery.state.notInGallery': 'not in the gallery',
 
   'wall.start': 'Start the fetch',
   'wall.continue': 'Continue the fetch',
@@ -349,7 +348,7 @@ const en = {
     '{remaining} wallpapers are still missing. “Continue the fetch” picks up where it stopped: what is already downloaded is skipped, not fetched twice.',
   'wall.runningHeading': 'Fetching wallpapers…',
   'wall.runningHint':
-    'Closing the window stops the fetch; open it again and continue — what is already downloaded is skipped.',
+    'Closing the window or the page’s Exit both stop the fetch (Exit asks first while a Run is in flight); open it again and continue — what is already downloaded is skipped.',
   'wall.interruptedHeading': 'The last fetch was interrupted',
   'wall.interruptedBody':
     'Open the “Run” panel in the navigation, clear the record the interrupted fetch left behind, then continue — what is already downloaded is skipped.',
@@ -373,25 +372,14 @@ const en = {
   'refusal.orphanedRun':
     'An Orphaned Run is present: its Run log has no Run report and was written recently, so it may still be writing. Clean it up from the page if it is a leftover; a new Run starts after that.',
   'refusal.missingPrerequisite': 'missing prerequisites: {missing}',
+  'refusal.exitConfirmRequired': 'A Run is in flight: confirm once more to exit.',
 
   'prerequisite.envFile': 'the .env file',
 
-  'run.explained.discoveryLeak':
-    'a few links that are not wallpapers came along; they are the site’s own assets: {urls}',
-  'run.explained.mirrorGapExtra': '{count} local files are no longer in the Gallery list',
-
-  'defect.none': 'Nothing went wrong.',
-  'defect.discoveryLeak': '{count} links that are not wallpapers were picked up',
-  'defect.nonConverged': 'the Gallery list did not answer',
-  'defect.emptyResult': 'no wallpapers were found',
-  'defect.persistentFailures': '{count} wallpapers kept failing to download',
   'defect.emptyFiles': 'files downloaded empty: {files}',
-  'defect.siteAssetNotChecked': 'the non-wallpaper links were not checked',
-  'defect.siteAssetFalsePositive': '{count} non-wallpaper links were taken for wallpapers',
-  'defect.gallerySourceUnavailable': 'the site could not be reached, so there was no list',
-  'defect.mirrorGapNotChecked': 'the local and official counts were not compared',
+  'defect.persistentFailures': '{count} wallpapers kept failing to download',
+  'defect.emptyResult': 'no wallpapers were found',
   'defect.mirrorGapMissing': '{count} listed wallpapers are not downloaded yet',
-  'defect.mirrorGapExtra': '{count} local files are no longer in the Gallery list',
 } satisfies Record<MessageKey, string>
 
 /**
@@ -404,17 +392,12 @@ export const REFUSAL_MESSAGE_KEYS: Record<RefusalCode, MessageKey> = {
   'run-busy': 'refusal.runBusy',
   'orphaned-run': 'refusal.orphanedRun',
   'missing-prerequisite': 'refusal.missingPrerequisite',
+  'exit-confirm-required': 'refusal.exitConfirmRequired',
 }
 
 /** The prerequisite code → message key map (#47), same guarantee as above. */
 export const PREREQUISITE_MESSAGE_KEYS: Record<PrerequisiteCode, MessageKey> = {
   'env-file': 'prerequisite.envFile',
-}
-
-/** The explained reason kind → message key map (#47). */
-export const EXPLAINED_REASON_MESSAGE_KEYS: Record<ExplainedReasonKind, MessageKey> = {
-  'discovery-leak': 'run.explained.discoveryLeak',
-  'mirror-gap-extra': 'run.explained.mirrorGapExtra',
 }
 
 /**
@@ -426,13 +409,6 @@ export const VERDICT_MESSAGE_KEYS: Record<ConsoleVerdict, MessageKey> = {
   clean: 'verdict.clean',
   explained: 'verdict.explained',
   defect: 'verdict.defect',
-}
-
-/** The gallery row state → message key map, same guarantee as the others. */
-export const GALLERY_ROW_STATE_MESSAGE_KEYS: Record<ConsoleGalleryRowState, MessageKey> = {
-  'on-disk': 'gallery.state.onDisk',
-  missing: 'gallery.state.missing',
-  'not-in-gallery': 'gallery.state.notInGallery',
 }
 
 const dictionaries: Record<Locale, Record<MessageKey, string>> = { 'zh-CN': zhCN, en }

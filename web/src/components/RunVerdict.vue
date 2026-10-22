@@ -1,96 +1,52 @@
 <script setup lang="ts">
+// ── The Run panel's verdict, in two lines (#97) ─────────────────────
+//
+// What the last Run came to, in the reader's words: one verdict sentence and the
+// `ok N · failed N` counts. The panel's figures line follows from `RunPanel.vue`,
+// and its at-most-one problem line follows the figures — the order spec #93
+// fixes. The run id, the timestamps, the log's file name, the Discovery
+// counters, the success rate, the defect rows and the routine notes are all
+// gone: a player asked "did it work, and what is missing", and this is the whole
+// answer.
+//
+// The verdict sentence is the dictionary's (`VERDICT_MESSAGE_KEYS`); the counts
+// are a rule, so they live in `lib/run-panel.ts` and are unit-tested there. This
+// component only lays them out, which is why it renders message rows rather than
+// deciding anything. The problem line is the panel's, not this component's,
+// because the panel owns where it stands.
+//
+// A missing report has no verdict to name: `assessRun` calls it a defect in the
+// log, and the panel's problem line is that sentence. The verdict sentence is
+// therefore shown only when the status carries one, and the panel never presents
+// "no conclusion" as a conclusion.
+
 import { computed } from 'vue'
 
-import type { ConsoleExplainedReason, ConsoleVerdict } from '../../api-types.js'
 import { useConsoleStatus } from '../composables/useConsoleStatus'
 import { t } from '../i18n/locale'
 import Message from '../i18n/Message.vue'
-import { EXPLAINED_REASON_MESSAGE_KEYS, VERDICT_MESSAGE_KEYS } from '../i18n/messages'
-import type { MessageRow } from '../i18n/messages'
+import { VERDICT_MESSAGE_KEYS } from '../i18n/messages'
+import { runCountsOf } from '../lib/run-panel'
 
 const { status } = useConsoleStatus()
 
-/**
- * The verdict as the page says it: `check-run` prints the `clean|explained|defect`
- * code and the service ships it untouched, while the reader's word for it is the
- * page's — the mapping is in the dictionary, not in the service (docs/adr/0014).
- * The empty string means there is no verdict to show.
- */
-function verdictLabel(code: ConsoleVerdict | null): string {
-  return code === null ? '' : t(VERDICT_MESSAGE_KEYS[code])
-}
-
-/**
- * Why the verdict is `defect`, in the verdict's own terms: the two facts the
- * report's `defects` record does not carry — a Gallery state that names another
- * Run (or could not be read), and claimed new files the probe rejected. The
- * third kind of cause, a defect class the runbook does not call routine, is in
- * that `defects` record, which the page shows beside this.
- */
-const defectCauses = computed(() => {
-  const payload = status.value
-  const reasons = payload?.verdictReasons ?? null
-  if (payload?.verdict !== 'defect' || reasons === null) return []
-  const causes: string[] = []
-  if (reasons.stateMatchesReport === false) {
-    causes.push(t('run.cause.stateNamesAnotherRun'))
-  } else if (reasons.stateMatchesReport === null) {
-    causes.push(t('run.cause.stateUnreadable'))
-  }
-  if (reasons.missingOnDisk.length > 0) {
-    causes.push(t('run.cause.missingOnDisk', { files: reasons.missingOnDisk.join(', ') }))
-  }
-  return causes
+/** The one verdict sentence: the reader's word for the Run's result (#83). */
+const verdictKey = computed(() => {
+  const verdict = status.value?.verdict
+  return verdict == null ? null : VERDICT_MESSAGE_KEYS[verdict]
 })
 
-/** The causes as one sentence; empty when there are none to show. */
-const why = computed(() =>
-  defectCauses.value.length === 0
-    ? ''
-    : t('run.why', { causes: defectCauses.value.join(t('run.causeSeparator')) }),
-)
-
-/**
- * The routine classes an `explained` verdict was made of, as dictionary rows.
- * The verdict carries them as structured reasons (#47) with English field names;
- * the page says each kind in the reader's language.
- */
-const explainedCauses = computed<MessageRow[]>(() => {
-  const payload = status.value
-  if (payload?.verdict !== 'explained') return []
-  return (payload.verdictReasons?.explained ?? []).map(explainedRow)
-})
-
-/** One explained reason, as the message that words it. */
-function explainedRow(reason: ConsoleExplainedReason): MessageRow {
-  const key = EXPLAINED_REASON_MESSAGE_KEYS[reason.kind]
-  return reason.kind === 'discovery-leak'
-    ? { key, params: { urls: reason.urls.join(', ') } }
-    : { key, params: { count: reason.count } }
-}
+/** `ok N`, plus ` · failed N` only when a download failed (never `failed 0`). */
+const counts = computed(() => runCountsOf(status.value?.report ?? null))
 </script>
 
 <template>
   <template v-if="status !== null">
-    <p>
-      <Message
-        message="run.line"
-        :params="{ runId: status.runId ?? '', verdict: verdictLabel(status.verdict) }"
-      />
+    <p v-if="verdictKey !== null">{{ t(verdictKey) }}</p>
+    <!-- Every count is a data cell: `Message.vue` puts each one in the numeral
+         role, and the sentence around them stays prose. -->
+    <p v-if="counts.length > 0">
+      <Message v-for="row in counts" :key="row.key" :message="row.key" :params="row.params" />
     </p>
-    <!-- The causes the report's `defects` record cannot carry: a `defect`
-         whose record reads clean still has one of these to show
-         (#34 story 11). -->
-    <p v-if="why !== ''" class="text-muted text-sm">{{ why }}</p>
-    <!-- The routine classes the verdict explained, each a dictionary
-         message: the service sends structured reasons, never a sentence. -->
-    <template v-if="explainedCauses.length > 0">
-      <p class="text-muted text-sm">{{ t('run.explained') }}</p>
-      <ul class="list-disc pl-4 text-muted text-sm">
-        <li v-for="cause in explainedCauses" :key="cause.key">
-          <Message :message="cause.key" :params="cause.params" />
-        </li>
-      </ul>
-    </template>
   </template>
 </template>

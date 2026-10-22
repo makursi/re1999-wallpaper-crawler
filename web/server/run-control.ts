@@ -23,7 +23,7 @@ import type {
   PrerequisiteCode,
   RefusalCode,
 } from '../api-types.js'
-import type { RunCleaner, RunStartResult, RunStarter } from './server.js'
+import type { ExitProgram, RunCleaner, RunStartResult, RunStarter } from './server.js'
 
 export interface RunLauncher {
   /** Spawns the Run and returns at once. Throws when one is already alive. */
@@ -248,6 +248,102 @@ export function cleanupStatusOf(answer: { cleaned: boolean; status?: number }): 
 }
 
 export type StopDecision = 'stop-now' | 'confirm'
+
+/** The exit's own pure decision (#96): leave now, or ask the caller first. */
+export type ExitDecision = 'exit-at-once' | 'refuse-confirm'
+
+/**
+ * The page's exit, sharing the terminal signal's one rule (#96, ADR 0022).
+ *
+ * A Run in flight asks first — that arm is `stopDecision`, not a second rule —
+ * and every other state leaves at once: an Orphaned Run is not a life, and the
+ * Console has no child to take with it. `confirmed` is the caller's answer to
+ * that question, so an unconfirmed exit in flight is refused here and nowhere
+ * else.
+ */
+export function exitDecisionOf(state: ConsoleRunState, confirmed: boolean): ExitDecision {
+  return stopDecision(state) === 'confirm' && !confirmed ? 'refuse-confirm' : 'exit-at-once'
+}
+
+/**
+ * What the exit knew when it was permitted, for the composition root's Chinese
+ * lines: whether a Run was in flight, and whether this Console owned the child
+ * whose tree it killed.
+ */
+export interface ExitOutcome {
+  /** The newest Run log said a Run was in flight when the exit was permitted. */
+  runInFlight: boolean
+  /** This Console had its own child, and therefore killed its tree. */
+  killedOwnRun: boolean
+}
+
+export interface ExitControllerDeps {
+  /** The Run state from the Run log directory — never from a handle. */
+  runState: () => ConsoleRunState
+  /** The launcher whose child is the only tree this Console may kill. */
+  launcher: RunLauncher
+  /**
+   * The composition root's shutdown: close the service, print the Chinese
+   * lines, `process.exit(0)`. Scheduled after the HTTP answer is written.
+   */
+  shutdown: (outcome: ExitOutcome) => void
+  /**
+   * Schedules the shutdown. The default is a short timer, so the `202` reaches
+   * the page before the process begins to tear down (#96).
+   */
+  schedule?: (run: () => void) => void
+}
+
+/** How long the HTTP answer gets before the shutdown starts. */
+const EXIT_ANSWER_GRACE_MS = 50
+
+/**
+ * The page's exit action (#96), at its unit seam.
+ *
+ * The controller owns the whole decision and the kill — the pure rule, the
+ * ownership check, and `launcher.stop()` for the tree this Console started — and
+ * hands the composition root only what it cannot know: an outcome to say in
+ * Chinese. A Run that lives in a terminal has no handle here, so it is reported
+ * as "only the service stops" rather than pretended dead. The shutdown is
+ * scheduled, never run inline, so the page's `202` is written first; and a
+ * second permitted call cannot schedule it twice.
+ */
+export function createExitController(deps: ExitControllerDeps): ExitProgram {
+  const schedule = deps.schedule ?? ((run: () => void) => setTimeout(run, EXIT_ANSWER_GRACE_MS))
+  let permitted = false
+
+  return confirmed => {
+    // Already going down: answer the same thing, and do not schedule a second
+    // shutdown. A double-click on Exit must not race the first one.
+    if (permitted) return { exiting: true }
+
+    const state = deps.runState()
+    if (exitDecisionOf(state, confirmed) === 'refuse-confirm') {
+      return { exiting: false, refusal: refusal('exit-confirm-required') }
+    }
+
+    permitted = true
+    // Only the child this Console started is ours to kill. A terminal Run has
+    // no pid here, and killing by image name would reach a process the owner
+    // started (ADR 0009).
+    const killedOwnRun = deps.launcher.isAlive()
+    if (killedOwnRun) deps.launcher.stop()
+    const outcome: ExitOutcome = { runInFlight: state === 'running', killedOwnRun }
+    schedule(() => deps.shutdown(outcome))
+    // The accepted answer is exactly `{"exiting": true}` (spec #93): there is no
+    // refusal field to explain an exit that was permitted.
+    return { exiting: true }
+  }
+}
+
+/**
+ * The HTTP status an exit's answer carries: accepted (202) or refused (409).
+ * Same reasoning as `startStatusOf` — the module that owns the decision names
+ * the status, and the route only writes it.
+ */
+export function exitStatusOf(answer: { exiting: boolean; status?: number }): number {
+  return answer.status ?? (answer.exiting ? 202 : 409)
+}
 
 /**
  * Whether a stop signal has to ask first (ADR 0009; conventions §6).

@@ -11,6 +11,11 @@
 // Polling is the store's, not a panel's: a Run in flight is re-read every five
 // seconds, and the moment the Run ends the timer stops. Closing the page ends
 // it with the document — there is no handle to release.
+//
+// The read is repeated when the window regains focus (#95): the reader who fixes
+// the missing `.env` in an editor and comes back finds the notice gone, with no
+// reload. The drawer's own re-read on open is the shell's (`App.vue`), because
+// "the drawer opened" is the shell's fact, not this store's.
 
 import type { Ref } from 'vue'
 import { ref } from 'vue'
@@ -35,6 +40,12 @@ export interface ConsoleStatusStore {
   failure: Ref<string | null>
   /** Read once, now — the page's own "try again" after an action. */
   refresh: () => Promise<void>
+  /**
+   * Stop reading for good (#96): after a successful exit there is no service
+   * left to answer, and a poll would only paint a connection failure over the
+   * "exited" notice. Nothing restarts it in this document — the program is gone.
+   */
+  halt: () => void
 }
 
 const status = ref<ConsoleStatusPayload | null>(null)
@@ -46,6 +57,13 @@ let timer: ReturnType<typeof setInterval> | null = null
 /** Whether the first read has been started, so a second consumer does not repeat it. */
 let initialised = false
 
+/**
+ * Whether the page has stopped reading. Set by `halt` only: a status read after
+ * an exit cannot succeed, and the panel must not turn red behind the full-page
+ * "exited" notice.
+ */
+let halted = false
+
 function stopPolling(): void {
   if (timer === null) return
   clearInterval(timer)
@@ -53,13 +71,15 @@ function stopPolling(): void {
 }
 
 function startPolling(): void {
-  if (timer !== null) return
+  if (halted || timer !== null) return
   timer = setInterval(() => void refresh(), POLL_INTERVAL_MS)
 }
 
 async function refresh(): Promise<void> {
+  if (halted) return
   try {
     const reply = await getJson<ConsoleStatusPayload>('/api/status')
+    if (halted) return
     if (!reply.ok) {
       if (status.value === null) failure.value = `HTTP ${reply.status}`
       return
@@ -71,10 +91,27 @@ async function refresh(): Promise<void> {
     if (shouldPoll(reply.body.state)) startPolling()
     else stopPolling()
   } catch (error) {
+    if (halted) return
     if (status.value === null) {
       failure.value = error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/** Stop the page's status reads for good, and say so (#96). */
+function halt(): void {
+  halted = true
+  stopPolling()
+}
+
+/**
+ * Re-read whenever the window regains focus: a `.env` created while the page
+ * was open in another window is picked up without a reload (#95). Installed
+ * once, with the store's one initial read, so a second consumer does not add a
+ * second listener.
+ */
+function reReadOnFocus(): void {
+  window.addEventListener('focus', () => void refresh())
 }
 
 /**
@@ -88,6 +125,7 @@ export function useConsoleStatus(): ConsoleStatusStore {
   if (!initialised) {
     initialised = true
     void refresh()
+    reReadOnFocus()
   }
-  return { status, failure, refresh }
+  return { status, failure, refresh, halt }
 }

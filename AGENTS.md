@@ -174,18 +174,18 @@ web/                         — the Console, whole
 ├── vite.config.ts           — the page's bundler config (root = this directory, output web/dist/)
 ├── tsconfig.web.json        — the page's type program (web/src/** + api-types.ts + uno.config.ts)
 ├── src/                     — the page (Vue 3). The entry and its views stay at this level — `App.vue`, `GalleryView.vue`, `RunPanel.vue`, `OrphanPanel.vue`, `FullSizeView.vue` — because they are what the page is; everything they compose lives in three buckets, one rule: reactive state or a lifecycle → `composables/`; a stateless pure function → `lib/`; markup only → `components/`
-│   ├── components/          — markup only; flat, prefixed names; no feature subdirectories: `ConsoleNav` + `LocaleSwitch` + `ConsoleDrawer` (the shell), `WallStart` + `WallHeader` + `WallTile` (the wall), `RunSetupNotice` + `RunVerdict` + `RunReportBlock` + `RunDefectList` (the Run panel)
-│   ├── composables/         — the page's shared state: `useConsoleStatus` (one status read, the Run poll), `useGallery` (the wall's one read), `useRunStart` (the page's one start action — only a click starts a Run)
-│   ├── lib/                 — stateless: `console-api.ts` (the only place a request carries the token), `masonry.ts` (the wall's columns — unit-tested), `poll.ts` (whether to read again), `wall-state.ts` + `run-start.ts` (which band the wall is in, and what the start control is called — both unit-tested)
+│   ├── components/          — markup only; flat, prefixed names; no feature subdirectories: `ConsoleNav` + `ConsoleUpdateNotice` + `LocaleSwitch` + `ConsoleDrawer` (the shell — the Exit lives on the nav, #96), `WallStart` + `WallHeader` + `WallTile` (the wall), `GalleryFigures` (the one figures line, rendered by both the header and the panel, #94), `RunSetupNotice` + `RunVerdict` (the Run panel)
+│   ├── composables/         — the page's shared state: `useConsoleStatus` (one status read, the Run poll, the read on window focus), `useGallery` (the wall's one read — the page's one gallery snapshot), `usePageExit` (the page's one exit: exiting / awaiting confirmation / exited, #96), `useRunStart` (the page's one start action — only a click starts a Run)
+│   ├── lib/                — stateless: `console-api.ts` (the only place a request carries the token), `masonry.ts` (the wall's columns — unit-tested), `poll.ts` (whether to read again), `gallery-figures.ts` (the one figures line: Gallery / downloaded / missing / extra — unit-tested), `run-panel.ts` (the counts line and the panel's one problem line, by priority — unit-tested), `wall-state.ts` (which band the wall is in, decided by the Mirror gap's missing count) + `run-start.ts` (what the start control is called — both unit-tested)
 │   ├── i18n/                — the typed dictionary, the locale switch, the refusal's wording (ADR 0014)
 │   └── console-token.ts     — the token the page was opened with, read from its own URL
 └── server/                  — the service, and the one command that starts it
-    ├── console.ts           — the entry point: resolve the app root, read the layers, refuse a tree missing its build artifacts, bind loopback, open it
+    ├── console.ts           — the entry point: resolve the app root, read the layers, refuse a tree missing its build artifacts, bind loopback, open it; also the process lifecycle — the page's exit and the terminal signal share one shutdown (say the Chinese, close, `exit 0`), and the exit copy is here (#96)
     ├── build-artifacts.ts   — what the shipped tree is made of: server.js / run.js / update.js / web/dist/index.html, the Run entry's path, and the boot refusal for a tree that lacks one (unit-tested; #84, #87)
     ├── server.ts            — the app: the guard, the routes, the port fallback; re-exports the dependency contract from `http/deps.ts` so the contract keeps its import address
     ├── http/                — the transport's own parts: `deps.ts` (the injected contract), `guard.ts` (token/Host/Origin), `respond.ts` (the four response shapes and their exact headers), `method.ts` (405 + `allow`), `content-types.ts` (the extension→type table both the assets and the image routes read), `token-rewrite.ts` (the page and stylesheet rewrites), `assets.ts` (containment + serving one built asset)
-    ├── routes/              — one file per route group (status, gallery, images, run, instance, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
-    ├── run-control.ts       — the Run launcher, the one-at-a-time rule, the stop decision
+    ├── routes/              — one file per route group (status, gallery, images, run, exit, instance, static); a route gathers inputs and translates a request-level refusal, but invents no status for a domain state
+    ├── run-control.ts       — the Run launcher, the one-at-a-time rule, the stop decision, and the page's exit: `exitDecisionOf` (the same `stopDecision`, the caller's confirmation folded in) and `createExitController` (the kill of this Console's own tree, the scheduled shutdown) (#96)
     ├── instance-record.ts   — the handshake's file: the bound port + this boot's token in `<data>/instance.json`, its shape version and its ownership check (unit-tested; #82)
     ├── instance-handshake.ts — the second double-click's question: ask the record's address whether that service still answers, and hand back its page URL or `null` (socket-tested; #82)
     ├── installation.ts      — where the package is installed (`<install>\app` beside `<install>\data`), and the `%LOCALAPPDATA%` pointer the updater reads (unit-tested; #85)
@@ -223,12 +223,16 @@ tests/                       — mirrors the sources it tests
 │   ├── release-tag.test.ts    — the tag/version agreement (#88)
 │   └── zip.test.ts
 └── web/                     — the Console's tests
-    ├── server/              — the service's and the updater's tests (and their two helpers)
+    ├── server/              — the service's and the updater's tests (and their two helpers): the routes' surface, the exit's `409`/`202`s (`exit-api.test.ts`), the Run control and its lifetimes, the readers, the instance record and handshake, the updater
     └── src/                 — the page's tests
         ├── lib/
         │   ├── masonry.test.ts
         │   ├── poll.test.ts
-        │   └── console-api.test.ts
+        │   ├── console-api.test.ts
+        │   ├── gallery-figures.test.ts
+        │   ├── run-panel.test.ts
+        │   ├── run-start.test.ts
+        │   └── wall-state.test.ts
         └── i18n/
             └── messages.test.ts
 scripts/
@@ -242,7 +246,7 @@ scripts/
 ├── release-tag.ts    — the tag/version agreement: a `vX.Y.Z` tag must equal `package.json`'s version, checked by function rather than inline YAML; CLI prints the version, `--package` is the dry run (#88, unit-tested)
 └── zip.ts            — the hand-written zip writer (node:zlib, UTF-8 names, no zip64) (unit-tested)
 packaging/
-├── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, `pause` on failure. #86 copies it to the archive root byte for byte
+├── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, then an unconditional `pause` so the window keeps its last lines after a clean exit too, and `pause` before a non-zero exit (#96). #86 copies it to the archive root byte for byte
 ├── 更新.bat          — the updater's entry point (#87): the same ASCII/CRLF shape, `app\node.exe app\update.js "%~dp0." %*` — the package root plus the path the user dragged, if any
 ├── 使用说明.txt      — the player's manual (#89): UTF-8 with a BOM and CRLF, read in Notepad. Start and stop, the first download's size/time, update, rollback, uninstall, where `data\` is, Mark-of-the-Web, and where to ask; the packager takes it from here generically
 └── site.env          — the committed site constants the packager writes as `app\.env`; the repository's own `.env` is the owner's and is never read by a release build
@@ -271,7 +275,7 @@ what keep a release from carrying the owner's data.
 
 A Run's data lives in the data directory, never in the program directory: `<data>/images` (the Mirror), `<data>/logs` (the Run logs) and `<data>/cache/thumbnails` (the disposable thumbnail cache, outside the Mirror by ADR 0010), with `data/user.env` from #78. `core/data-layout.ts` owns that arrangement and the `layout.json` version marker; a pre-#80 checkout is migrated by a same-volume rename on the first start, and an unrecognised or newer layout refuses to start instead of guessing. The built tree (`build/`) is what travels with the program — three bundles and the page — and no source file does; there is no other root directory — the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76). Nothing under the data directory is ever deleted by the program (ADR 0019).
 
-Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the six files at `tests/web/server/`, which drive the bound service over a real socket.
+Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the socket tests at `tests/web/server/`, which drive the bound service over a real socket.
 
 **Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
 the site's own list endpoint returns every entry and every `pictureUrl` in one
@@ -336,7 +340,9 @@ messages English); a UTF-8 **BOM** makes the first line run as
 `'锘緻echo' 不是内部或外部命令`, so `@echo off` never happens; GBK is correct on
 that machine and on no other. So `packaging/启动.bat` and `packaging/更新.bat`
 are pure ASCII — `cd`, the two root variables (or the package root and `%*`),
-`app\node.exe app\<entry>.js`, `if errorlevel 1 pause` — and every Chinese line
+`app\node.exe app\<entry>.js`, and `pause` on both paths (a start's window keeps
+its last lines after a clean exit too, #96; a failure keeps its message) — and
+every Chinese line
 (the window title, the "do not close" line, the Mark-of-the-Web steps, every
 updater answer) is Node's, which writes Unicode to the console. Do not add
 Chinese to a script, and do not let its line endings be normalized: they are

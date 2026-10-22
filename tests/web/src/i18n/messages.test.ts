@@ -10,18 +10,10 @@
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  CONSOLE_VERDICTS,
-  EXPLAINED_REASON_KINDS,
-  GALLERY_ROW_STATES,
-  PREREQUISITE_CODES,
-  REFUSAL_CODES,
-} from '../../../../web/api-types.js'
+import { CONSOLE_VERDICTS, PREREQUISITE_CODES, REFUSAL_CODES } from '../../../../web/api-types.js'
 import type { Locale, MessageKey } from '../../../../web/src/i18n/messages.js'
 import {
   DEFAULT_LOCALE,
-  EXPLAINED_REASON_MESSAGE_KEYS,
-  GALLERY_ROW_STATE_MESSAGE_KEYS,
   LOCALES,
   PREREQUISITE_MESSAGE_KEYS,
   REFUSAL_MESSAGE_KEYS,
@@ -95,8 +87,8 @@ describe('the locale dictionary', () => {
   })
 
   it('leaves a placeholder with no parameter in the text rather than dropping it', () => {
-    expect(translate('en', 'run.line', { runId: '2026-10-18T01-03-31' })).toBe(
-      'Run 2026-10-18T01-03-31 — verdict: {verdict}',
+    expect(translate('en', 'gallery.figures', { officialTotal: 1013 })).toBe(
+      'Gallery 1013 · downloaded {downloaded} · missing {missing}',
     )
   })
 
@@ -110,24 +102,47 @@ describe('the locale dictionary', () => {
   })
 
   it('marks every parameter in a message, and only the parameters', () => {
-    expect(translateParts('en', 'run.line', { runId: 'r-1', verdict: 'clean' })).toEqual([
-      { text: 'Run ', name: null },
-      { text: 'r-1', name: 'runId' },
-      { text: ' — verdict: ', name: null },
-      { text: 'clean', name: 'verdict' },
+    expect(
+      translateParts('en', 'gallery.figures', {
+        officialTotal: 1013,
+        downloaded: 1001,
+        missing: 12,
+      }),
+    ).toEqual([
+      { text: 'Gallery ', name: null },
+      { text: '1013', name: 'officialTotal' },
+      { text: ' · downloaded ', name: null },
+      { text: '1001', name: 'downloaded' },
+      { text: ' · missing ', name: null },
+      { text: '12', name: 'missing' },
     ])
   })
 })
 
 /**
- * The setup notice (#60): with no usable `.env`, the Run panel has to tell a
- * first-time reader what to create before they click anything. The line is the
- * site's constant, not copy to be translated — the same line `README.md`'s quick
- * start gives — so both locales carry it verbatim, and the sentence that
- * introduces it names the file the reader creates. #76 dropped the page path
- * with the browser crawl, so one line is all a Run needs.
+ * The setup notice (#93, ticket #95): it shows only while the configuration is
+ * really unusable, and then it is two lines — one sentence saying why a Run
+ * cannot start, and the line to write. The file is the `.env` beside the
+ * program, because a Portable package has no repository root to send a player
+ * looking for, and nothing says "refresh the page" any more: the page re-reads
+ * the status itself when the drawer opens or the window regains focus. The
+ * retired lines of the old four-line notice are gone from both locales.
  */
 describe('the setup notice', () => {
+  /** The notice's keys in one locale, sorted; `run.setup.*` is the notice whole. */
+  function setupKeysOf(locale: Locale): string[] {
+    return keysOf(locale).filter(key => key.startsWith('run.setup.'))
+  }
+
+  it('is exactly two lines in both locales — the sentence and the line to write', () => {
+    for (const locale of LOCALES) {
+      expect(setupKeysOf(locale), `${locale}: setup keys`).toEqual([
+        'run.setup.body',
+        'run.setup.lines',
+      ])
+    }
+  })
+
   it('gives the .env line verbatim in both locales', () => {
     const lines = 'BASE_ORIGIN=https://re.bluepoch.com'
     for (const locale of LOCALES) {
@@ -135,9 +150,49 @@ describe('the setup notice', () => {
     }
   })
 
-  it('names the file the reader creates', () => {
+  it('names the .env beside the program, never a repository root', () => {
     for (const locale of LOCALES) {
-      expect(translate(locale, 'run.setup.file', { file: '.env' })).toContain('.env')
+      const copy = translate(locale, 'run.setup.body', { file: '.env' })
+      expect(copy, `${locale}: ${copy}`).toContain('.env')
+      // A Portable package is unzipped anywhere and has no repository root; the
+      // file the program reads is the one beside the program itself.
+      expect(copy, `${locale}: ${copy}`).not.toMatch(/repository root|repo root|仓库根目录|仓库根/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /程序旁边/ : /beside the program/i,
+      )
+    }
+  })
+
+  it('says why a Run cannot start', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'run.setup.body', { file: '.env' })
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /不能开始运行|还不能运行/ : /cannot start|can’t start|can't start/i,
+      )
+    }
+  })
+
+  it('no longer tells the reader to refresh the page', () => {
+    for (const locale of LOCALES) {
+      const body = translate(locale, 'run.setup.body', { file: '.env' })
+      const lines = translate(locale, 'run.setup.lines')
+      expect(body, `${locale}: ${body}`).not.toMatch(/refresh|刷新/i)
+      expect(lines, `${locale}: ${lines}`).not.toMatch(/refresh|刷新/i)
+    }
+  })
+
+  it('does not contradict the env-file refusal a start click returns', () => {
+    // The notice is guidance and the click's refusal is the error, but both send
+    // the reader after the same file; a refusal that named a different place
+    // would make the notice a lie the moment the reader clicked start.
+    for (const locale of LOCALES) {
+      const notice = translate(locale, 'run.setup.body', { file: '.env' })
+      const refusal = translate(locale, PREREQUISITE_MESSAGE_KEYS['env-file'])
+      expect(notice, `${locale}: ${notice}`).toContain('.env')
+      expect(refusal, `${locale}: ${refusal}`).toContain('.env')
+      expect(refusal, `${locale}: ${refusal}`).not.toMatch(
+        /repository root|repo root|仓库根目录|仓库根/i,
+      )
     }
   })
 })
@@ -169,12 +224,19 @@ describe('the update notice', () => {
 /**
  * The service's codes, and the page's words for them (#47).
  *
- * The contract exports all five vocabularies as runtime tuples — refusals,
- * prerequisites, explained reasons, verdicts and gallery row states — precisely
- * so this loop can be exhaustive: a code added to `web/api-types.ts` without a
- * message is a failure here, in both locales, not an English sentence discovered
- * in a browser. The `Record<Code, MessageKey>` maps are what tie a code to a key
- * at compile time; this is the data half of the same promise.
+ * The contract exports three of its vocabularies as runtime tuples — refusals,
+ * prerequisites and verdicts — precisely so this loop can be exhaustive: a code
+ * added to `web/api-types.ts` without a message is a failure here, in both
+ * locales, not an English sentence discovered in a browser. The
+ * `Record<Code, MessageKey>` maps are what tie a code to a key at compile time;
+ * this is the data half of the same promise.
+ *
+ * The explained reasons used to be a fourth vocabulary, and #97 retired their
+ * copy with the routine-notes list the panel no longer shows. This fix pass
+ * retires the kind vocabulary from the page's contract too:
+ * `core/report/run-log.ts` still decides whether a verdict is `explained`, and
+ * the page still has the verdict sentence for it, but no per-kind detail reaches
+ * the page. A page surface that returns needs both the field and its words back.
  */
 describe('every service code has copy in both locales', () => {
   const codeKeys: [string, MessageKey][] = [
@@ -186,17 +248,9 @@ describe('every service code has copy in both locales', () => {
       `prerequisite:${code}`,
       PREREQUISITE_MESSAGE_KEYS[code],
     ]),
-    ...EXPLAINED_REASON_KINDS.map((kind): [string, MessageKey] => [
-      `explained:${kind}`,
-      EXPLAINED_REASON_MESSAGE_KEYS[kind],
-    ]),
     ...CONSOLE_VERDICTS.map((code): [string, MessageKey] => [
       `verdict:${code}`,
       VERDICT_MESSAGE_KEYS[code],
-    ]),
-    ...GALLERY_ROW_STATES.map((state): [string, MessageKey] => [
-      `row-state:${state}`,
-      GALLERY_ROW_STATE_MESSAGE_KEYS[state],
     ]),
   ]
 
@@ -204,16 +258,16 @@ describe('every service code has copy in both locales', () => {
     // A mapping that dropped a code would be a `tsc` error; this states the
     // intent from the other side, so a tuple that quietly lost a member fails.
     expect(codeKeys).toHaveLength(
-      REFUSAL_CODES.length +
-        PREREQUISITE_CODES.length +
-        EXPLAINED_REASON_KINDS.length +
-        CONSOLE_VERDICTS.length +
-        GALLERY_ROW_STATES.length,
+      REFUSAL_CODES.length + PREREQUISITE_CODES.length + CONSOLE_VERDICTS.length,
     )
-    expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
+    expect([...REFUSAL_CODES]).toEqual([
+      'run-busy',
+      'orphaned-run',
+      'missing-prerequisite',
+      'exit-confirm-required',
+    ])
     expect([...PREREQUISITE_CODES]).toEqual(['env-file'])
     expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
-    expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
   })
 
   it('resolves each code to written-out copy in zh-CN and en', () => {
@@ -227,6 +281,83 @@ describe('every service code has copy in both locales', () => {
   it('gives every code its own message rather than sharing one', () => {
     const keys = codeKeys.map(([, key]) => key)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+/**
+ * The page's exit (#96). Three sentences carry the whole promise: the control
+ * says "exit", a Run in flight asks first and names the consequence the next
+ * start meets, and the page ends on "exited — you can close this page". The
+ * confirmation is the service's refusal surfaced, so both locales have to say
+ * the same thing about the truncated Run log.
+ */
+describe('the page’s exit', () => {
+  it('names the exit in the navigation, in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'nav.exit').trim()).not.toBe('')
+    }
+    expect(translate('zh-CN', 'nav.exit')).toBe('退出')
+    expect(translate('en', 'nav.exit')).toBe('Exit')
+  })
+
+  it('says what an exit during a fetch costs the next start, in both locales', () => {
+    for (const locale of LOCALES) {
+      const confirm = translate(locale, 'exit.confirmBody')
+      const notice = translate(locale, 'exit.exitedInterrupted')
+      expect(confirm, `${locale}: ${confirm}`).toMatch(locale === 'zh-CN' ? /截断/ : /truncat/i)
+      expect(confirm, `${locale}: ${confirm}`).toMatch(locale === 'zh-CN' ? /清理/ : /clean up/i)
+      expect(notice, `${locale}: ${notice}`).toMatch(locale === 'zh-CN' ? /截断/ : /truncat/i)
+    }
+  })
+
+  it('ends on the page’s last instruction after a successful exit', () => {
+    // The spec's own words, so the notice cannot drift into a spinner.
+    expect(translate('zh-CN', 'exit.exitedHeading')).toBe('已退出 — 可以关闭这个页面')
+    expect(translate('en', 'exit.exitedHeading')).toBe('Exited — you can close this page')
+  })
+
+  it('gives the confirmation refusal its own sentence', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'refusal.exitConfirmRequired').trim()).not.toBe('')
+    }
+  })
+})
+
+/**
+ * The wall's figures line (#94): one line, each count its own data cell, and
+ * the same sentence the Run panel shows. The numbers are
+ * `web/src/lib/gallery-figures.ts`'s; the dictionary owes the words and the
+ * separators, in both locales, and the exact English the acceptance criteria
+ * name.
+ */
+describe('the wall’s figures line', () => {
+  it('names the three counts in one line, in both locales', () => {
+    const params = { officialTotal: 1013, downloaded: 1001, missing: 12 }
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'gallery.figures', params)
+      expect(copy, `${locale}: ${copy}`).toContain('1013')
+      expect(copy, `${locale}: ${copy}`).toContain('1001')
+      expect(copy, `${locale}: ${copy}`).toContain('12')
+      expect(copy, `${locale}: ${copy}`).toContain('·')
+    }
+    expect(translate('en', 'gallery.figures', params)).toBe(
+      'Gallery 1013 · downloaded 1001 · missing 12',
+    )
+  })
+
+  it('offers the extra count as its own clause, appended only when extras exist', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'gallery.figuresExtra', { extra: 3 })
+      expect(copy, `${locale}: ${copy}`).toContain('3')
+      expect(copy, `${locale}: ${copy}`).toContain('·')
+    }
+    expect(translate('en', 'gallery.figuresExtra', { extra: 3 })).toBe(' · extra 3')
+  })
+
+  it('says the list is unread, in both locales, and never a missing count', () => {
+    expect(translate('en', 'gallery.unread')).toBe('Gallery unread')
+    expect(translate('zh-CN', 'gallery.unread')).not.toBe('')
+    expect(translate('zh-CN', 'gallery.unread')).not.toBe(translate('en', 'gallery.unread'))
   })
 })
 
@@ -276,6 +407,21 @@ describe('the first-run wall', () => {
       const copy = translate(locale, 'wall.progress', { done: 300, total: 1010 })
       expect(copy, `${locale}: ${copy}`).toContain('300')
       expect(copy, `${locale}: ${copy}`).toContain('1010')
+    }
+  })
+
+  it('names both stops while a fetch runs, and that downloads are skipped after one', () => {
+    // The page's Exit (ADR 0022) is the second stop, and the one the reader can
+    // click: the hint must not send them to the window alone. It asks first
+    // while a Run is in flight, which is the fact this sentence carries.
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'wall.runningHint')
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /关闭窗口|关掉窗口/ : /clos(e|ing) the window/i,
+      )
+      expect(copy, `${locale}: ${copy}`).toMatch(locale === 'zh-CN' ? /退出/ : /exit/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(locale === 'zh-CN' ? /确认/ : /ask/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(locale === 'zh-CN' ? /跳过/ : /skip/i)
     }
   })
 
@@ -341,7 +487,6 @@ describe('the verdicts in the reader’s words', () => {
 describe('a failure speaks plainly', () => {
   const failureKeys: MessageKey[] = [
     'wall.readFailed',
-    'gallery.listUnavailable',
     'run.siteUnreachable',
     'error.connection',
     'console.readFailed',
@@ -361,12 +506,137 @@ describe('a failure speaks plainly', () => {
   it('offers a retry affordance in words', () => {
     for (const locale of LOCALES) {
       expect(translate(locale, 'action.retry')).not.toBe('')
-      expect(translate(locale, 'gallery.listUnavailable')).toMatch(
-        locale === 'zh-CN' ? /再试|重试/ : /try again/i,
-      )
       expect(translate(locale, 'run.siteUnreachable')).toMatch(
         locale === 'zh-CN' ? /再抓|重试/ : /try again|fetch again/i,
       )
+    }
+  })
+})
+
+/**
+ * The Run panel's four lines (#97): one verdict sentence, `ok N · failed N`, the
+ * figures the wall's header prints (#94), and at most one problem line. The
+ * subtraction is as much of the ticket as the addition — the run id, the
+ * Discovery counters, the success rate, the nine defect rows, the routine notes
+ * and the `reasons:` clause are gone, and their words went with them.
+ *
+ * What the one problem line can be is `web/src/lib/run-panel.ts`'s priority, and
+ * its every branch is unit-tested there; here is the copy that priority needs,
+ * and the proof that the retired rows' copy is not left behind in either locale.
+ */
+describe('the Run panel’s four lines', () => {
+  it('says ok N, and adds the failure clause only when something failed', () => {
+    // The acceptance criterion's own sentence, and the one it forbids.
+    expect(translate('en', 'run.counts', { ok: 1013 })).toBe('ok 1013')
+    expect(translate('en', 'run.countsFailed', { failed: 3 })).toBe(' · failed 3')
+    expect(translate('en', 'run.counts', { ok: 1013 })).not.toContain('failed')
+
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'run.counts', { ok: 1013 }), `${locale}: counts`).toContain('1013')
+      expect(translate(locale, 'run.countsFailed', { failed: 3 }), `${locale}: failure`).toContain(
+        '3',
+      )
+      // The failure clause carries its own separator, so the two keys compose
+      // into one line rather than into two sentences.
+      expect(
+        translate(locale, 'run.countsFailed', { failed: 3 }),
+        `${locale}: separator`,
+      ).toContain('·')
+    }
+  })
+
+  it('lets the verdict sentence name no Run — no id, timestamp or log name', () => {
+    for (const code of CONSOLE_VERDICTS) {
+      for (const locale of LOCALES) {
+        const sentence = translate(locale, VERDICT_MESSAGE_KEYS[code])
+        // A sentence with no parameter cannot carry an id, a time or a file.
+        expect(placeholders(sentence), `${code} in ${locale}: ${sentence}`).toEqual([])
+      }
+    }
+  })
+
+  it('keeps only the defect classes the one problem line can show', () => {
+    // The nine rows retired. The four that remain are the problem line's own
+    // sentences; `defect.none` went with the list, and the site-unreachable row
+    // is superseded by `run.siteUnreachable`, which names the retry.
+    for (const locale of LOCALES) {
+      expect(
+        keysOf(locale).filter(key => key.startsWith('defect.')),
+        `${locale}: defect keys`,
+      ).toEqual([
+        'defect.emptyFiles',
+        'defect.emptyResult',
+        'defect.mirrorGapMissing',
+        'defect.persistentFailures',
+      ])
+    }
+  })
+
+  it('retires the words of everything the panel no longer shows', () => {
+    const retired = [
+      // The run id, the `reasons:` clause and the routine-notes list.
+      'run.line',
+      'run.why',
+      'run.explained',
+      'run.explained.discoveryLeak',
+      'run.explained.mirrorGapExtra',
+      // The Gallery numbers, the Discovery counters and the success-rate rows.
+      'run.gallery',
+      'run.galleryReport',
+      'run.download',
+      'run.downloadReport',
+      'run.unknown',
+      // The nine-row defect list.
+      'run.defects',
+      'defect.none',
+      'defect.discoveryLeak',
+      'defect.nonConverged',
+      'defect.siteAssetNotChecked',
+      'defect.siteAssetFalsePositive',
+      'defect.gallerySourceUnavailable',
+      'defect.mirrorGapNotChecked',
+      'defect.mirrorGapExtra',
+    ]
+    for (const locale of LOCALES) {
+      for (const key of retired) {
+        expect(keysOf(locale), `${locale} kept ${key}`).not.toContain(key)
+      }
+    }
+  })
+})
+
+/**
+ * The Orphaned Run (#97): one sentence plus the cleanup button. The long
+ * explanation paragraph retired with the rest of the panel's prose; the refusal
+ * has to stay truthful — the Console can say no, and a cleanup never touches the
+ * Run log.
+ */
+describe('the orphan panel', () => {
+  /** The orphan copy in one locale, sorted; `orphan.*` is the panel whole. */
+  function orphanKeysOf(locale: Locale): string[] {
+    return keysOf(locale).filter(key => key.startsWith('orphan.'))
+  }
+
+  it('is one sentence and the control, in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(orphanKeysOf(locale), `${locale}: orphan keys`).toEqual([
+        'orphan.clean',
+        'orphan.line',
+        'orphan.newestLog',
+        'orphan.refusedCleanup',
+      ])
+    }
+  })
+
+  it('keeps the refusal truthful: the Console said no, and no log was deleted', () => {
+    for (const locale of LOCALES) {
+      const refusal = translate(locale, 'orphan.refusedCleanup')
+      expect(refusal, `${locale}: ${refusal}`).toMatch(
+        locale === 'zh-CN' ? /没有接受/ : /did not accept/i,
+      )
+      // The cleanup is an acknowledgement, never an edit: its own copy must not
+      // promise that a log went away (ADR 0009).
+      expect(refusal, `${locale}: ${refusal}`).not.toMatch(/delet|删除|rewrote|重写/i)
     }
   })
 })

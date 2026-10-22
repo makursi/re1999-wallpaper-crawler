@@ -79,7 +79,7 @@ async function getJson(url: string): Promise<{ status: number; body: unknown }> 
 }
 
 describe('GET /api/gallery', () => {
-  it('answers one row per list entry plus the Mirror extras, with the counts', async () => {
+  it('answers one row per Wallpaper on disk — list order, then the extras — with the counts', async () => {
     const { service } = await serve(async () => LIST)
 
     const { status, body } = await getJson(`${service.origin}/api/gallery?token=${TOKEN}`)
@@ -87,16 +87,19 @@ describe('GET /api/gallery', () => {
     expect(status).toBe(200)
     expect(body).toEqual({
       rows: [
-        { id: 1012, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
-        { id: 1011, name: '1011_hash.jpg', state: 'missing', viewable: false },
-        { id: null, name: RETIRED, state: 'not-in-gallery', viewable: true },
-        // The row this contract field exists for: on disk, not an image, so the
-        // page is told not to ask for a thumbnail it could never get.
-        { id: null, name: 'notes.txt', state: 'not-in-gallery', viewable: false },
+        { id: 1012, name: '1012_hash.jpg' },
+        // The retired Wallpaper: on disk, no longer in the list. The list's
+        // entry the Mirror lacks (`1011_hash.jpg`) is not a row at all — there
+        // is no file to show and no thumbnail to request — and `notes.txt` is
+        // not a Wallpaper.
+        { id: null, name: RETIRED },
       ],
       officialTotal: 2,
       newSinceLastRun: 12,
       listAvailable: true,
+      // Set arithmetic over the names: `1011_hash.jpg` missing; the retired
+      // Wallpaper and `notes.txt` are the extras (the Run report counts the
+      // same two).
       mirrorGap: { missing: 1, extra: 2 },
       // Every non-dot Mirror name: the image, the retired file, notes.txt.
       mirrorCount: 3,
@@ -124,8 +127,9 @@ describe('GET /api/gallery', () => {
     expect(body).toMatchObject({
       sizes: { '1012_hash.jpg': { width: 1440, height: 2560 } },
     })
-    // `1011_hash.jpg` is a Gallery entry the Mirror does not hold, so it is
-    // never opened; `notes.txt` is not an image name, so it never gets a path.
+    // `1011_hash.jpg` is a Gallery entry the Mirror does not hold, so it has no
+    // row and is never opened; `notes.txt` is not a Wallpaper name, so it gets
+    // no path either.
     expect(measured.toSorted()).toEqual(['1012_hash.jpg', RETIRED].toSorted())
   })
 
@@ -151,9 +155,8 @@ describe('GET /api/gallery', () => {
     expect(status).toBe(200)
     expect(body).toEqual({
       rows: [
-        { id: null, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
-        { id: null, name: RETIRED, state: 'on-disk', viewable: true },
-        { id: null, name: 'notes.txt', state: 'on-disk', viewable: false },
+        { id: null, name: '1012_hash.jpg' },
+        { id: null, name: RETIRED },
       ],
       officialTotal: null,
       newSinceLastRun: 12,

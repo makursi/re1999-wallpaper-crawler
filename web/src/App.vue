@@ -15,33 +15,65 @@
 // rule that keeps its fonts and its logo out (spec #43, docs/adr/0013).
 
 import { DialogRoot } from 'reka-ui'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import ConsoleDrawer from './components/ConsoleDrawer.vue'
 import ConsoleNav from './components/ConsoleNav.vue'
+import { useConsoleStatus } from './composables/useConsoleStatus'
+import { usePageExit } from './composables/usePageExit'
 import GalleryView from './GalleryView.vue'
+import { t } from './i18n/locale'
 
 const drawerOpen = ref(false)
+
+// Opening the drawer re-reads the status (#95): the reader who created the
+// missing `.env` after the page loaded finds the setup notice already gone,
+// with no reload. The drawer's click is the shell's fact, so the wiring is the
+// shell's; the read itself stays the store's one read.
+const { refresh } = useConsoleStatus()
+watch(drawerOpen, open => {
+  if (open) void refresh()
+})
+
+// #96: an accepted exit replaces the page. The store also halts the status poll,
+// so nothing below tries to read a service that is closing.
+const { exited, interruptedRun } = usePageExit()
 </script>
 
 <template>
-  <!-- The site's own bottom-fading black scrim, at its own 100px: the pill
-       floats on a fade rather than on a bar, so a long wall is never cut in
-       two by its navigation. -->
+  <!-- #96: the service accepted the exit and is shutting down. A full page,
+       because every control on it would now point at a service that is gone;
+       the copy is the whole instruction, and the tab can simply be closed. -->
   <div
-    class="pointer-events-none fixed inset-x-0 top-0 z-10 h-[100px]"
-    style="background-image: var(--token-nav-scrim)"
-    aria-hidden="true"
-  />
+    v-if="exited"
+    class="flex min-h-screen flex-col items-center justify-center gap-4 px-page text-center"
+  >
+    <span class="i-ph-power-light text-4xl text-accent" aria-hidden="true" />
+    <h1 class="font-serif text-2xl font-bold">{{ t('exit.exitedHeading') }}</h1>
+    <p class="max-w-prose text-secondary">
+      {{ interruptedRun ? t('exit.exitedInterrupted') : t('exit.exitedBody') }}
+    </p>
+  </div>
 
-  <DialogRoot :open="drawerOpen" @update:open="drawerOpen = $event">
-    <ConsoleNav />
+  <template v-else>
+    <!-- The site's own bottom-fading black scrim, at its own 100px: the pill
+         floats on a fade rather than on a bar, so a long wall is never cut in
+         two by its navigation. -->
+    <div
+      class="pointer-events-none fixed inset-x-0 top-0 z-10 h-[100px]"
+      style="background-image: var(--token-nav-scrim)"
+      aria-hidden="true"
+    />
 
-    <!-- The wall, on the page's own 7vw edge. -->
-    <main class="px-page pt-28 font-sans">
-      <GalleryView />
-    </main>
+    <DialogRoot :open="drawerOpen" @update:open="drawerOpen = $event">
+      <ConsoleNav />
 
-    <ConsoleDrawer />
-  </DialogRoot>
+      <!-- The wall, on the page's own 7vw edge. -->
+      <main class="px-page pt-28 font-sans">
+        <GalleryView />
+      </main>
+
+      <ConsoleDrawer />
+    </DialogRoot>
+  </template>
 </template>

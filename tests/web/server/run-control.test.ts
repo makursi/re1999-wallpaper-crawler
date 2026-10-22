@@ -6,11 +6,18 @@ import process from 'node:process'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { APP_ROOT_ENV } from '../../../core/app-root.js'
+import type { ConsoleRunState } from '../../../web/api-types.js'
 import { runEntryPath } from '../../../web/server/build-artifacts.js'
 import type { PrerequisiteChecks } from '../../../web/server/prerequisites.js'
 import { missingPrerequisites } from '../../../web/server/prerequisites.js'
-import type { RunLauncher } from '../../../web/server/run-control.js'
-import { createRunLauncher, createRunStarter } from '../../../web/server/run-control.js'
+import type { ExitOutcome, RunLauncher } from '../../../web/server/run-control.js'
+import {
+  createExitController,
+  createRunLauncher,
+  createRunStarter,
+  exitDecisionOf,
+  exitStatusOf,
+} from '../../../web/server/run-control.js'
 
 type Spawn = typeof import('node:child_process').spawn
 
@@ -236,6 +243,119 @@ describe('createRunStarter', () => {
     })
 
     expect((await starter()).status).toBe(409)
+  })
+})
+
+/**
+ * The page's exit (#96), at its own seam: the pure decision and the controller
+ * with its launcher and shutdown injected. The composition root — the Chinese
+ * lines, the real `service.close()` and `process.exit(0)` — is glue, verified by
+ * booting the built tree; what is decided here is what the tests own.
+ */
+describe('exitDecisionOf', () => {
+  it('lets an idle exit stop at once, with or without a confirmation', () => {
+    expect(exitDecisionOf('idle', false)).toBe('exit-at-once')
+    expect(exitDecisionOf('idle', true)).toBe('exit-at-once')
+  })
+
+  it('asks before leaving while a Run is in flight, and honours the confirmation', () => {
+    // The same `stopDecision` the terminal signal uses: one rule, two doors.
+    expect(exitDecisionOf('running', false)).toBe('refuse-confirm')
+    expect(exitDecisionOf('running', true)).toBe('exit-at-once')
+  })
+
+  it('treats an Orphaned Run like an idle one: there is no child to take with it', () => {
+    expect(exitDecisionOf('orphaned', false)).toBe('exit-at-once')
+  })
+})
+
+/** A launcher whose `stop` is counted, so "killed the tree" is observable. */
+function exitHarness(
+  state: ConsoleRunState,
+  alive: boolean,
+): {
+  exit: ReturnType<typeof createExitController>
+  shutdowns: ExitOutcome[]
+  kills: () => number
+} {
+  let live = alive
+  let kills = 0
+  const shutdowns: ExitOutcome[] = []
+  const launcher: RunLauncher = {
+    start: () => {},
+    isAlive: () => live,
+    stop: () => {
+      kills++
+      live = false
+    },
+  }
+  const exit = createExitController({
+    runState: () => state,
+    launcher,
+    shutdown: outcome => shutdowns.push(outcome),
+    // The real one is a short timer so the HTTP answer is written first; a unit
+    // test needs the order only, so the shutdown runs now.
+    schedule: run => run(),
+  })
+  return { exit, shutdowns, kills: () => kills }
+}
+
+describe('createExitController', () => {
+  it('lets an idle exit go at once, and closes the service exactly once', () => {
+    const harness = exitHarness('idle', false)
+
+    expect(harness.exit(false)).toEqual({ exiting: true })
+
+    expect(harness.shutdowns).toEqual([{ runInFlight: false, killedOwnRun: false }])
+    expect(harness.kills()).toBe(0)
+  })
+
+  it('refuses an unconfirmed exit while a Run is in flight, and stops nothing', () => {
+    const harness = exitHarness('running', false)
+
+    expect(harness.exit(false)).toEqual({
+      exiting: false,
+      refusal: { code: 'exit-confirm-required', missing: [] },
+    })
+
+    expect(harness.shutdowns).toEqual([])
+    expect(harness.kills()).toBe(0)
+  })
+
+  it('kills the whole tree it started when the exit is confirmed, once', () => {
+    const harness = exitHarness('running', true)
+
+    expect(harness.exit(true)).toEqual({ exiting: true })
+
+    expect(harness.kills()).toBe(1)
+    expect(harness.shutdowns).toEqual([{ runInFlight: true, killedOwnRun: true }])
+  })
+
+  it('reports a Run it did not start as the service stopping only', () => {
+    // A terminal Run has no handle here: the service goes, the Run may keep
+    // writing, and the outcome says so rather than claiming a kill.
+    const harness = exitHarness('running', false)
+
+    harness.exit(true)
+
+    expect(harness.kills()).toBe(0)
+    expect(harness.shutdowns).toEqual([{ runInFlight: true, killedOwnRun: false }])
+  })
+
+  it('answers a repeated permitted exit without scheduling a second shutdown', () => {
+    const harness = exitHarness('idle', false)
+
+    expect(harness.exit(false)).toEqual({ exiting: true })
+    expect(harness.exit(true)).toEqual({ exiting: true })
+
+    expect(harness.shutdowns).toHaveLength(1)
+  })
+})
+
+describe('exitStatusOf', () => {
+  it('answers 202 for an exit it accepted and 409 for a refusal', () => {
+    expect(exitStatusOf({ exiting: true })).toBe(202)
+    expect(exitStatusOf({ exiting: false })).toBe(409)
   })
 })
 

@@ -12,7 +12,7 @@ Nothing to install — no Node.js, no Chrome, no command line.
 
 1. Download the latest `.zip` from [Releases](https://github.com/makursi/re1999-wallpaper-crawler/releases).
 2. Extract it anywhere — Chinese characters and spaces in the path are fine.
-3. Double-click `启动.bat`. Your browser opens the wallpaper page; closing the black window stops the program.
+3. Double-click `启动.bat`. Your browser opens the wallpaper page. To stop the program, close the black window or click “Exit” in the page’s top navigation; after the program exits, the window waits for any key before it closes.
 4. On first use, open “运行” in the top navigation and click “开始运行” (“Start a Run” after switching the page to English). Expect roughly 1,000+ wallpapers, about 2 GB in total, and 10–40 minutes depending on your connection. Closing it halfway is fine: the next start skips what is already downloaded.
 
 Updating, rolling back, uninstalling, where your files live, and what to do when Windows or an antivirus blocks the program are all covered by the manual shipped in the package, [`使用说明.txt`](packaging/使用说明.txt) (Chinese).
