@@ -1,15 +1,19 @@
 // ── The gallery as rows: the Gallery list read against the Mirror ────
 //
-// One pure function (spec decision 17): the site's Gallery list is the row
-// set's spine — one row per entry, labelled by the gallery's own id, with the
-// Wallpaper's file name as the secondary label — and the Mirror's files the
-// list does not contain follow as `not-in-gallery` rows. No filesystem, no
-// clock: the disk names arrive as data, so the page and the tests feed it the
-// same way.
+// One pure function (spec decision 17): the wall is the Mirror. A row exists
+// only for a Wallpaper really on disk — a Gallery list entry whose file is
+// there and whose name the Wallpaper URL set accepts, in the list's order, then
+// the Wallpaper extras the site has retired but the Mirror still holds, sorted.
+// An entry with no file is not a row: no placeholder, no "not on disk", and no
+// thumbnail request for a file that is not there.
 //
-// The gap arithmetic deliberately copies `mergeGalleryStats`
-// (core/gallery/gallery-state.ts:61-66), because the page and the Run report
-// have to agree about the same directory (spec decision 18).
+// The gap is deliberately not derived from those rows. It is the same set
+// arithmetic as `mergeGalleryStats` (core/gallery/gallery-state.ts:61-66), over
+// the official name set and the disk name set, because the page and the Run
+// report have to agree about the same directory (spec decision 18).
+//
+// No filesystem, no clock: the disk names arrive as data, so the page and the
+// tests feed it the same way.
 
 import type { GalleryList } from '../../core/gallery/gallery-source.js'
 import { officialNamesOf } from '../../core/gallery/gallery-source.js'
@@ -17,29 +21,15 @@ import { isWallpaperFile, wallpaperNameOf } from '../../core/wallpaper-url.js'
 import type { ConsoleGalleryPayload, ConsoleImageSize } from '../api-types.js'
 import type { Same } from './same.js'
 
-/** How a row stands against the Mirror. */
-export type GalleryRowState = 'on-disk' | 'missing' | 'not-in-gallery'
-
 export interface GalleryRow {
-  /** The gallery's own id; null for a Mirror file the list does not contain. */
+  /** The gallery's own id; null for a retired Wallpaper the list dropped. */
   id: number | null
-  /** The Wallpaper's file name (the secondary label). */
+  /** The Wallpaper's file name. */
   name: string
-  state: GalleryRowState
-  /**
-   * Whether the page can show this row: the file is in the Mirror and the name
-   * is one the Wallpaper URL set accepts.
-   *
-   * The service decides it because both inputs are the service's — the row's
-   * state and the Wallpaper URL set's vocabulary, `isWallpaperFile`. The page
-   * used to hold a hand-copied copy of that vocabulary, which is exactly the
-   * kind of duplicate that drifts: a non-image Mirror extra then produced one
-   * thumbnail request per paint that could only ever answer 400.
-   */
-  viewable: boolean
 }
 
 export interface GalleryView {
+  /** Only Wallpapers really on disk; the Gallery list's order first. */
   rows: GalleryRow[]
   officialTotal: number | null
   newSinceLastRun: number | null
@@ -55,21 +45,19 @@ export function buildGalleryView(input: {
 }): GalleryView {
   const { list, diskFiles, newSinceLastRun } = input
   // The Run report's predicate, not `isWallpaperFile` (§4a): every non-dot
-  // name, so a stray `notes.txt` counts on both sides.
+  // name, so a stray `notes.txt` counts on both sides of the gap.
   const diskNames = diskFiles.filter(name => !name.startsWith('.'))
   const onDisk = new Set(diskNames)
 
   if (list === null) {
-    // Degraded mode (§4): the Mirror's files alone. "Not in the gallery" needs
-    // the list, so every row is simply on disk and the gap stays `null` — a
-    // missing count of 0 would be a claim the Mirror cannot support.
+    // Degraded mode (§4): the Mirror's Wallpapers alone. "Not in the gallery"
+    // needs the list, so every row is simply an extra and the gap stays `null`
+    // — a missing count of 0 would be a claim the Mirror cannot support.
     return {
-      rows: diskNames.map(name => ({
-        id: null,
-        name,
-        state: 'on-disk',
-        viewable: isWallpaperFile(name),
-      })),
+      rows: diskNames
+        .filter(name => isWallpaperFile(name))
+        .toSorted()
+        .map(name => ({ id: null, name })),
       officialTotal: null,
       newSinceLastRun,
       listAvailable: false,
@@ -78,28 +66,16 @@ export function buildGalleryView(input: {
   }
 
   const official = officialNamesOf(list)
-  const rows: GalleryRow[] = list.entries.map(entry => {
+  const rows: GalleryRow[] = []
+  for (const entry of list.entries) {
     const name = wallpaperNameOf(entry.url)
-    const onDiskHere = onDisk.has(name)
-    return {
-      id: entry.id,
-      name,
-      state: onDiskHere ? 'on-disk' : 'missing',
-      // A row the Mirror does not hold has no file to show; a row it holds
-      // still has to be a Wallpaper, because the Mirror takes every non-dot
-      // name and the route serves only the Wallpaper URL set.
-      viewable: onDiskHere && isWallpaperFile(name),
-    }
-  })
-  const extraNames = diskNames.filter(name => !official.has(name)).toSorted()
-  for (const extra of extraNames) {
-    rows.push({
-      id: null,
-      name: extra,
-      state: 'not-in-gallery',
-      viewable: isWallpaperFile(extra),
-    })
+    // Both halves are the service's: the file has to be in the Mirror (a row
+    // without one could only become a placeholder) and the name has to be one
+    // the Wallpaper URL set accepts (the thumbnail route would answer 400).
+    if (onDisk.has(name) && isWallpaperFile(name)) rows.push({ id: entry.id, name })
   }
+  const extras = diskNames.filter(name => !official.has(name) && isWallpaperFile(name)).toSorted()
+  for (const name of extras) rows.push({ id: null, name })
 
   return {
     rows,

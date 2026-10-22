@@ -23,7 +23,6 @@
 // plugin and a second way to name a string, and the page needs none of it.
 
 import type {
-  ConsoleGalleryRowState,
   ConsoleVerdict,
   ExplainedReasonKind,
   PrerequisiteCode,
@@ -128,25 +127,23 @@ const zhCN = {
   'orphan.clean': '清理',
   'orphan.refusedCleanup': '本地控制台没有接受这次清理。刷新页面后再试一次。',
 
-  // The gallery: the official list read against the Mirror, and the three
-  // states a row can be in.
+  // The gallery: the Mirror's Wallpapers, and the one line that answers "is the
+  // Mirror complete?" (#94). The figures line is shared by the wall header and
+  // the Run panel, so the two cannot disagree about the same numbers; every
+  // count is a data cell. `gallery.unread` is the honest answer when the list
+  // could not be read: no missing count is claimed.
   'gallery.heading': '官方清单',
   // The wall's display mark: a logotype, not a phrase, so it is the same word
   // in both locales and is translated nowhere (docs/adr/0015, story 20).
   'wall.mark': 'WALLPAPER',
   'gallery.reading': '正在读取官方清单……',
-  'gallery.counts': '官方清单有 {officialTotal} 条;镜像有 {mirrorCount} 个文件。',
-  'gallery.notRead': '未读取到',
+  'gallery.figures': '官方清单 {officialTotal} · 已下载 {downloaded} · 缺失 {missing}',
+  // Appended to the line only when the Mirror holds retired files: a leading
+  // separator of its own, so the sentence is the whole clause.
+  'gallery.figuresExtra': ' · 本地多出 {extra}',
+  'gallery.unread': '官方清单未读取',
   'gallery.newestRunAdded': '最近一次运行新增了 {newSinceLastRun} 条。',
-  'gallery.listUnavailable': '暂时连不上官网,所以不知道还有哪些壁纸没下载。检查网络后再试一次。',
-  'gallery.mirrorGap':
-    '官方清单中列出、镜像里却没有的壁纸有 {missing} 张;镜像里有 {extra} 个文件已不在官方清单中。',
   'gallery.tileShow': '全尺寸查看 {name}',
-  'gallery.tileNotOnDisk': '{name} 未落盘',
-  'gallery.notOnDisk': '未落盘',
-  'gallery.state.onDisk': '已落盘',
-  'gallery.state.missing': '缺失',
-  'gallery.state.notInGallery': '已不在官方清单',
 
   // ── The wall's own band (#83) ─────────────────────────────────────
   //
@@ -318,20 +315,11 @@ const en = {
   'gallery.heading': 'Gallery list',
   'wall.mark': 'WALLPAPER',
   'gallery.reading': 'Reading the Gallery list…',
-  'gallery.counts':
-    'The Gallery list holds {officialTotal} entries; the Mirror holds {mirrorCount} files.',
-  'gallery.notRead': 'not read',
+  'gallery.figures': 'Gallery {officialTotal} · downloaded {downloaded} · missing {missing}',
+  'gallery.figuresExtra': ' · extra {extra}',
+  'gallery.unread': 'Gallery unread',
   'gallery.newestRunAdded': 'The newest Run added {newSinceLastRun}.',
-  'gallery.listUnavailable':
-    'The site cannot be reached right now, so it is unknown which wallpapers are still missing. Check the connection and try again.',
-  'gallery.mirrorGap':
-    '{missing} listed Wallpapers are missing from the Mirror; {extra} Mirror files are not in the gallery any more.',
   'gallery.tileShow': 'Show {name} at full size',
-  'gallery.tileNotOnDisk': '{name} is not on disk',
-  'gallery.notOnDisk': 'not on disk',
-  'gallery.state.onDisk': 'on disk',
-  'gallery.state.missing': 'missing',
-  'gallery.state.notInGallery': 'not in the gallery',
 
   'wall.start': 'Start the fetch',
   'wall.continue': 'Continue the fetch',
@@ -426,13 +414,6 @@ export const VERDICT_MESSAGE_KEYS: Record<ConsoleVerdict, MessageKey> = {
   clean: 'verdict.clean',
   explained: 'verdict.explained',
   defect: 'verdict.defect',
-}
-
-/** The gallery row state → message key map, same guarantee as the others. */
-export const GALLERY_ROW_STATE_MESSAGE_KEYS: Record<ConsoleGalleryRowState, MessageKey> = {
-  'on-disk': 'gallery.state.onDisk',
-  missing: 'gallery.state.missing',
-  'not-in-gallery': 'gallery.state.notInGallery',
 }
 
 const dictionaries: Record<Locale, Record<MessageKey, string>> = { 'zh-CN': zhCN, en }

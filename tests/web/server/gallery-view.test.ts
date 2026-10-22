@@ -1,3 +1,11 @@
+// ── The wall's rows: only Wallpapers that really reached the disk ────
+//
+// A player's wall is the Mirror. A Gallery list entry with no file is not a row
+// — no placeholder, no thumbnail request — and a Wallpaper the site retired but
+// the Mirror still holds stays. The gap's two counts are set arithmetic over the
+// official name set and the disk name set (the Run report's own), never a count
+// of rows.
+
 import { describe, expect, it } from 'vitest'
 
 import type { GalleryList } from '../../../core/gallery/gallery-source.js'
@@ -6,6 +14,7 @@ import { mergeGalleryStats } from '../../../core/gallery/gallery-state.js'
 import { buildGalleryView } from '../../../web/server/gallery-view.js'
 
 const CDN = 'https://gamecms-res.sl916.com/official_website_resource/50001/4/PICTURE'
+const RETIRED = '978.竖版-2560x1440_61032b056992416faaf041b01d7c1633.jpg'
 
 /** A fixture list, built as data: one entry per (id, name) pair. */
 function listOf(...specs: [number, string][]): GalleryList {
@@ -20,59 +29,69 @@ function viewOf(list: GalleryList | null, diskFiles: readonly string[]) {
 }
 
 describe('buildGalleryView', () => {
-  it('makes one row per Gallery list entry, on disk when the name is there', () => {
+  it('keeps a downloaded Gallery entry on the wall, in the list’s order', () => {
     const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg']), [
+      '1011_hash.jpg',
       '1012_hash.jpg',
       '.gallery-state.json',
     ])
 
     expect(view.rows).toEqual([
-      { id: 1012, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
-      { id: 1011, name: '1011_hash.jpg', state: 'missing', viewable: false },
+      { id: 1012, name: '1012_hash.jpg' },
+      { id: 1011, name: '1011_hash.jpg' },
     ])
     expect(view.officialTotal).toBe(2)
     expect(view.listAvailable).toBe(true)
   })
 
-  it('marks a Mirror file the list does not contain as not in the gallery', () => {
-    // The three retired files are exactly this row: on disk, no longer in the
-    // list. `notes.txt` rides along to pin the predicate (non-dot, not
-    // `isWallpaperFile`).
-    const retired = '978.竖版-2560x1440_61032b056992416faaf041b01d7c1633.jpg'
-    const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg']), [
+  it('does not put an entry with no file on the wall: no row at all', () => {
+    // 1011 is on the official list and nowhere on the disk. It has no
+    // placeholder, no name to label and nothing to request a thumbnail for.
+    const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg']), ['1012_hash.jpg'])
+
+    expect(view.rows).toEqual([{ id: 1012, name: '1012_hash.jpg' }])
+    expect(view.rows.some(row => row.name === '1011_hash.jpg')).toBe(false)
+  })
+
+  it('keeps a retired Wallpaper the Mirror still holds, sorted after the list’s rows', () => {
+    const another = '977.竖版-2560x1440_71032b056992416faaf041b01d7c1633.jpg'
+    const view = viewOf(listOf([1012, '1012_hash.jpg']), [
       '1012_hash.jpg',
-      '1011_hash.jpg',
+      RETIRED,
+      another,
+      // On disk, not a Wallpaper: not a row, but it is still a disk name the
+      // gap counts (the Run report counts it too).
       'notes.txt',
       '.gallery-state.json',
-      retired,
     ])
 
     expect(view.rows).toEqual([
-      { id: 1012, name: '1012_hash.jpg', state: 'on-disk', viewable: true },
-      { id: 1011, name: '1011_hash.jpg', state: 'on-disk', viewable: true },
-      { id: null, name: retired, state: 'not-in-gallery', viewable: true },
-      { id: null, name: 'notes.txt', state: 'not-in-gallery', viewable: false },
+      { id: 1012, name: '1012_hash.jpg' },
+      { id: null, name: another },
+      { id: null, name: RETIRED },
     ])
-    expect(view.mirrorGap).toEqual({ missing: 0, extra: 2 })
+    // The gap is the Run report's: three Mirror names are not in the list, one
+    // of them a stray text file.
+    expect(view.mirrorGap).toEqual({ missing: 0, extra: 3 })
   })
 
-  it('says whether a row can be shown: on disk and a Wallpaper, both required', () => {
-    // Three answers in one view — an entry the Mirror holds, an entry it does
-    // not, and a Mirror extra that is not an image at all. The page asks for a
-    // thumbnail only for the first, so `notes.txt` costs no request at all.
-    const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg']), [
+  it('needs both a file and a Wallpaper name for a row', () => {
+    // A Gallery entry whose URL names something the Wallpaper URL set does not
+    // accept is on the list and on the disk, and still is not a wall tile: the
+    // thumbnail route could only answer it with a 400.
+    const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, 'site-icon.svg']), [
       '1012_hash.jpg',
-      'notes.txt',
+      'site-icon.svg',
     ])
 
-    expect(view.rows.map(row => [row.name, row.viewable])).toEqual([
-      ['1012_hash.jpg', true],
-      ['1011_hash.jpg', false],
-      ['notes.txt', false],
-    ])
+    expect(view.rows).toEqual([{ id: 1012, name: '1012_hash.jpg' }])
+    // Set arithmetic is unchanged by "can it be a row": the name is on both
+    // sides, so it is neither missing nor extra — exactly as the Run report
+    // counts the same directory.
+    expect(view.mirrorGap).toEqual({ missing: 0, extra: 0 })
   })
 
-  it('reports both directions of the gap: names the list has and the Mirror does not', () => {
+  it('reports both directions of the gap as set arithmetic over the names', () => {
     const view = viewOf(listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg']), ['1012_hash.jpg'])
 
     expect(view.mirrorGap).toEqual({ missing: 1, extra: 0 })
@@ -80,12 +99,13 @@ describe('buildGalleryView', () => {
 
   it('takes its counts from the official name set, not from the rows, when names repeat', () => {
     // Two entries share a name and neither file is on disk. The official names
-    // are a Set and the rows are per entry, so the row-derived count would be 2
-    // while the Run report counts 1. The view publishes the Run report's number.
+    // are a Set and the rows are per entry, so a row-derived count would be 2
+    // while the Run report counts 1. The view publishes the Run report's number
+    // — and no row, because neither entry has a file.
     const list = listOf([1012, 'same_hash.jpg'], [1011, 'same_hash.jpg'])
     const view = viewOf(list, [])
 
-    expect(view.rows.filter(row => row.state === 'missing')).toHaveLength(2)
+    expect(view.rows).toEqual([])
     expect(view.mirrorGap).toEqual({ missing: 1, extra: 0 })
 
     const { stats } = mergeGalleryStats(
@@ -101,9 +121,8 @@ describe('buildGalleryView', () => {
   })
 
   it("agrees with the Run report's Mirror gap for the same list and disk names", () => {
-    const retired = '978.竖版-2560x1440_61032b056992416faaf041b01d7c1633.jpg'
     const list = listOf([1012, '1012_hash.jpg'], [1011, '1011_hash.jpg'])
-    const diskFiles = ['1012_hash.jpg', retired, 'notes.txt', '.gallery-state.json']
+    const diskFiles = ['1012_hash.jpg', RETIRED, 'notes.txt', '.gallery-state.json']
 
     const view = viewOf(list, diskFiles)
     const { stats } = mergeGalleryStats(
@@ -143,20 +162,19 @@ describe('buildGalleryView', () => {
       },
     })
 
-    const view = viewOf(list, ['312 2436x1125_5e70d8a50d9a477a8c0918174bd56db4.jpg'])
+    const view = viewOf(list, [
+      '312 2436x1125_5e70d8a50d9a477a8c0918174bd56db4.jpg',
+      '620 1440×2560 _66312babc4e64ec38d5d498b8aebd265.jpg',
+    ])
 
     expect(view.rows).toEqual([
       {
         id: 317,
         name: '312 2436x1125_5e70d8a50d9a477a8c0918174bd56db4.jpg',
-        state: 'on-disk',
-        viewable: true,
       },
       {
         id: 620,
         name: '620 1440×2560 _66312babc4e64ec38d5d498b8aebd265.jpg',
-        state: 'missing',
-        viewable: false,
       },
     ])
   })
@@ -177,11 +195,10 @@ describe('buildGalleryView', () => {
     expect(without.newSinceLastRun).toBeNull()
   })
 
-  it('degrades to the Mirror alone when the list was not read', () => {
-    const retired = '978.竖版-2560x1440_61032b056992416faaf041b01d7c1633.jpg'
+  it('degrades to the Mirror’s Wallpapers when the list was not read', () => {
     const view = buildGalleryView({
       list: null,
-      diskFiles: ['a_hash.jpg', retired, 'notes.txt', '.gallery-state.json'],
+      diskFiles: ['b_hash.jpg', 'a_hash.jpg', RETIRED, 'notes.txt', '.gallery-state.json'],
       newSinceLastRun: 12,
     })
 
@@ -189,17 +206,13 @@ describe('buildGalleryView', () => {
     expect(view.officialTotal).toBeNull()
     // "Not checked" is never "nothing missing" (ADR 0006).
     expect(view.mirrorGap).toBeNull()
-    // Without the list there is no official name set, so "not in the gallery"
-    // is unknowable: every Mirror file is simply on disk.
-    expect(view.rows.map(row => row.name).toSorted()).toEqual(
-      ['a_hash.jpg', 'notes.txt', retired].toSorted(),
-    )
-    expect(view.rows.every(row => row.id === null && row.state === 'on-disk')).toBe(true)
-    expect(view.rows.some(row => row.state === 'not-in-gallery')).toBe(false)
-    // With no list, "can it be shown" still has one answer the service owns:
-    // whether the name is a Wallpaper at all. `notes.txt` is not.
-    expect(view.rows.find(row => row.name === 'notes.txt')?.viewable).toBe(false)
-    expect(view.rows.find(row => row.name === 'a_hash.jpg')?.viewable).toBe(true)
+    // Without the list there is no official name set, so every Wallpaper on
+    // disk is a row, sorted — and a name that is not a Wallpaper still is not.
+    expect(view.rows).toEqual([
+      { id: null, name: RETIRED },
+      { id: null, name: 'a_hash.jpg' },
+      { id: null, name: 'b_hash.jpg' },
+    ])
     // A fact about a Run, not about the list: still reported.
     expect(view.newSinceLastRun).toBe(12)
   })
