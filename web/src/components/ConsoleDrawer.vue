@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // ── The drawer ──────────────────────────────────────────────────────
 //
-// The Run panel and the Orphan panel, as a side layer (#48). Every fact they
-// showed while they sat in the flow is still here — the run id, the verdict and
-// its reasons, the Gallery and Download numbers, the defect rows, the start
-// control and the orphan cleanup — because nothing was dropped in the move,
-// only moved.
+// The Run panel and the Orphan panel, as a side layer (#48). The panel is four
+// lines now (#97): the verdict, `ok N · failed N`, the figures line the wall's
+// header prints, and at most one problem line — plus the start control and the
+// orphan cleanup. The run id, the Discovery counters, the success rate, the
+// defect rows and the routine notes went with the log dump they belonged to.
 
 import {
   DialogClose,
