@@ -1,6 +1,6 @@
 # Editor defaults for files outside the toolchain's reach (markdown, and anything
 # oxfmt does not format). Line endings are LF everywhere: see `.gitattributes`
-# and AGENTS.md › Gotchas › "Git history is LF, the Windows worktree is CRLF".
+# and `docs/agents/branch-reference.md` › "Git history is LF, the Windows worktree is CRLF".
 root = true
 
 [*]
