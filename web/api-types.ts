@@ -20,8 +20,19 @@ export type ConsoleRunState = 'idle' | 'running' | 'orphaned'
 // code type — one home for the vocabulary, read by the page, the service and
 // the dictionary test alike.
 
-/** Why a Run start, or an orphan cleanup, was refused. */
-export const REFUSAL_CODES = ['run-busy', 'orphaned-run', 'missing-prerequisite'] as const
+/**
+ * Why a Run start, an orphan cleanup, or the page's exit, was refused.
+ *
+ * #96 adds `exit-confirm-required`: the exit shares the terminal signal's one
+ * rule (`stopDecision`), so a Run in flight needs the caller's confirmation
+ * before the service stops.
+ */
+export const REFUSAL_CODES = [
+  'run-busy',
+  'orphaned-run',
+  'missing-prerequisite',
+  'exit-confirm-required',
+] as const
 
 /** A refusal's stable code. */
 export type RefusalCode = (typeof REFUSAL_CODES)[number]
@@ -198,6 +209,32 @@ export interface ConsoleRunStartPayload {
 export interface ConsoleRunCleanupPayload {
   cleaned: boolean
   /** Why the cleanup was refused; `null` when it happened. */
+  refusal: ConsoleRefusal | null
+}
+
+/**
+ * `POST /api/exit` — the page's one way out (#96).
+ *
+ * Idle, the service stops at once; with a Run in flight, the caller has to say
+ * `confirm: true` or be refused with `exit-confirm-required`. The request is
+ * deliberately just this one flag: the page asks the reader, and the decision
+ * stays the service's.
+ */
+export interface ConsoleExitRequest {
+  confirm: boolean
+}
+
+/**
+ * `POST /api/exit` — the answer to "stop the program" (#96).
+ *
+ * `exiting: true` means this service will stop; the answer is written before
+ * the shutdown is scheduled so the page receives it. `exiting: false` is a
+ * refusal with its code — currently only `exit-confirm-required` — and the page
+ * turns that into its confirmation question.
+ */
+export interface ConsoleExitPayload {
+  exiting: boolean
+  /** Why the exit was refused; `null` when the service will stop. */
   refusal: ConsoleRefusal | null
 }
 

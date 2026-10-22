@@ -38,6 +38,13 @@
 // `.bat`'s Chinese through the console's code page. Everything the person at the
 // window reads comes from here: the title (the stop instruction), the "do not
 // close" line, the unsafely-downloaded notice, and the pointer the updater reads.
+//
+// #96: the page now owns an exit, and this file is its glue — the decision and
+// the tree kill live in `run-control.ts` (`createExitController`), but the
+// Chinese lines, the service close and `process.exit(0)` are here, because this
+// is the one place that owns the process lifecycle. The terminal signal and the
+// page share the shutdown, so they say the same things. ADR 0022 records the
+// reversal of ADR 0016/0020's "the page has no stop control" and its conditions.
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -69,8 +76,9 @@ import { installPointerFile, installRootOf, writeInstallPointer } from './instal
 import { runningInstanceUrl } from './instance-handshake.js'
 import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
 import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
-import type { RunLauncher } from './run-control.js'
+import type { ExitOutcome, RunLauncher } from './run-control.js'
 import {
+  createExitController,
   createRunCleaner,
   createRunLauncher,
   createRunStarter,
@@ -91,18 +99,34 @@ import { markedAsUnsafe, unsafeDownloadNotice } from './unsafe-download.js'
 import { checkForUpdate } from './update-check.js'
 
 /**
- * The launcher's window title (#85): the stop instruction itself, because
- * closing the window is the whole stop story — the page has no stop control
- * (ADR 0016). Set with `process.title`, which on Windows is a real console title
- * write and therefore Unicode-safe, unlike anything a `.bat` prints.
+ * The launcher's window title (#85, #96): both stops, because there are two now
+ * — closing the window, and the page's Exit. Set with `process.title`, which on
+ * Windows is a real console title write and therefore Unicode-safe, unlike
+ * anything a `.bat` prints.
  */
-const WINDOW_TITLE = 're1999 壁纸下载器 - 关闭这个窗口就是停止'
+const WINDOW_TITLE = 're1999 壁纸下载器 - 关闭这个窗口或在页面上退出就是停止'
 
-/** What a start says once, before anything can take a while (#85). */
-const STOP_INSTRUCTION = '关闭这个窗口就是停止程序。抓取和下载期间请不要关闭。'
+/** What a start says once, before anything can take a while (#85, #96). */
+const STOP_INSTRUCTION =
+  '关闭这个窗口,或在页面上点「退出」,都是停止程序。抓取和下载期间请不要关闭。'
 
 /** What a start says when it spawns a Run (#85 story 11). */
 const RUN_STARTED_NOTICE = '抓取已开始:下载期间请不要关闭这个窗口。'
+
+/** #96: the Run this Console started went with it, and its log stops short. */
+const RUN_KILLED_NOTICE =
+  '运行已停止:它的运行日志被截断,下次启动时请在运行面板里清理这条中断的记录。'
+
+/**
+ * #96: a Run was in flight, but this Console never started it. Saying so beats
+ * pretending a kill happened: only the service stops, and the Run may keep
+ * writing.
+ */
+const RUN_NOT_OURS_NOTICE = '本 WebUI 没有启动那个运行:只有服务停止,它可能还在继续写入。'
+
+/** #96: the last two lines, always. */
+const SERVICE_STOPPED_NOTICE = '服务已停止。'
+const PROGRAM_EXITED_NOTICE = '程序已退出。'
 
 interface ConsoleOptions {
   port: number
@@ -215,17 +239,47 @@ interface StopDeps {
   /** The Run state, from the Run log directory — never from a handle. */
   runState: () => ConsoleRunState
   launcher: RunLauncher
-  service: ConsoleService
+  service: ConsoleService | null
 }
 
 /**
- * The only stop control there is (ADR 0009; conventions §6). The page has none:
- * closing it never stops anything, because it is a view and the truth is on
- * disk. A signal with no Run in flight shuts down at once; with a Run in flight
- * it asks first — the one gesture most likely to be made must not kill twenty
+ * The one shutdown both stops use (#96): the terminal signal and the page's
+ * Exit end here, so they cannot tell the reader different things.
+ *
+ * It speaks the consequence before the silence: a killed Run's log is truncated
+ * and the next start must clear the interrupted record; a Run that was not this
+ * Console's is not ours to kill, and only the service stops. Then the service
+ * closes (the existing `process.once('exit')` handler removes the instance
+ * record on the way out) and the program exits 0 — the launcher's `pause` keeps
+ * the window open so these last lines can be read.
+ */
+function shutdownAndExit(outcome: ExitOutcome, service: ConsoleService | null): void {
+  void (async () => {
+    if (outcome.runInFlight && !outcome.killedOwnRun) {
+      process.stdout.write(`${RUN_NOT_OURS_NOTICE}\n`)
+    } else if (outcome.killedOwnRun) {
+      process.stdout.write(`${RUN_KILLED_NOTICE}\n`)
+    }
+    try {
+      await service?.close()
+    } finally {
+      process.stdout.write(`${SERVICE_STOPPED_NOTICE}\n`)
+      process.stdout.write(`${PROGRAM_EXITED_NOTICE}\n`)
+      process.exit(0)
+    }
+  })()
+}
+
+/**
+ * The terminal stop control (ADR 0009; conventions §6). The page now has its
+ * own Exit (#96) and shares this shutdown, but closing the page still stops
+ * nothing: only this signal and the Exit are stops.
+ *
+ * A signal with no Run in flight shuts down at once; with a Run in flight it
+ * asks first — the one gesture most likely to be made must not kill twenty
  * minutes of work (a download in flight and a truncated Run log are what killing
- * only the first leaves behind); declining
- * leaves both the service and the Run running, and says so.
+ * only the first leaves behind); declining leaves both the service and the Run
+ * running, and says so.
  *
  * Glue, deliberately: the decision itself is the pure `stopDecision`, and this
  * repository's entries are checked by reading them and by one manual run.
@@ -236,12 +290,12 @@ function installStopHandlers(deps: StopDeps): void {
   const stop = async (): Promise<void> => {
     if (asking) return
     const state = deps.runState()
+    // A Run this Console did not start has no pid here, so there is no tree to
+    // kill: the shutdown says it plainly instead of pretending a stop happened.
+    const ownsRun = deps.launcher.isAlive()
 
     if (stopDecision(state) === 'confirm') {
       asking = true
-      // A Run this Console did not start has no pid here, so there is no tree
-      // to kill: saying it plainly beats pretending a stop happened.
-      const ownsRun = deps.launcher.isAlive()
       const question = ownsRun
         ? '有一个 Run 正在运行。要停掉它和服务吗?[y/N] '
         : '有一个 Run 正在运行,但本 WebUI 没有启动它、也没有可杀的子进程。还要停掉服务吗?[y/N] '
@@ -250,15 +304,11 @@ function installStopHandlers(deps: StopDeps): void {
         asking = false
         return
       }
-      if (!ownsRun) {
-        process.stdout.write('本 WebUI 没有启动那个 Run:只有服务会停止,Run 可能继续写入。\n')
-      }
     }
 
     // The whole tree the launcher started: the Run and its children.
     deps.launcher.stop()
-    await deps.service.close()
-    process.exit(0)
+    shutdownAndExit({ runInFlight: state === 'running', killedOwnRun: ownsRun }, deps.service)
   }
 
   process.on('SIGINT', () => void stop())
@@ -287,11 +337,11 @@ async function main(options: ConsoleOptions): Promise<void> {
     process.exit(0)
   }
 
-  // #85: the window the user double-clicked into existence *is* the program's
-  // stop control (ADR 0016). The title says what closing it does, and the one
-  // line below says it again where the user is looking; the page gains no stop
-  // button. `process.title` is a Unicode console-title write on Windows, which
-  // is why the words can be Chinese while the launcher stays ASCII.
+  // #85: the window the user double-clicked into existence is one of the two
+  // stops (the page's Exit is the other, #96). The title names both, and the one
+  // line below says it again where the user is looking. `process.title` is a
+  // Unicode console-title write on Windows, which is why the words can be
+  // Chinese while the launcher stays ASCII.
   process.title = WINDOW_TITLE
   process.stdout.write(`${STOP_INSTRUCTION}\n`)
 
@@ -438,6 +488,18 @@ async function main(options: ConsoleOptions): Promise<void> {
     acknowledgeOrphan: () => runLogSource.acknowledgeOrphan(),
   })
 
+  // #96: the page's exit. The controller decides and kills (idle goes at once, a
+  // Run in flight asks first, and only this Console's child is its tree); this
+  // composition root owns the part it alone can do — print, close, exit 0. The
+  // bound service is not known yet, so the shutdown reads the variable it will
+  // be assigned to before any request can reach it.
+  let service: ConsoleService | null = null
+  const exitProgram = createExitController({
+    runState: () => runLogSource.facts().state,
+    launcher,
+    shutdown: outcome => shutdownAndExit(outcome, service),
+  })
+
   // #82: this boot's token, generated once because it is needed twice — by the
   // service's guard and by the record the next double-click probes. It stays
   // random per boot: the record is a handshake, not a credential, and a URL
@@ -472,11 +534,13 @@ async function main(options: ConsoleOptions): Promise<void> {
     imageSizeSource: createImageSizeCache(realImageSizeReader),
     startRun,
     cleanupRun,
+    // #96: `POST /api/exit`'s whole answer; the route only relays it.
+    exitProgram,
     token,
     port: options.port,
   }
 
-  const service = await startConsoleServer(config, deps)
+  service = await startConsoleServer(config, deps)
 
   // #82: publish this boot's address as soon as the port is known, and before
   // the boot's one network request is awaited. From here until shutdown a second
@@ -508,8 +572,8 @@ async function main(options: ConsoleOptions): Promise<void> {
   }
   process.stdout.write(`WebUI: ${service.url}\n`)
 
-  // The only stop control (ADR 0009): a signal asks while a Run is in flight,
-  // and kills the whole tree when it goes ahead.
+  // The terminal stop (#96 shares the shutdown with the page's Exit): a signal
+  // asks while a Run is in flight, and kills the whole tree when it goes ahead.
   installStopHandlers({ runState: () => runLogSource.facts().state, launcher, service })
 
   if (options.open) openInBrowser(service.url)

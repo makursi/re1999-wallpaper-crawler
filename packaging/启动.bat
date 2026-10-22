@@ -26,6 +26,11 @@ rem  keeps the window open so its message can be read: a window that flashes and
 rem  vanishes is the worst possible support case.
 "%~dp0app\node.exe" "%~dp0app\server.js"
 if errorlevel 1 goto failed
+
+rem  The program exited on its own: the page's Exit, or a clean Ctrl+C. The
+rem  window stays open either way so the last Chinese lines can be read; any
+rem  key closes it.
+pause
 exit /b 0
 
 :failed

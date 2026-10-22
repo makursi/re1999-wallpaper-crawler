@@ -67,9 +67,29 @@ const zhCN = {
   // is a data cell, so the sentence takes it as a `{version}` parameter and
   // `Message.vue` renders it in the numeral role.
   'nav.version': '版本 {version}',
-  // The update notice (#81): one discreet line, one link to the project's
-  // Releases page. There is no download and no mirror, so the copy names the
-  // version and where to read about it — never an action the Console takes.
+  // #96: the page's way out — the one control that stops the program, next to
+  // the drawer's Run facts. Quiet on purpose: it is not an action a reader takes
+  // often, and it must not compete with the start.
+  'nav.exit': '退出',
+  // The confirmation, shown only when the service refuses an unconfirmed exit
+  // because a Run is in flight — the page never decides that for itself. The
+  // body says the consequence the next start will meet, not a generic "are you
+  // sure": a truncated Run log is the thing the reader has to clean up.
+  'exit.confirmTitle': '退出程序?',
+  'exit.confirmBody':
+    '有一个运行正在进行。现在退出会停止服务,并可能中断这次运行:运行日志会被截断,下次启动时需要在运行面板里清理这条中断的记录。确定要退出吗?',
+  'exit.confirmAction': '退出',
+  'exit.cancelAction': '继续运行',
+  // After the service accepted the exit. The heading is the whole instruction:
+  // the page is done, and a tab left open cannot do anything else.
+  'exit.exitedHeading': '已退出 — 可以关闭这个页面',
+  'exit.exitedBody': '程序已经停止,可以关闭这个页面了。',
+  // When a Run was in flight at the exit: the page cannot know whether this
+  // Console started it, so it states both consequences rather than claiming a
+  // kill (the terminal, which does know, says the precise one).
+  'exit.exitedInterrupted':
+    '程序已经停止。退出时有一个运行正在进行:如果它是由本程序启动的,它已经停止、运行日志被截断,下次启动时请在运行面板里清理这条中断的记录;如果它是在别的终端里启动的,它可能还在继续写入。',
+  'exit.failed': '没能退出:本地控制台没有接受这次请求。刷新页面后再试一次。',
   'update.available': '有新版本 {version}',
   'update.releases': 'Releases 页面',
   'drawer.title': '运行面板',
@@ -202,6 +222,9 @@ const zhCN = {
   'refusal.orphanedRun':
     '存在一个孤儿运行:它的运行日志没有运行报告,且是最近写入的,所以它可能仍在写入。如果它只是残留,请先在页面上清理;之后才能开始新的运行。',
   'refusal.missingPrerequisite': '缺少前置条件:{missing}',
+  // #96: the page's exit while a Run is in flight. The page turns this into its
+  // confirmation question; the service never writes the sentence.
+  'refusal.exitConfirmRequired': '有一个运行正在进行:要退出,请再确认一次。',
 
   'prerequisite.envFile': '.env 配置文件',
 
@@ -260,6 +283,17 @@ const en = {
   'nav.mirrorCount': 'Mirror {count}',
   'nav.run': 'Run',
   'nav.version': 'version {version}',
+  'nav.exit': 'Exit',
+  'exit.confirmTitle': 'Exit the program?',
+  'exit.confirmBody':
+    'A Run is in flight. Exiting now stops the service and may interrupt it: its Run log is truncated, and the next start needs to clean up the interrupted record. Exit anyway?',
+  'exit.confirmAction': 'Exit',
+  'exit.cancelAction': 'Keep running',
+  'exit.exitedHeading': 'Exited — you can close this page',
+  'exit.exitedBody': 'The program has stopped. You can close this page.',
+  'exit.exitedInterrupted':
+    'The program has stopped. A Run was in flight: if this program started it, it has stopped and its Run log is truncated — clean up the interrupted record on the next start. If it was started in another terminal, it may still be writing.',
+  'exit.failed': 'The Console did not accept the exit. Refresh the page and try again.',
   'update.available': 'Version {version} is available',
   'update.releases': 'Releases page',
   'drawer.title': 'Run panel',
@@ -359,6 +393,7 @@ const en = {
   'refusal.orphanedRun':
     'An Orphaned Run is present: its Run log has no Run report and was written recently, so it may still be writing. Clean it up from the page if it is a leftover; a new Run starts after that.',
   'refusal.missingPrerequisite': 'missing prerequisites: {missing}',
+  'refusal.exitConfirmRequired': 'A Run is in flight: confirm once more to exit.',
 
   'prerequisite.envFile': 'the .env file',
 
@@ -390,6 +425,7 @@ export const REFUSAL_MESSAGE_KEYS: Record<RefusalCode, MessageKey> = {
   'run-busy': 'refusal.runBusy',
   'orphaned-run': 'refusal.orphanedRun',
   'missing-prerequisite': 'refusal.missingPrerequisite',
+  'exit-confirm-required': 'refusal.exitConfirmRequired',
 }
 
 /** The prerequisite code → message key map (#47), same guarantee as above. */
