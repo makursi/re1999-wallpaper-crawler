@@ -1,4 +1,4 @@
-# The iteration loop pays its three debts
+# The iteration loop pays its five debts
 
 ## The question
 
@@ -9,7 +9,7 @@ run. None of them was a judgement error, which is why no amount of care fixed
 them. What structure pays each debt once, for every future iteration, without
 changing anything a player sees?
 
-The three debts:
+The three debts that recurred on every run:
 
 1. **The built tree is never booted in CI.** `build/` is the program — the
    package ships it and `pnpm webui` runs it — and the
@@ -38,7 +38,7 @@ The three debts:
    branch. A decision has no place to land until someone writes code, so a
    decision that is not implemented that day is re-derived.
 
-Two smaller debts were paid in the same place:
+Two smaller debts were paid in the same iteration:
 
 4. **A number cannot resolve to an ADR.** Twenty-three ADRs had no index; an
    agent guessed three filenames wrong in one day (`0016`, `0014`, `0022`),
@@ -55,23 +55,29 @@ Two smaller debts were paid in the same place:
   The release workflow, the package layout, the updater and player-facing copy
   are untouched. The iteration is recorded as one `HISTORY.md` entry and rides
   along with the next release that has something to say. (#107, #114)
-- **Every PR proves the shipped tree boots.** One script stages a built tree
-  into a temporary root, starts the program on port 0 with the browser
-  suppressed, reads the page URL the program prints (which carries the boot
-  token), and drives the program through the page's own API only: the status
-  route with the token, the instance record on disk, the exit route. Every
-  request goes through the token guard, because a smoke that bypasses the guard
-  proves the wrong thing. It exits non-zero on the first disagreement and prints
-  which one, with no network and no real Run. (#108)
-- **Two cases, one script.** A complete tree boots and answers; a tree with one
-  artifact removed refuses to boot with the boot refusal and a non-zero code.
-  The second case is the reason the script exists in CI at all: the refusal is a
-  rule only the artifact can demonstrate. (#108)
+- **Every PR proves the Console boots, from a build of all three entries.** One
+  script stages a built tree into a temporary root, starts the program on port 0
+  with the browser suppressed, reads the page URL the program prints (which
+  carries the boot token), and drives the program through the page's own API
+  only: the status route with the token, the instance record on disk, the exit
+  route. Every request goes through the token guard, because a smoke that
+  bypasses the guard proves the wrong thing. It exits non-zero on the first
+  disagreement and prints which one. It needs no `.env`, no browser and no real
+  Run; its only outbound request is the Console's own update check, bounded at
+  three seconds and never fatal. (#108)
+- **Three cases, one script.** A complete tree boots and answers; a tree with one
+  artifact removed refuses to boot with the boot refusal and a non-zero code; and
+  `update.js`, run against a package with no installation pointer, refuses in
+  Chinese with a non-zero code — so the updater's bundle is proven to load too.
+  The refusal cases are the reason the script exists in CI at all: a rule only
+  the artifact can demonstrate. (#108)
 - **CI gains two steps, not a job.** Build the program, then boot it, inside the
   existing required check, after the tests — branch protection already expects
-  one required check, and a second job would have to be added to it. Windows-only
-  surfaces (the launchers, the updater, the junction layout) stay uncovered by
-  design and are named as a limit in the script's own comment. (#108)
+  one required check, and a second job would have to be added to it. All three
+  entries compile; the Console boots and the updater's refusal runs, while
+  `run.js` is compiled but never executed. Windows-only surfaces (the launchers,
+  the updater's real folder swap, the junction layout) stay uncovered by design
+  and are named as a limit in the script's own comment. (#108)
 - **The boot check is a script, not a unit test.** It needs a real process, a
   real socket and a temporary application root — the boundary the unit tests
   deliberately stop at — so it is a command in the command table and a CI step,
