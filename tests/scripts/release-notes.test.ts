@@ -23,7 +23,7 @@ import * as path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { packageVersion } from '../../scripts/package-version.js'
-import { releaseSection } from '../../scripts/release-notes.js'
+import { checkTemplate, releaseSection, TEMPLATE_HEADINGS } from '../../scripts/release-notes.js'
 
 const CHANGELOG = `# 变更记录
 
@@ -120,5 +120,138 @@ describe('releaseSection', () => {
     // The first public release keeps its section: this is the record, not a
     // changelog that drops a version once a newer one lands.
     expect(headings).toContain('## 1.0.0')
+  })
+})
+
+/** The version these fixtures release: the archive they have to name. */
+const VERSION = '1.2.0'
+
+/** A body that follows the template, so a test can break one rule at a time. */
+const CONFORMING = [
+  '### 新增',
+  '',
+  '- 新增「退出」：导航条点一下即结束程序。',
+  '',
+  '### 安装',
+  '',
+  '1. 下载 `re1999-wallpaper-crawler-v1.2.0.zip`。',
+  '',
+  '### 下载文件',
+  '',
+  '- `re1999-wallpaper-crawler-v1.2.0.zip` — Windows 10/11 64 位便携包。',
+].join('\n')
+
+describe('checkTemplate', () => {
+  it('accepts a body that follows the template', () => {
+    expect(() => checkTemplate(CONFORMING, VERSION)).not.toThrow()
+  })
+
+  it('refuses a second-level heading inside the body', () => {
+    // `## ` is what ends a section, so a body carrying one would be cut short.
+    const body = CONFORMING.replace('### 安装', '## 安装')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/1\.2\.0/)
+    expect(() => checkTemplate(body, VERSION)).toThrow(/## /)
+  })
+
+  it('refuses a heading the template does not have', () => {
+    const body = CONFORMING.replace('### 安装', '### 安装说明')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/安装说明/)
+  })
+
+  it('refuses headings written out of the template order', () => {
+    const body = [
+      '### 修复',
+      '',
+      '- 修复了闪退。',
+      '',
+      '### 新增',
+      '',
+      '- 新增了退出。',
+      '',
+      '### 安装',
+      '',
+      '1. 下载 `re1999-wallpaper-crawler-v1.2.0.zip`。',
+      '',
+      '### 下载文件',
+      '',
+      '- `re1999-wallpaper-crawler-v1.2.0.zip`。',
+    ].join('\n')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/顺序|order/)
+  })
+
+  it('refuses the same section twice', () => {
+    const body = CONFORMING.replace('### 安装', '### 新增\n\n- 新增了第二次。\n\n### 安装')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/新增/)
+  })
+
+  it('refuses a section with nothing in it', () => {
+    const body = CONFORMING.replace('### 安装', '### 变更\n\n### 安装')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/变更/)
+  })
+
+  it('refuses a body with no change section at all', () => {
+    const body = [
+      '### 安装',
+      '',
+      '1. 下载 `re1999-wallpaper-crawler-v1.2.0.zip`。',
+      '',
+      '### 下载文件',
+      '',
+      '- `re1999-wallpaper-crawler-v1.2.0.zip`。',
+    ].join('\n')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/1\.2\.0/)
+    expect(() => checkTemplate(body, VERSION)).toThrow(/变更/)
+  })
+
+  it('refuses a preamble line before the first section', () => {
+    const body = `只修用起来别扭的地方。\n\n${CONFORMING}`
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/开场白|preamble/)
+  })
+
+  it('refuses 下载文件 that names another version', () => {
+    // A section copied from the previous release is the failure this catches.
+    const body = CONFORMING.split('v1.2.0.zip').join('v1.1.0.zip')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/1\.2\.0/)
+  })
+
+  it('refuses a personal pronoun', () => {
+    const body = CONFORMING.replace('导航条点一下即结束程序', '点一下就能结束你的程序')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/你/)
+  })
+
+  it('does not mistake 其他 for a pronoun', () => {
+    const body = CONFORMING.replace('导航条点一下即结束程序', '其他下载不受影响')
+
+    expect(() => checkTemplate(body, VERSION)).not.toThrow()
+  })
+
+  it('accepts the repository changelog at the version package.json names', () => {
+    const version = packageVersion(PACKAGE_JSON)
+
+    expect(() =>
+      checkTemplate(releaseSection(REPOSITORY_CHANGELOG, version), version),
+    ).not.toThrow()
+  })
+
+  it('documents exactly the headings the validator accepts, in order', () => {
+    // The template in the changelog's header is the rule a maintainer reads;
+    // this is what keeps it from drifting away from the code that enforces it.
+    const lines = REPOSITORY_CHANGELOG.split(/\r?\n/)
+    const firstVersion = lines.findIndex(line => line.startsWith('## '))
+    const documented = lines
+      .slice(0, firstVersion)
+      .filter(line => line.startsWith('### '))
+      .map(line => line.slice(4).trim())
+
+    expect(documented).toEqual([...TEMPLATE_HEADINGS])
   })
 })
