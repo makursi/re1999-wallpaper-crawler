@@ -1,6 +1,6 @@
 # Find a decision by its subject here
 
-- [0001](0001-network-first-capture.md) `network-first-capture` — Discovery captures Wallpaper URLs from network responses, not the DOM, because virtual scroll unmounts off-screen images.
+- [0001](0001-network-first-capture.md) `network-first-capture` — Discovery captures Wallpaper URLs from network responses, not the DOM, because virtual scroll unmounts off-screen images (superseded by 0018).
 - [0002](0002-run-report-in-jsonl.md) `run-report-in-jsonl` — A Run's results are one structured `run_report` record inside the same JSONL as the rest of its log, not a separate report file.
 - [0003](0003-esm-with-tsx.md) `esm-with-tsx` — The crawler's TypeScript runs as native ESM under tsx, type-checked with `tsc --noEmit` and never emitted.
 - [0004](0004-filter-site-assets.md) `filter-site-assets` — Resources that are not Wallpapers are dropped between capture and Download as Site assets, by structural URL rules rather than filenames.
