@@ -15,7 +15,7 @@ manual inside the package, `packaging/使用说明.txt` (#89) — never a termin
 never `pnpm install`.
 
 **Developers and agents** need Node 22 and pnpm, then `pnpm install` for project
-dependencies. A source Run needs one line in `.env` —
+dependencies. A worktree's `node_modules` is a junction onto the parent checkout: never run `pnpm install` there, and `verifyDepsBeforeRun: false` in `pnpm-workspace.yaml` means its scripts install nothing. A source Run needs one line in `.env` —
 `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup notice says so
 when it is missing. `pnpm webui` runs the built program in `build/` but points the data root at the repository's `data/` (`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the page shows: the packaged shape's `app\\` beside `data\\`, reproduced. `pnpm build` recreates
 `build/`, and the README's developer section says so rather than implying the
@@ -28,6 +28,7 @@ repository's `.env` is used.
 | Scrape wallpapers | `pnpm core:run` (`tsx core/main.ts`) |
 | Check the newest Run | `pnpm check-run` (`tsx core/check-run.ts`) |
 | Build the program | `pnpm build` (`tsx scripts/build.ts` → `build/`; needed before `webui`) |
+| Boot the built tree | `pnpm smoke:boot` (`tsx scripts/smoke-boot.ts` — stages `build/` into a temporary root, starts it with the browser suppressed, drives `/api/status` and `/api/exit` with the boot token, and proves a tree missing `run.js` refuses; needs no network, `.env` or real Run; CI runs it after `pnpm build`) |
 | Package the portable release | `pnpm package` (`pnpm build` + `tsx scripts/package.ts` → `dist-package/re1999-wallpaper-crawler-v<version>.zip`) |
 | WebUI (local page) | `pnpm webui` (`tsx scripts/webui.ts` — build/ as the program, the repository's data/ as its data; flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
@@ -35,6 +36,9 @@ repository's `.env` is used.
 | Typecheck | `pnpm typecheck` (`tsc --noEmit` + `vue-tsc --noEmit -p web/tsconfig.web.json`) |
 | Lint | `pnpm lint` (`oxlint --type-aware .`) |
 | Format | `pnpm fmt` / `pnpm fmt:check` (`oxfmt`) |
+| Inspect a file | the harness's `read <path>` tool, not `cat`/`Get-Content`: the edit guard counts the read tool's observation, so a shell read costs a step — the file must be read again before the next edit |
+| Run a one-off snippet | write it to a file and run it — `node <file>.mjs`, or `pnpm exec tsx <file>.ts`; do not capture a spawned child's output through a pipe (`spawn`/`exec` default stdio): under the sandbox that pipe is refused with `EPERM` |
+| Search the tree | the harness's grep tool, or `git grep -n <pattern>` in this shell: `rg` is not installed on this machine, and PowerShell has no `grep` |
 
 `pnpm build` writes `build/` — `server.js`, `run.js`, `update.js`, `package.json`
 and `web/dist/` — and that tree is the program: it runs with no `node_modules`,
@@ -45,7 +49,10 @@ fresh checkout has to be built once, and the Console refuses to boot without the
 artifacts rather than compiling them on the owner's first click (#84).
 
 CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck`, the page
-bundle build and `test` on every PR and on pushes to `main`. `.github/workflows/autofix.yml` runs
+bundle build and `test` on every PR and on pushes to `main`, then builds the
+program and boots it (`pnpm build`, then `pnpm smoke:boot`), so the three entries
+compile and the shipped tree answers on every PR instead of first on a tag.
+`.github/workflows/autofix.yml` runs
 `pnpm lint:fix && pnpm fmt` on PRs and commits the result back to the branch, so
 a PR does not have to be formatted by hand — it needs the
 [autofix.ci App](https://github.com/apps/autofix-ci) installed on the repo.
@@ -121,6 +128,10 @@ The five canonical triage roles map 1:1 to `needs-triage`, `needs-info`, `ready-
 ### Domain docs
 
 Multi-context: `CONTEXT-MAP.md` at the repo root names the contexts, whose glossaries are sections of the single root `CONTEXT.md`, plus `docs/adr/` and `HISTORY.md`. See `docs/agents/domain.md`.
+
+A decision's subject finds its number in `docs/adr/README.md`: one line per ADR, ascending by number, with the clause it decides.
+
+Design notes are the third way a decision is recorded: a design or grill session opens by looking for prior art in open issues and `docs/notes/`, and closes by writing its decision tree — the question, the settled branches, the open branches, and the rejected branches with their reasons — to one note. See `docs/agents/design-notes.md`.
 
 ## Project history (read before changing pipeline internals)
 
@@ -240,7 +251,8 @@ tests/                       — mirrors the sources it tests
         │   ├── run-start.test.ts
         │   └── wall-state.test.ts
         └── i18n/
-            └── messages.test.ts
+            ├── messages.test.ts
+            └── vocabulary-guard.test.ts — every runtime tuple in web/api-types.ts is enumerated by the dictionary test or exempt with a reason (#112)
 scripts/
 ├── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ├── build.ts          — the build: Vite's page + three esbuild entries (Console, Run, updater) into `build/`, one `RE1999_VERSION` define, the tree's package.json, and a refusal when a bundle left an undeclared import
