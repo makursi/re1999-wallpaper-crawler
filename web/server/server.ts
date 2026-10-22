@@ -34,6 +34,7 @@ import type { ConsoleConfig } from './console-config.js'
 import type { ConsoleServerDeps, ConsoleService, ServiceRuntime } from './http/deps.js'
 import { authGuard } from './http/guard.js'
 import { json } from './http/respond.js'
+import { registerExitRoute } from './routes/exit.js'
 import { registerGalleryRoute } from './routes/gallery.js'
 import { registerImageRoutes } from './routes/images.js'
 import { registerInstanceRoute } from './routes/instance.js'
@@ -47,6 +48,8 @@ import { registerStatusRoute } from './routes/status.js'
 export type {
   ConsoleServerDeps,
   ConsoleService,
+  ExitProgram,
+  ExitResult,
   RunCleaner,
   RunCleanupResult,
   RunStartResult,
@@ -108,6 +111,8 @@ function createApp(runtime: ServiceRuntime): Hono {
   registerGalleryRoute(app, runtime)
   registerImageRoutes(app, runtime)
   registerRunRoutes(app, runtime)
+  // #96: the page's exit — the same guard, and the decision in `run-control.ts`.
+  registerExitRoute(app, runtime)
   registerStaticRoutes(app, runtime)
 
   // `{ "error": "not found" }` for every unclaimed path, whatever the method —

@@ -45,8 +45,20 @@ export function withQueryToken(path: string, token: string): string {
   return `${path}${separator}token=${encodeURIComponent(token)}`
 }
 
-async function requestJson<T>(method: 'GET' | 'POST', path: string): Promise<ConsoleReply<T>> {
-  const response = await fetch(withQueryToken(path, consoleToken()), { method })
+async function requestJson<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: unknown,
+): Promise<ConsoleReply<T>> {
+  const response = await fetch(withQueryToken(path, consoleToken()), {
+    method,
+    // Only the requests that carry one send a body (#96's exit sends
+    // `{confirm}`, and a GET never does): a `content-type` on an empty POST
+    // would describe a body that is not there.
+    ...(body === undefined
+      ? {}
+      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  })
   // The body is the service's own contract (`web/api-types.ts`), so it is
   // asserted rather than validated: both sides of this request are this
   // repository's code, and a validator here would be a second statement of the
@@ -62,7 +74,13 @@ export function getJson<T>(path: string): Promise<ConsoleReply<T>> {
   return requestJson<T>('GET', path)
 }
 
-/** Ask the service to do something; the answer is whether it did. */
-export function postJson<T>(path: string): Promise<ConsoleReply<T>> {
-  return requestJson<T>('POST', path)
+/**
+ * Ask the service to do something; the answer is whether it did.
+ *
+ * `body` is optional because most actions are the request itself (`/api/run`,
+ * `/api/run/cleanup`); the page's exit is the one that has to say whether the
+ * reader confirmed (#96).
+ */
+export function postJson<T>(path: string, body?: unknown): Promise<ConsoleReply<T>> {
+  return requestJson<T>('POST', path, body)
 }

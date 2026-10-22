@@ -10,7 +10,11 @@
 // Nothing here decides anything: these are shapes, and the judgement is in the
 // modules the readers wrap (`status.ts`, `gallery-view.ts`, `run-control.ts`).
 
-import type { ConsoleRunCleanupPayload, ConsoleRunStartPayload } from '../../api-types.js'
+import type {
+  ConsoleExitPayload,
+  ConsoleRunCleanupPayload,
+  ConsoleRunStartPayload,
+} from '../../api-types.js'
 import type { ConsoleConfig } from '../console-config.js'
 import type { GalleryListSource } from '../gallery-list-source.js'
 import type { ImageSizeReader } from '../image-sizes.js'
@@ -40,6 +44,22 @@ export interface RunCleanupResult extends ConsoleRunCleanupPayload {
 
 /** Cleans an Orphaned Run up (ADR 0009). #36 implements it. */
 export type RunCleaner = () => Promise<RunCleanupResult>
+
+/**
+ * What an exit request answers (#96). `exiting: false` is the confirmation
+ * refusal, and `status` is the HTTP status it carries (409); a permitted exit
+ * is 202.
+ */
+export interface ExitResult extends ConsoleExitPayload {
+  status?: number
+}
+
+/**
+ * The page's exit action (#96, `createExitController`): the decision, the tree
+ * kill and the scheduled shutdown, all in `web/server/run-control.ts`. The route
+ * only passes the caller's confirmation and writes the answer.
+ */
+export type ExitProgram = (confirmed: boolean) => ExitResult
 
 /**
  * Image bytes for one thumbnail, generated — or read back from the cache —
@@ -78,6 +98,15 @@ export interface ConsoleServerDeps {
    * `404`, not a no-op that claims it cleaned something.
    */
   cleanupRun?: RunCleaner
+  /**
+   * The page's exit action (`createExitController`): `POST /api/exit`'s whole
+   * answer (#96).
+   *
+   * Optional on purpose, like `cleanupRun`: a status-only service — #32's shape
+   * and its tests — has no process to stop, and the honest answer to that route
+   * is `404`, not a no-op that claims the service will exit.
+   */
+  exitProgram?: ExitProgram
   /**
    * Whether a Run's site configuration is usable *now* (#60).
    *

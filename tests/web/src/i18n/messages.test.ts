@@ -210,7 +210,12 @@ describe('every service code has copy in both locales', () => {
         CONSOLE_VERDICTS.length +
         GALLERY_ROW_STATES.length,
     )
-    expect([...REFUSAL_CODES]).toEqual(['run-busy', 'orphaned-run', 'missing-prerequisite'])
+    expect([...REFUSAL_CODES]).toEqual([
+      'run-busy',
+      'orphaned-run',
+      'missing-prerequisite',
+      'exit-confirm-required',
+    ])
     expect([...PREREQUISITE_CODES]).toEqual(['env-file'])
     expect([...CONSOLE_VERDICTS]).toEqual(['clean', 'explained', 'defect'])
     expect([...GALLERY_ROW_STATES]).toEqual(['on-disk', 'missing', 'not-in-gallery'])
@@ -227,6 +232,45 @@ describe('every service code has copy in both locales', () => {
   it('gives every code its own message rather than sharing one', () => {
     const keys = codeKeys.map(([, key]) => key)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+/**
+ * The page's exit (#96). Three sentences carry the whole promise: the control
+ * says "exit", a Run in flight asks first and names the consequence the next
+ * start meets, and the page ends on "exited — you can close this page". The
+ * confirmation is the service's refusal surfaced, so both locales have to say
+ * the same thing about the truncated Run log.
+ */
+describe('the page’s exit', () => {
+  it('names the exit in the navigation, in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'nav.exit').trim()).not.toBe('')
+    }
+    expect(translate('zh-CN', 'nav.exit')).toBe('退出')
+    expect(translate('en', 'nav.exit')).toBe('Exit')
+  })
+
+  it('says what an exit during a fetch costs the next start, in both locales', () => {
+    for (const locale of LOCALES) {
+      const confirm = translate(locale, 'exit.confirmBody')
+      const notice = translate(locale, 'exit.exitedInterrupted')
+      expect(confirm, `${locale}: ${confirm}`).toMatch(locale === 'zh-CN' ? /截断/ : /truncat/i)
+      expect(confirm, `${locale}: ${confirm}`).toMatch(locale === 'zh-CN' ? /清理/ : /clean up/i)
+      expect(notice, `${locale}: ${notice}`).toMatch(locale === 'zh-CN' ? /截断/ : /truncat/i)
+    }
+  })
+
+  it('ends on the page’s last instruction after a successful exit', () => {
+    // The spec's own words, so the notice cannot drift into a spinner.
+    expect(translate('zh-CN', 'exit.exitedHeading')).toBe('已退出 — 可以关闭这个页面')
+    expect(translate('en', 'exit.exitedHeading')).toBe('Exited — you can close this page')
+  })
+
+  it('gives the confirmation refusal its own sentence', () => {
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'refusal.exitConfirmRequired').trim()).not.toBe('')
+    }
   })
 })
 
