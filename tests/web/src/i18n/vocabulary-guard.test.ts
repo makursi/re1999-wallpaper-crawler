@@ -16,6 +16,17 @@
 // stays two deliberate edits — the copy goes, and either the tuple goes or the
 // exemption records it.
 //
+// The reader accepts all three shapes a runtime tuple takes: `export const
+// NAME = [ ... ]`, the same with `as const`, and the annotated `export const
+// NAME: <type> = [ ... ]`. A bare literal is a runtime vocabulary too, and an
+// annotated one is the same tuple with its element type named, so anchoring on
+// `as const` (or on the bare `=` alone) would leave those shapes unmentioned.
+//
+// The exemption rules are a pure function taking its three inputs, because the
+// committed list is empty today: asserting only over `EXEMPT_VOCABULARIES`
+// would never execute a single rule. The rules are therefore tested against
+// synthetic lists, and the committed list is checked with the same function.
+//
 // Both readers below blank comments and the insides of strings before looking
 // for the code's shape, so a reformat (one line or many), a doc comment or a
 // commented-out declaration changes nothing about what is found — and a line of
@@ -53,7 +64,8 @@ interface ExemptVocabulary {
  * added here with its reason, so the retirement is recorded rather than
  * inferred from silence. An entry is not a way to silence the check: it has to
  * name a tuple the contract really exports, it has to carry a written reason,
- * and a vocabulary the dictionary still answers for may not be listed.
+ * and a vocabulary the dictionary still answers for may not be listed. Those
+ * four rules are `exemptionProblems` below, tested on its own lists.
  */
 const EXEMPT_VOCABULARIES: readonly ExemptVocabulary[] = []
 
@@ -112,21 +124,31 @@ function closingBracket(code: string, open: number): number {
   return -1
 }
 
-const TUPLE_DECLARATION = /export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*\[/g
+/**
+ * One exported runtime tuple declaration, in any of the three shapes: `export
+ * const NAME = [ ... ]`, the same with `as const`, and the annotated `export
+ * const NAME: <type> = [ ... ]`. The initializer has to be an array literal.
+ * The annotation is matched on one line and may not contain `=`; a function
+ * type's `=>` is the one shape this leaves alone, and the contract has no such
+ * vocabulary.
+ */
+const TUPLE_DECLARATION = /export\s+const\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]*?)?=\s*\[/g
 
 /**
- * Every exported runtime tuple literal in a source file: `export const NAME = [ ... ] as const`,
- * however it is laid out. The `as const` is the anchor — a mutable array is not the vocabulary form
- * this contract uses, and a type-only export has no runtime shape to enumerate.
+ * Every exported runtime tuple literal in a source file, however it is laid
+ * out. All three declaration shapes count: a bare literal is still a runtime
+ * vocabulary, and an annotated one is the same tuple with its element type
+ * named. A type-only export and a non-literal initializer have no runtime shape
+ * to enumerate, and a declaration that is not `export const` is not the
+ * contract's vocabulary form.
  */
 function exportedTupleNames(source: string): string[] {
   const code = codeOnly(source)
   const names: string[] = []
   for (const match of code.matchAll(TUPLE_DECLARATION)) {
     const open = (match.index ?? 0) + match[0].length - 1
-    const close = closingBracket(code, open)
-    if (close === -1) continue
-    if (/^\s*as\s+const\b/.test(code.slice(close + 1))) names.push(match[1])
+    if (closingBracket(code, open) === -1) continue
+    names.push(match[1])
   }
   return names
 }
@@ -141,27 +163,79 @@ function enumeratedTupleNames(source: string): string[] {
   return [...codeOnly(source).matchAll(ENUMERATION)].map(match => match[1])
 }
 
+/**
+ * Why an exemption list is not usable, in the words the failure prints; an
+ * empty list is a valid one. Pure and given its three inputs, so the rules can
+ * be exercised against synthetic lists instead of only against the committed
+ * (today empty) one.
+ */
+function exemptionProblems(
+  exemptions: readonly ExemptVocabulary[],
+  tupleNames: readonly string[],
+  enumeratedNames: readonly string[],
+): string[] {
+  const problems: string[] = []
+  for (const { name, reason } of exemptions) {
+    if (!tupleNames.includes(name)) {
+      problems.push(`${name} is exempt but web/api-types.ts exports no such tuple`)
+    }
+    if (reason.trim() === '') {
+      problems.push(`${name} is exempt with no reason`)
+    } else if (reason.includes('\n')) {
+      problems.push(`${name}'s reason must be one line, not a paragraph`)
+    }
+    if (enumeratedNames.includes(name)) {
+      problems.push(
+        `${name} is both exempt and enumerated by the dictionary test — delete the
+exemption: the dictionary test answers for the vocabulary.`,
+      )
+    }
+  }
+  return problems
+}
+
 describe('the contract reader', () => {
-  it('finds the tuple form through comments, trailing comments and any layout', () => {
-    // The same contract in miniature: a doc comment above, one tuple on many
-    // lines with a trailing comment, one on a single line, and decoys — a
-    // commented-out tuple, a mutable array, and the words inside a string.
+  it('finds each accepted shape — bare, `as const` and annotated — however laid out', () => {
     const source = [
       '/** Why a Run was refused. */',
-      'export const REFUSAL_CODES = [',
+      'export const AS_CONST = [',
       "  'run-busy', // the next start would collide",
       "  'orphaned-run',",
       '] as const',
       '',
-      "export const PREREQUISITE_CODES = ['env-file'] as const",
+      "export const BARE = ['env-file']",
       '',
-      "// export const COMMENTED_OUT = ['nope'] as const",
-      "/* export const BLOCK_COMMENTED = ['nope'] as const */",
-      "export const NOT_A_TUPLE = ['mutable']",
-      "export const DESCRIBES_ITSELF = 'export const PROSE = [] as const'",
+      "export const ANNOTATED: readonly string[] = ['clean', 'explained']",
+      '',
+      "export const ANNOTATED_AS_CONST: ReadonlyArray<string> = ['defect'] as const",
     ].join('\n')
 
-    expect(exportedTupleNames(source)).toEqual(['REFUSAL_CODES', 'PREREQUISITE_CODES'])
+    expect(exportedTupleNames(source)).toEqual([
+      'AS_CONST',
+      'BARE',
+      'ANNOTATED',
+      'ANNOTATED_AS_CONST',
+    ])
+  })
+
+  it('rejects a comment, a string, a non-export, a non-const, a non-literal and a type', () => {
+    // Each accepted shape has a decoy that spells it but is not a runtime
+    // tuple: a commented-out declaration, the same words inside a string, a
+    // declaration that is not exported, one that is not `const`, one whose
+    // initializer is not a literal, and a function type whose `=>` is not the
+    // tuple's `=`.
+    const source = [
+      "// export const COMMENTED_OUT = ['nope'] as const",
+      "/* export const BLOCK_COMMENTED = ['nope'] as const */",
+      "export const DESCRIBES_ITSELF = 'export const PROSE = [] as const'",
+      "const NOT_EXPORTED = ['nope']",
+      "export let NOT_CONST = ['nope']",
+      'export const NOT_A_LITERAL = SOME_ARRAY',
+      'export const A_FUNCTION: () => string = () => "nope"',
+      'export type NOT_RUNTIME = readonly string[]',
+    ].join('\n')
+
+    expect(exportedTupleNames(source)).toEqual([])
   })
 
   it('finds the dictionary test’s enumeration, not a mention of a tuple', () => {
@@ -178,10 +252,48 @@ describe('the contract reader', () => {
   })
 })
 
+describe('the exemption rules', () => {
+  const NAME = 'RETIRED_CODES'
+  const reason = 'the page stopped speaking it in #112'
+
+  it('accept a real tuple with a one-line reason', () => {
+    expect(exemptionProblems([{ name: NAME, reason }], [NAME], [])).toEqual([])
+  })
+
+  it('reject a name the contract does not export', () => {
+    const problems = exemptionProblems([{ name: NAME, reason }], ['OTHER_CODES'], [])
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(`${NAME} is exempt but`)
+  })
+
+  it('reject a missing or empty reason', () => {
+    for (const bad of ['', '   ', '\n']) {
+      const problems = exemptionProblems([{ name: NAME, reason: bad }], [NAME], [])
+      expect(problems, `a reason of ${JSON.stringify(bad)} was accepted`).toHaveLength(1)
+      expect(problems[0]).toContain('no reason')
+    }
+  })
+
+  it('reject a reason that is a paragraph', () => {
+    const problems = exemptionProblems(
+      [{ name: NAME, reason: 'first line\nsecond line' }],
+      [NAME],
+      [],
+    )
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('one line')
+  })
+
+  it('reject an exemption the dictionary test still enumerates', () => {
+    const problems = exemptionProblems([{ name: NAME, reason }], [NAME], [NAME])
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('both exempt and enumerated')
+  })
+})
+
 describe('every runtime vocabulary the contract exports', () => {
   const tupleNames = exportedTupleNames(fs.readFileSync(CONTRACT_FILE, 'utf8'))
   const enumeratedNames = enumeratedTupleNames(fs.readFileSync(DICTIONARY_TEST_FILE, 'utf8'))
-  const exemptNames = EXEMPT_VOCABULARIES.map(entry => entry.name)
 
   it('is found, not assumed — the reader sees the contract and the dictionary test', () => {
     // A reader that silently stopped matching would make every rule below pass
@@ -196,6 +308,7 @@ describe('every runtime vocabulary the contract exports', () => {
   })
 
   it('is enumerated by the dictionary test or named in the exemption list', () => {
+    const exemptNames = EXEMPT_VOCABULARIES.map(entry => entry.name)
     const unaccounted = tupleNames.filter(
       name => !enumeratedNames.includes(name) && !exemptNames.includes(name),
     )
@@ -220,29 +333,10 @@ dictionary test's enumeration has to follow it.`,
     ).toEqual([])
   })
 
-  it('exempts only real tuples, with a written one-line reason', () => {
-    for (const exemption of EXEMPT_VOCABULARIES) {
-      expect(
-        tupleNames,
-        `${exemption.name} is exempt but the contract does not export it`,
-      ).toContain(exemption.name)
-      expect(exemption.reason.trim(), `${exemption.name} is exempt with no reason`).not.toBe('')
-      expect(
-        exemption.reason,
-        `${exemption.name}'s reason must be one line, not a paragraph`,
-      ).not.toContain('\n')
-    }
-  })
-
-  it('does not exempt a vocabulary the dictionary still answers for', () => {
-    // An exemption records an absence, so it may not stand beside copy that
-    // exists: that would be a way to silence the check rather than record a
-    // retirement.
-    const contradictory = exemptNames.filter(name => enumeratedNames.includes(name))
-    expect(
-      contradictory,
-      `${contradictory.join(', ')} is both exempt in EXEMPT_VOCABULARIES and enumerated by the
-dictionary test — delete the exemption: the dictionary test answers for the vocabulary.`,
-    ).toEqual([])
+  it('keeps the exemption list usable — real, reasoned, one line, and not also enumerated', () => {
+    // The committed list is empty, so this is the same function the synthetic
+    // cases above exercise; it is asserted here so the day an exemption lands
+    // the rules already run over it.
+    expect(exemptionProblems(EXEMPT_VOCABULARIES, tupleNames, enumeratedNames)).toEqual([])
   })
 })

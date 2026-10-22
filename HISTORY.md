@@ -782,7 +782,7 @@
 **决策**：
 
 - **一次维护迭代还清五笔。** 玩家看不到任何变化：不升版本、不写 changelog 小节、便携包里不多一个文件；发布工作流、包布局、更新器与玩家文案一个字没动。整轮只落这一条 `HISTORY.md`，随下一次有话可说的发布一起走。
-- **每个 PR 都证明发布树能启动。** `pnpm smoke:boot`（`scripts/smoke-boot.ts`）把构建树（默认 `build/`）拷进临时根并生成并列的 `app` / `data`，用 OS 分配端口、抑制浏览器启动程序，只经页面自己的 API 驱动：地址里带的 boot token、`/api/status` 报告的版本必须等于构建注入的 `RE1999_VERSION`、磁盘上 `instance.json` 的端口 / token / pid 必须是这次启动的、`/api/exit` 必须答 `202` 再退 0 并清掉记录。同一脚本把 `run.js` 删掉跑第二遍，要求启动前的非零拒绝——这条规则只有产物本人能证明。CI 在既有 required check 里加两步（`pnpm build`、`pnpm smoke:boot`），不新增 job。
+- **每个 PR 都证明 Console 能启动。** `pnpm smoke:boot`（`scripts/smoke-boot.ts`）把构建树（默认 `build/`）拷进临时根并生成并列的 `app` / `data`，用 OS 分配端口、抑制浏览器启动程序，只经页面自己的 API 驱动：地址里带的 boot token、`/api/status` 报告的版本必须等于构建注入的 `RE1999_VERSION`、磁盘上 `instance.json` 的端口 / token / pid 必须是这次启动的、`/api/exit` 必须答 `202` 再退 0 并清掉记录。同一脚本把 `run.js` 删掉跑第二遍，要求启动前的非零拒绝；再把 `update.js` 放在没有安装指针的临时根上跑第三遍，要求中文拒绝并非零退出——更新器 bundle 因此也证明能加载。它不读 `.env`、不开浏览器、不跑真 Run；唯一的出站请求是 Console 自己那次有界的更新检查（3 秒，永不致命），脚本没有把它关掉。CI 在既有 required check 里加两步（`pnpm build`、`pnpm smoke:boot`），不新增 job：**三个入口都编译，启动的是 Console**，`run.js` 编译后并不执行。
 - **worktree 第一遍就能跑 `pnpm`。** `pnpm-workspace.yaml` 写 `verifyDepsBeforeRun: false`，注释点名 junction 与那 53 次失败；它替下的检查——lockfile 与 manifest 不一致——仍在真正执行它的地方：CI 的 frozen install。这是设置，不是要靠 agent 记住的仪式。
 - **设计会话留下一条笔记。** `docs/notes/` 一题一文件，四段固定：问题、已定分支、开放分支、被否决分支及理由；约定写在 `docs/agents/design-notes.md`，与 issue-tracker、domain 指针并列。grilling skill 加同一条完成判据，让约定有触发而不只有家；skill 住在仓库之外，这是本轮唯一没有本仓门禁的一步。
 - **编号解析到 ADR。** `docs/adr/README.md` 一行一条（编号 + slug + 一句话决策，升序），从 steering 文件指向；`tests/docs/adr-index.test.ts` 用真实目录双向守它——每个 ADR 文件有一行，每一行指向存在的文件——否则索引就是下一个会腐烂的东西。它不是从 ADR 正文生成的：那行是摘要，生成器要么抄标题，要么诱使正文长出第二种格式。
@@ -791,7 +791,7 @@
 
 **验证**：
 
-- `pnpm smoke:boot`：15 条 `ok`——地址带 boot token、`/api/status` 200、页面报告构建注入的 `1.0.1`（staged `package.json` 的版本被改写成 `0.0.0-smoke`，所以这个数只能来自 define）、`instance.json` 存在且形状 / 端口 / token / pid 全对、`/api/exit` 202 且 `exiting: true`、进程退 0 并清掉记录；删掉 `run.js` 的树退非零、不打印地址、拒绝里点名缺失路径。
+- `pnpm smoke:boot`：17 条 `ok`——地址带 boot token、`/api/status` 200、页面报告构建注入的 `1.0.1`（staged `package.json` 的版本被改写成 `0.0.0-smoke`，所以这个数只能来自 define）、`instance.json` 存在且形状 / 端口 / token / pid 全对、`/api/exit` 202 且 `exiting: true`、进程退 0 并清掉记录；删掉 `run.js` 的树退非零、不打印地址、拒绝里点名缺失路径；没有安装指针时 `update.js` 退非零并打印中文拒绝。
 - `pnpm build`：`version 1.0.1`，页面 112 个文件，`server.js` 935 KiB、`run.js` 2127 KiB、`update.js` 17 KiB，外部依赖仍只有 `sharp`，打进 bundle 的 26 个包。
 - 合并后的最终树上四件套：`pnpm typecheck` 0、`pnpm test` **61 文件 / 672 tests**、`pnpm lint` 0 warning 0 error（165 files / 218 rules）、`pnpm fmt:check` 通过（176 files）。
 - steering 文件：385 个非空行 / 34,560 字节（34.5 KB）→ 329 个非空行 / 31,964 字节（32.0 KB），Gotcha 段 118 行 → 33 行，另开 99 行 / 5,649 字节的 `docs/agents/branch-reference.md`；ADR 索引 23 行对 23 个文件。
@@ -930,4 +930,4 @@
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（#76 之前还有 `--filename` 那段 Windows 专属坑，现在已随载荷删除），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `data/images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。
-- **本机动态端口区间与 fetch 的 blocked ports 重叠（2026-10-22 记录）**：这台机器的 TCP 动态端口区间是 1024–15000，其中包含 fetch 判为 `bad port` 的端口（如 3659）；OS 分配监听端口的 socket 测试可能因此以 `fetch failed` / `bad port` 失败。单独重跑会换一个端口并通过，Linux CI 的区间（49152 起）不撞。看到这个错先查端口，不要先怀疑被测代码。
+- **本机动态端口区间与 fetch 的 blocked ports 重叠（2026-10-22 记录，本机）**：这台机器的 `netsh int ipv4 show dynamicport tcp` 报 1024–15000，其中包含 fetch 判为 `bad port` 的端口（实测 3659）；用 0 端口监听、再由 fetch 驱动的检查因此出现过 `fetch failed` / `bad port`，单独重跑换了端口就过。Linux CI 的区间从 49152 起，不撞；启动检查为此对 0 端口做两次重试。看到这个错先查端口，不要先怀疑被测代码。

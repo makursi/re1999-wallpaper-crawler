@@ -8,10 +8,18 @@
 //
 // The comparison runs in both directions, which is what the two failures are:
 //
-//   - an ADR file (`<NNNN>-<slug>.md`) with no line fails — a new decision
+//   - a decision file (`<NNNN>-<slug>.md`) with no line fails — a new decision
 //     cannot pass by being unmentioned;
 //   - a line naming a file that is not in the directory fails — a rename or a
 //     deletion cannot leave a dead pointer behind.
+//
+// A third check closes the reader's blind spot. The decision-file pattern only
+// recognises one name shape, so a file it cannot read — `drafts/0024-x.md`,
+// `0024_X.md` — would otherwise sit in the directory unmentioned while this
+// test stayed green. Every Markdown file under `docs/adr/` other than this
+// index is therefore either a decision file or named in `EXEMPT_ADR_PATHS`;
+// the list is deliberately empty today, and a drafts directory is the legitimate
+// reason it exists.
 //
 // It also pins the shape the index promises: the lines ascend by number, each
 // carries the number and the slug of the file it links, and the first line says
@@ -25,18 +33,46 @@ import { describe, expect, it } from 'vitest'
 const ADR_DIR = path.resolve(import.meta.dirname, '..', '..', 'docs', 'adr')
 const INDEX_FILE = path.join(ADR_DIR, 'README.md')
 
-/** A decision file: `<NNNN>-<slug>.md`. Other files in the directory are not decisions. */
+/** The index's own name: the one Markdown file here that is not a subject. */
+const INDEX_NAME = path.basename(INDEX_FILE)
+
+/** A decision file: `<NNNN>-<slug>.md`. Other names are not decisions. */
 const ADR_FILE = /^(\d{4})-([a-z0-9-]+)\.md$/
 
 /** One index line: `- [NNNN](NNNN-slug.md) `slug` — the clause it decides`. */
 const INDEX_LINE = /^- \[(\d{4})\]\((\d{4})-([a-z0-9-]+)\.md\) `([a-z0-9-]+)` — (\S.*)$/
 
+/**
+ * Markdown the directory may hold without a line in the index. Entries are
+ * paths relative to `docs/adr/`, `/`-separated, and a trailing `/` exempts a
+ * whole directory: `drafts/` is the legitimate case, because a decision still
+ * being written is not one to look up yet. Empty today — every Markdown file
+ * is a decision — and naming an exemption here is what makes it deliberate and
+ * visible instead of a filename this reader happens to skip.
+ */
+const EXEMPT_ADR_PATHS: readonly string[] = []
+
+/** Whether a relative path is covered by one of `exemptions`. */
+function exempted(file: string, exemptions: readonly string[] = EXEMPT_ADR_PATHS): boolean {
+  return exemptions.some(entry => (entry.endsWith('/') ? file.startsWith(entry) : file === entry))
+}
+
+/** Every `.md` under `docs/adr/`, relative to it, `/`-separated and ascending. */
+function markdownFiles(directory: string = ADR_DIR): string[] {
+  const files: string[] = []
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...markdownFiles(absolute))
+    else if (entry.name.endsWith('.md')) {
+      files.push(path.relative(ADR_DIR, absolute).split(path.sep).join('/'))
+    }
+  }
+  return files.toSorted()
+}
+
 /** The decision files, in the directory's own ascending order. */
 function adrFiles(): string[] {
-  return fs
-    .readdirSync(ADR_DIR)
-    .filter(name => ADR_FILE.test(name))
-    .toSorted()
+  return markdownFiles().filter(name => ADR_FILE.test(name))
 }
 
 /** The index's non-empty lines; its first line is the claim, the rest are decisions. */
@@ -85,6 +121,21 @@ describe('the ADR index', () => {
     )
   })
 
+  it('accounts for every Markdown file under docs/adr/, so an unrecognised name cannot hide', () => {
+    // The reader above recognises only `<NNNN>-<slug>.md`. This check is what
+    // makes that narrowness safe: a file it cannot read has to be named here or
+    // in the exemption list, and the failure names the file.
+    const unaccounted = markdownFiles().filter(
+      file => file !== INDEX_NAME && !ADR_FILE.test(file) && !exempted(file),
+    )
+    expect(
+      unaccounted,
+      `docs/adr/ holds ${unaccounted.join(', ')}, which the index does not mention and
+EXEMPT_ADR_PATHS does not name. Add a line to docs/adr/README.md, or name the path in
+EXEMPT_ADR_PATHS with the reason it is not a decision.`,
+    ).toEqual([])
+  })
+
   it('names a file that exists, so no line points at a decision that is gone', () => {
     for (const line of decisionLines()) {
       expect(
@@ -104,5 +155,23 @@ describe('the ADR index', () => {
       // rejected an empty one, and no body is copied because the line ends here.
       expect(line.clause.length).toBeGreaterThan(0)
     }
+  })
+
+  it('keeps every exemption real, so a stale entry is not a permanent silence', () => {
+    for (const entry of EXEMPT_ADR_PATHS) {
+      expect(
+        fs.existsSync(path.join(ADR_DIR, entry)),
+        `EXEMPT_ADR_PATHS names ${entry}, which is not in docs/adr/`,
+      ).toBe(true)
+    }
+  })
+})
+
+describe('the exemption rule', () => {
+  it('matches a file exactly, and a whole directory by its trailing slash', () => {
+    expect(exempted('drafts/0024-x.md', ['drafts/'])).toBe(true)
+    expect(exempted('0024_X.md', ['0024_X.md'])).toBe(true)
+    expect(exempted('drafts/0024-x.md', ['0024_X.md'])).toBe(false)
+    expect(exempted('0024-x.md', [])).toBe(false)
   })
 })

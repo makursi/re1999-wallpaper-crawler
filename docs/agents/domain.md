@@ -35,7 +35,8 @@ source tree, and don't create one to match a template.
 ├── HISTORY.md              ← why the code is shaped this way (+ rejected approaches)
 ├── docs/
 │   ├── adr/                ← system-wide decisions
-│   └── agents/             ← these files: how agents read the repo
+│   ├── agents/             ← these files: how agents read the repo
+│   └── notes/              ← one design note per topic, in four fixed parts
 ├── core/                   ← the crawler
 │   ├── discovery/          ← traverses the page, produces the raw capture
 │   ├── download/           ← consumes the Wallpaper URL set, writes files
