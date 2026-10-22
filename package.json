@@ -1,6 +1,6 @@
 {
   "name": "re1999-wallpaper-crawler",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Wallpaper scraper for Bluepoch's official gallery (re.bluepoch.com)",
   "license": "MIT",

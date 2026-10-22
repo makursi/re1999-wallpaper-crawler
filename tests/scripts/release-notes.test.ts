@@ -12,14 +12,17 @@
 //   - a missing section, an empty section or a duplicated section is a failure
 //     naming the version — an empty Release body is worse than a failed job.
 //
-// The last test reads the repository's real `CHANGELOG.md`: the workflow will
-// call this module on the tag `v1.0.0`, so the file has to keep answering.
+// The last tests read the repository's real `CHANGELOG.md`: the workflow calls
+// this module on a tag, so the file has to keep answering — for the version
+// `package.json` currently names, on top, and with nothing but versions using
+// `##` above it.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { packageVersion } from '../../scripts/package-version.js'
 import { releaseSection } from '../../scripts/release-notes.js'
 
 const CHANGELOG = `# 变更记录
@@ -44,6 +47,9 @@ const REPOSITORY_CHANGELOG = fs.readFileSync(
   path.resolve(import.meta.dirname, '..', '..', 'CHANGELOG.md'),
   'utf8',
 )
+
+/** The one version a release is named: `package.json` (scripts/package-version.ts). */
+const PACKAGE_JSON = path.resolve(import.meta.dirname, '..', '..', 'package.json')
 
 describe('releaseSection', () => {
   it('returns exactly the body of that version, without its heading', () => {
@@ -92,20 +98,27 @@ describe('releaseSection', () => {
     expect(() => releaseSection('## 1.0.0-rc.1\n\n预发布。\n', '1.0.0')).toThrow(/1\.0\.0/)
   })
 
-  it('reads the repository changelog, which the workflow depends on for 1.0.0', () => {
-    const body = releaseSection(REPOSITORY_CHANGELOG, '1.0.0')
+  it('reads the repository changelog, which the workflow depends on for 1.0.1', () => {
+    const body = releaseSection(REPOSITORY_CHANGELOG, '1.0.1')
     expect(body.length).toBeGreaterThan(0)
     // The body is the section without its heading, and it is written for a
-    // player: the one fact this release has to state is that nothing installs.
-    expect(body).not.toContain('## 1.0.0')
-    expect(body).toMatch(/Chrome|终端|命令行/)
+    // player: this release has to state that the page can exit the program.
+    expect(body).not.toContain('## 1.0.1')
+    expect(body).toMatch(/退出/)
   })
 
-  it('opens with the first public version, and the format rules are not a section', () => {
+  it('opens with the shipped version, and the format rules are not a section', () => {
     // The header's own rule says the newest version goes on top and only
-    // versions use `##`; a maintainer reading "opens with 1.0.0" must see that
-    // the format notes are prose, not a release.
+    // versions use `##`; a maintainer reading "opens with 1.0.1" must see that
+    // the format notes are prose, not a release. The top heading must also be
+    // the number `package.json` ships (#88 checks the tag against that one), so
+    // a version bump that forgets its section fails here rather than in a draft
+    // Release with an empty body.
     const headings = REPOSITORY_CHANGELOG.split(/\r?\n/).filter(line => line.startsWith('## '))
-    expect(headings[0]).toBe('## 1.0.0')
+    for (const heading of headings) expect(heading).toMatch(/^## \d+\.\d+\.\d+$/)
+    expect(headings[0]).toBe(`## ${packageVersion(PACKAGE_JSON)}`)
+    // The first public release keeps its section: this is the record, not a
+    // changelog that drops a version once a newer one lands.
+    expect(headings).toContain('## 1.0.0')
   })
 })
