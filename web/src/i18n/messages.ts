@@ -100,16 +100,16 @@ const zhCN = {
   'run.reportUnreadable': '这次运行的记录是旧格式,这个页面读不懂,所以得不出结论。',
   'run.refusedStart': '没能开始抓取:本地控制台没有接受这次请求。刷新页面后再试一次。',
   'run.siteUnreachable': '连不上官网,这次一张也没能拿到。检查网络后再抓一次。',
-  // The setup notice (#60): with no usable `.env` the panel says what to create
-  // before the reader clicks start. The file name is a data cell, so it travels
-  // as a parameter; the line is the site's constant, not translatable prose, and
-  // is the same line README.md's quick start gives. #76 removed the page path
-  // with the browser crawl that needed it, so one line is all a Run requires.
-  'run.setup.heading': '先完成站点配置',
-  'run.setup.body': '这个控制台还没有可用的站点配置,所以暂时不能开始运行。',
-  'run.setup.file': '请在仓库根目录创建 {file} 文件,写入以下一行:',
+  // The setup notice (#60, #95): with no usable `.env` the panel says why a Run
+  // cannot start, and gives the one line to write — two lines, no more. The file
+  // is the `.env` **beside the program**, because a Portable package is unzipped
+  // anywhere and has no repository root; the file name is a data cell, so it
+  // travels as a parameter. Nothing here says "refresh the page": creating the
+  // file and reopening the panel (or returning to the window) is enough, because
+  // the page re-reads the status (#95). The line is the site's constant, not
+  // translatable prose, and is the same line README.md's quick start gives.
+  'run.setup.body': '程序旁边没有可用的 {file},所以还不能开始运行;补上下面这一行就可以了。',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
-  'run.setup.note': '保存后刷新页面,提示就会消失,就可以开始运行了。',
 
   // The verdict is `check-run`'s three-state enum, mapped here because the page
   // owns every word the reader sees (docs/adr/0014). #83 puts them in a
@@ -296,11 +296,9 @@ const en = {
     'The fetch did not start: the Console did not accept the request. Refresh the page and try again.',
   'run.siteUnreachable':
     'The site could not be reached, so nothing was downloaded. Check the connection and fetch again.',
-  'run.setup.heading': 'Set up the site first',
-  'run.setup.body': 'This Console has no usable site configuration yet, so a Run cannot start.',
-  'run.setup.file': 'Create the {file} file at the repository root with this line:',
+  'run.setup.body':
+    'There is no usable {file} beside the program, so a Run cannot start; add the line below.',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
-  'run.setup.note': 'After saving it, refresh the page: the notice goes away and a Run can start.',
 
   'verdict.clean': 'Finished — nothing wrong',
   'verdict.explained': 'Finished — a few routine notes, not failures',

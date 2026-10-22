@@ -120,14 +120,29 @@ describe('the locale dictionary', () => {
 })
 
 /**
- * The setup notice (#60): with no usable `.env`, the Run panel has to tell a
- * first-time reader what to create before they click anything. The line is the
- * site's constant, not copy to be translated — the same line `README.md`'s quick
- * start gives — so both locales carry it verbatim, and the sentence that
- * introduces it names the file the reader creates. #76 dropped the page path
- * with the browser crawl, so one line is all a Run needs.
+ * The setup notice (#93, ticket #95): it shows only while the configuration is
+ * really unusable, and then it is two lines — one sentence saying why a Run
+ * cannot start, and the line to write. The file is the `.env` beside the
+ * program, because a Portable package has no repository root to send a player
+ * looking for, and nothing says "refresh the page" any more: the page re-reads
+ * the status itself when the drawer opens or the window regains focus. The
+ * retired lines of the old four-line notice are gone from both locales.
  */
 describe('the setup notice', () => {
+  /** The notice's keys in one locale, sorted; `run.setup.*` is the notice whole. */
+  function setupKeysOf(locale: Locale): string[] {
+    return keysOf(locale).filter(key => key.startsWith('run.setup.'))
+  }
+
+  it('is exactly two lines in both locales — the sentence and the line to write', () => {
+    for (const locale of LOCALES) {
+      expect(setupKeysOf(locale), `${locale}: setup keys`).toEqual([
+        'run.setup.body',
+        'run.setup.lines',
+      ])
+    }
+  })
+
   it('gives the .env line verbatim in both locales', () => {
     const lines = 'BASE_ORIGIN=https://re.bluepoch.com'
     for (const locale of LOCALES) {
@@ -135,9 +150,49 @@ describe('the setup notice', () => {
     }
   })
 
-  it('names the file the reader creates', () => {
+  it('names the .env beside the program, never a repository root', () => {
     for (const locale of LOCALES) {
-      expect(translate(locale, 'run.setup.file', { file: '.env' })).toContain('.env')
+      const copy = translate(locale, 'run.setup.body', { file: '.env' })
+      expect(copy, `${locale}: ${copy}`).toContain('.env')
+      // A Portable package is unzipped anywhere and has no repository root; the
+      // file the program reads is the one beside the program itself.
+      expect(copy, `${locale}: ${copy}`).not.toMatch(/repository root|repo root|仓库根目录|仓库根/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /程序旁边/ : /beside the program/i,
+      )
+    }
+  })
+
+  it('says why a Run cannot start', () => {
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'run.setup.body', { file: '.env' })
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /不能开始运行|还不能运行/ : /cannot start|can’t start|can't start/i,
+      )
+    }
+  })
+
+  it('no longer tells the reader to refresh the page', () => {
+    for (const locale of LOCALES) {
+      const body = translate(locale, 'run.setup.body', { file: '.env' })
+      const lines = translate(locale, 'run.setup.lines')
+      expect(body, `${locale}: ${body}`).not.toMatch(/refresh|刷新/i)
+      expect(lines, `${locale}: ${lines}`).not.toMatch(/refresh|刷新/i)
+    }
+  })
+
+  it('does not contradict the env-file refusal a start click returns', () => {
+    // The notice is guidance and the click's refusal is the error, but both send
+    // the reader after the same file; a refusal that named a different place
+    // would make the notice a lie the moment the reader clicked start.
+    for (const locale of LOCALES) {
+      const notice = translate(locale, 'run.setup.body', { file: '.env' })
+      const refusal = translate(locale, PREREQUISITE_MESSAGE_KEYS['env-file'])
+      expect(notice, `${locale}: ${notice}`).toContain('.env')
+      expect(refusal, `${locale}: ${refusal}`).toContain('.env')
+      expect(refusal, `${locale}: ${refusal}`).not.toMatch(
+        /repository root|repo root|仓库根目录|仓库根/i,
+      )
     }
   })
 })

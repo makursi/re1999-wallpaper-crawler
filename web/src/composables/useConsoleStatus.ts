@@ -11,6 +11,11 @@
 // Polling is the store's, not a panel's: a Run in flight is re-read every five
 // seconds, and the moment the Run ends the timer stops. Closing the page ends
 // it with the document — there is no handle to release.
+//
+// The read is repeated when the window regains focus (#95): the reader who fixes
+// the missing `.env` in an editor and comes back finds the notice gone, with no
+// reload. The drawer's own re-read on open is the shell's (`App.vue`), because
+// "the drawer opened" is the shell's fact, not this store's.
 
 import type { Ref } from 'vue'
 import { ref } from 'vue'
@@ -78,6 +83,16 @@ async function refresh(): Promise<void> {
 }
 
 /**
+ * Re-read whenever the window regains focus: a `.env` created while the page
+ * was open in another window is picked up without a reload (#95). Installed
+ * once, with the store's one initial read, so a second consumer does not add a
+ * second listener.
+ */
+function reReadOnFocus(): void {
+  window.addEventListener('focus', () => void refresh())
+}
+
+/**
  * The page's status, read for the first time by whoever asks first.
  *
  * Called from a component's setup, so the initial read starts with the page and
@@ -88,6 +103,7 @@ export function useConsoleStatus(): ConsoleStatusStore {
   if (!initialised) {
     initialised = true
     void refresh()
+    reReadOnFocus()
   }
   return { status, failure, refresh }
 }
