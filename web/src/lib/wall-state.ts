@@ -20,7 +20,14 @@
 export interface WallFacts {
   /** Wallpapers the wall draws now: the rows of the page's one gallery read. */
   wallpaperCount: number
-  /** Official entries whose file is on disk; `null` = the list was not read. */
+  /**
+   * Official entries whose file is on disk; `null` = the list was not read.
+   *
+   * It is the figures' complement (`officialTotal - missing`, computed once in
+   * `lib/gallery-figures.ts`), not the Mirror's count, so the resume band's
+   * "N of M" agrees with the header's `downloaded` by construction — retired
+   * local extras are not downloads and never enter either number.
+   */
   downloaded: number | null
   /** What the Gallery list says the gallery holds; `null` = not read. */
   officialTotal: number | null
@@ -72,16 +79,4 @@ export function wallBandOf(facts: WallFacts): WallBand {
   if (facts.wallpaperCount === 0) return 'empty'
   if (facts.missing !== null && facts.missing > 0) return 'resume'
   return 'none'
-}
-
-/**
- * How many Wallpapers the Gallery list names that the Mirror does not hold, or
- * `null` when the list was not read.
- *
- * The gap's own number, passed through: the resume control and the header's
- * "missing" are the same fact, and the reader is never asked to subtract two
- * counts that a retired local file can make look complete.
- */
-export function remainingOf(facts: WallFacts): number | null {
-  return facts.missing
 }

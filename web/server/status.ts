@@ -66,9 +66,14 @@ function toApiReport(
 /**
  * The verdict's own reasons, as the API declares them — held to that declaration
  * by the same `Same` check the defect block uses, so the page cannot quietly
- * lose one of the three reasons a `defect` can be made of.
+ * lose one of the two reasons a `defect` can be made of.
+ *
+ * The third reason `assessRun` carries — the routine classes behind an
+ * `explained` verdict — stays in core and is deliberately not picked here: #97
+ * retired the page's notes list, and no per-kind detail has copy any more. The
+ * page still receives the `explained` verdict sentence.
  */
-type RunVerdictReasons = Pick<RunVerdict, 'stateMatchesReport' | 'missingOnDisk' | 'explained'>
+type RunVerdictReasons = Pick<RunVerdict, 'stateMatchesReport' | 'missingOnDisk'>
 
 function toApiVerdictReasons(
   reasons: Same<RunVerdictReasons, ConsoleVerdictReasons> extends true ? RunVerdictReasons : never,
@@ -234,11 +239,12 @@ export function deriveRunFacts(input: ConsoleRunLogFacts): ConsoleRunFacts {
   const inFlight = state === 'running'
   const meta = parseRunMeta(input.logText)
   // The verdict's own reasons travel even when the newest log's report is the
-  // previous Run's: they belong to the verdict the page is showing.
+  // previous Run's: they belong to the verdict the page is showing. The
+  // `explained` kinds stay in core — the page's contract no longer carries a
+  // per-kind detail (see `ConsoleVerdictReasons`).
   const reasons = toApiVerdictReasons({
     stateMatchesReport: verdict.stateMatchesReport,
     missingOnDisk: verdict.missingOnDisk,
-    explained: verdict.explained,
   })
 
   return {

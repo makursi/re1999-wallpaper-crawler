@@ -1,21 +1,24 @@
 <script setup lang="ts">
-// ── The Run panel's verdict, in two lines and at most one more (#97) ─
+// ── The Run panel's verdict, in two lines (#97) ─────────────────────
 //
-// What the last Run came to, in the reader's words: one verdict sentence, the
-// `ok N · failed N` counts, and — only when something went wrong — one problem
-// line. The run id, the timestamps, the log's file name, the Discovery counters,
-// the success rate, the defect rows and the routine notes are all gone: a player
-// asked "did it work, and what is missing", and this is the whole answer.
+// What the last Run came to, in the reader's words: one verdict sentence and the
+// `ok N · failed N` counts. The panel's figures line follows from `RunPanel.vue`,
+// and its at-most-one problem line follows the figures — the order spec #93
+// fixes. The run id, the timestamps, the log's file name, the Discovery
+// counters, the success rate, the defect rows and the routine notes are all
+// gone: a player asked "did it work, and what is missing", and this is the whole
+// answer.
 //
 // The verdict sentence is the dictionary's (`VERDICT_MESSAGE_KEYS`); the counts
-// and the one problem line are rules, so they live in `lib/run-panel.ts` and are
-// unit-tested there. This component only lays them out, which is why it renders
-// message rows rather than deciding anything.
+// are a rule, so they live in `lib/run-panel.ts` and are unit-tested there. This
+// component only lays them out, which is why it renders message rows rather than
+// deciding anything. The problem line is the panel's, not this component's,
+// because the panel owns where it stands.
 //
 // A missing report has no verdict to name: `assessRun` calls it a defect in the
-// log, and the problem line is that sentence. The verdict sentence is therefore
-// shown only when the status carries one, and the panel never presents "no
-// conclusion" as a conclusion.
+// log, and the panel's problem line is that sentence. The verdict sentence is
+// therefore shown only when the status carries one, and the panel never presents
+// "no conclusion" as a conclusion.
 
 import { computed } from 'vue'
 
@@ -23,7 +26,7 @@ import { useConsoleStatus } from '../composables/useConsoleStatus'
 import { t } from '../i18n/locale'
 import Message from '../i18n/Message.vue'
 import { VERDICT_MESSAGE_KEYS } from '../i18n/messages'
-import { runCountsOf, runProblemOf } from '../lib/run-panel'
+import { runCountsOf } from '../lib/run-panel'
 
 const { status } = useConsoleStatus()
 
@@ -35,9 +38,6 @@ const verdictKey = computed(() => {
 
 /** `ok N`, plus ` · failed N` only when a download failed (never `failed 0`). */
 const counts = computed(() => runCountsOf(status.value?.report ?? null))
-
-/** At most one problem line, chosen by the priority in `lib/run-panel.ts`. */
-const problem = computed(() => (status.value === null ? null : runProblemOf(status.value)))
 </script>
 
 <template>
@@ -47,10 +47,6 @@ const problem = computed(() => (status.value === null ? null : runProblemOf(stat
          role, and the sentence around them stays prose. -->
     <p v-if="counts.length > 0">
       <Message v-for="row in counts" :key="row.key" :message="row.key" :params="row.params" />
-    </p>
-    <!-- One sentence, never a list: the problem line the priority chose. -->
-    <p v-if="problem !== null" class="text-danger">
-      <Message :message="problem.key" :params="problem.params" />
     </p>
   </template>
 </template>

@@ -181,7 +181,8 @@ const zhCN = {
   'wall.resumeBody':
     '还差 {remaining} 张。再点「继续抓取」会从上次停下的地方接着下载:已经下载好的会跳过,不会从头再来。',
   'wall.runningHeading': '正在抓取壁纸…',
-  'wall.runningHint': '关闭窗口即停止;下次打开点「继续抓取」,已经下载好的会跳过。',
+  'wall.runningHint':
+    '关闭窗口或点页面上的「退出」都会停止(有运行时会先确认);下次打开点「继续抓取」,已经下载好的会跳过。',
   'wall.interruptedHeading': '上次抓取中断了',
   'wall.interruptedBody':
     '先打开导航上的「运行」面板,清理上次中断留下的记录,然后就能接着抓;已经下载好的会跳过。',
@@ -347,7 +348,7 @@ const en = {
     '{remaining} wallpapers are still missing. “Continue the fetch” picks up where it stopped: what is already downloaded is skipped, not fetched twice.',
   'wall.runningHeading': 'Fetching wallpapers…',
   'wall.runningHint':
-    'Closing the window stops the fetch; open it again and continue — what is already downloaded is skipped.',
+    'Closing the window or the page’s Exit both stop the fetch (Exit asks first while a Run is in flight); open it again and continue — what is already downloaded is skipped.',
   'wall.interruptedHeading': 'The last fetch was interrupted',
   'wall.interruptedBody':
     'Open the “Run” panel in the navigation, clear the record the interrupted fetch left behind, then continue — what is already downloaded is skipped.',

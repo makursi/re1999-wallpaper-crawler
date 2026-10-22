@@ -31,7 +31,7 @@ import { defects, runReport } from '../../server/run-fixtures.js'
 
 /** The verdict's own reasons, for a Run that matched and lost no claimed file. */
 function reasons(over: Partial<ConsoleVerdictReasons> = {}): ConsoleVerdictReasons {
-  return { stateMatchesReport: true, missingOnDisk: [], explained: [], ...over }
+  return { stateMatchesReport: true, missingOnDisk: [], ...over }
 }
 
 /** A Run report: the fixture, with the counts and defect classes a test is about. */

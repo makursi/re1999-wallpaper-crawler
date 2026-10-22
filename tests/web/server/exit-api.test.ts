@@ -174,7 +174,9 @@ describe('POST /api/exit with no Run in flight', () => {
     const response = await postExit(harness, { confirm: false })
 
     expect(response.status).toBe(202)
-    expect(await response.json()).toEqual({ exiting: true, refusal: null })
+    // The accepted body is exactly `{"exiting": true}` (spec #93): no refusal
+    // field to explain an answer that permitted the exit.
+    expect(await response.json()).toEqual({ exiting: true })
     expect(harness.shutdowns).toEqual([{ runInFlight: false, killedOwnRun: false }])
   })
 
@@ -221,7 +223,7 @@ describe('POST /api/exit with a Run in flight', () => {
     const response = await postExit(harness, { confirm: true })
 
     expect(response.status).toBe(202)
-    expect(await response.json()).toEqual({ exiting: true, refusal: null })
+    expect(await response.json()).toEqual({ exiting: true })
     expect(harness.kills()).toBe(0)
     expect(harness.shutdowns).toEqual([{ runInFlight: true, killedOwnRun: false }])
   })

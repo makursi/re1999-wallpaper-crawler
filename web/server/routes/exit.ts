@@ -45,7 +45,11 @@ export function registerExitRoute(app: Hono, runtime: ServiceRuntime): void {
     if (exitProgram === undefined) return json(404, { error: 'not found' })
 
     const result = exitProgram(await confirmedOf(c))
-    const payload: ConsoleExitPayload = { exiting: result.exiting, refusal: result.refusal }
+    // The accepted body is exactly `{"exiting": true}` (spec #93): a permitted
+    // exit has no refusal to explain, so the field is absent rather than
+    // `null`. The `409` still carries its code.
+    const payload: ConsoleExitPayload = { exiting: result.exiting }
+    if (result.refusal !== undefined) payload.refusal = result.refusal
     // The status comes from the controller, which owns the decision; the route
     // only relays it.
     return json(exitStatusOf(result), payload)

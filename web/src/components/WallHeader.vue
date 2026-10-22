@@ -7,10 +7,11 @@
 // the line says "Gallery unread": no missing count is claimed, and the Mirror's
 // tiles are still below it (#94).
 //
-// The counts are `GalleryFigures`'s, the one component the Run panel shares, so
-// the two surfaces cannot disagree about the same numbers. The eyebrow tag
-// carries the Chinese name of the view, so the display mark leads and the reader
-// still knows what this is (ADR 0015, story 20).
+// The counts are `GalleryFigureCounts`, computed once in
+// `lib/gallery-figures.ts` and rendered by the one component the Run panel
+// shares, so the two surfaces cannot disagree about the same numbers. The
+// eyebrow tag carries the Chinese name of the view, so the display mark leads
+// and the reader still knows what this is (ADR 0015, story 20).
 //
 // A failed read is not printed here. The raw failure (`HTTP 500`, a transport
 // message) is the service's vocabulary, not the reader's; #83 puts one plain

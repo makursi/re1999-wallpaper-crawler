@@ -33,8 +33,11 @@ export interface PageExitStore {
   /** `true` once the service accepted the exit; the page shows the notice. */
   exited: Ref<boolean>
   /**
-   * `true` when the service said a Run was in flight, so the notice can say the
-   * Run's log may stop short — the fact the reader needs on the next start.
+   * `true` when the exit being performed is one the service refused for a Run in
+   * flight — the confirmed exit, or the unconfirmed attempt that met the `409`.
+   * The notice uses it to say the Run's log may stop short, the fact the reader
+   * needs on the next start. It describes the exit that is actually happening:
+   * a new attempt and "keep running" both clear it.
    */
   interruptedRun: Ref<boolean>
   /** The last exit's refusal in the reader's language; `null` when none. */
@@ -64,6 +67,10 @@ async function request(confirmed: boolean): Promise<void> {
   if (exiting.value || exited.value) return
   exiting.value = true
   refusal.value = null
+  // A new request supersedes the previous exit's story. A confirmed one is the
+  // exception: the `409` it is answering already proved a Run was in flight, so
+  // its notice must still say the log may be truncated.
+  interruptedRun.value = confirmed
   try {
     const reply = await postJson<ConsoleExitPayload>('/api/exit', { confirm: confirmed })
     if (reply.ok && reply.body.exiting) {
@@ -86,7 +93,7 @@ async function request(confirmed: boolean): Promise<void> {
     }
     // Anything else is a refusal the page can only report: the guard's 403, or
     // a code this build does not know.
-    refusal.value = refusalOf(reply.status, reply.body.refusal)
+    refusal.value = refusalOf(reply.status, reply.body.refusal ?? null)
   } catch (error) {
     // A transport failure is a runtime message, not copy (docs/adr/0014); the
     // sentence beside it is the dictionary's (`refusalTextOf`).
@@ -110,6 +117,9 @@ function confirm(): Promise<void> {
 /** The reader said no: the dialog closes, nothing is sent, nothing stops. */
 function cancel(): void {
   awaitingConfirmation.value = false
+  // Nothing was interrupted either: the claim belongs to an exit that did not
+  // happen, and a later idle exit must not inherit it.
+  interruptedRun.value = false
 }
 
 export function usePageExit(): PageExitStore {

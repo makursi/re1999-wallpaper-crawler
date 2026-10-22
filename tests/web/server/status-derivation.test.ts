@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RunReport } from '../../../core/report/report.js'
 import { assessRun, logRunIdOf, parseRunReport } from '../../../core/report/run-log.js'
-import type { ConsoleExplainedReason, ConsoleStatusPayload } from '../../../web/api-types.js'
+import type { ConsoleStatusPayload } from '../../../web/api-types.js'
 import type { ConsoleRunLogFacts } from '../../../web/server/status.js'
 import { buildStatus, deriveRunFacts } from '../../../web/server/status.js'
 import type { UpdateNotice } from '../../../web/server/update-check.js'
@@ -68,15 +68,11 @@ function statusOf(over: Partial<RawStatusFacts> = {}): ConsoleStatusPayload {
 }
 
 describe('deriveStatus', () => {
-  it.each<[string, RunReport, ConsoleExplainedReason[]]>([
-    ['clean', runReport(), []],
-    [
-      'explained',
-      runReport({ defects: defects({ mirrorGap: { missing: 0, extra: 3 } }) }),
-      [{ kind: 'mirror-gap-extra', count: 3 }],
-    ],
-    ['defect', runReport({ defects: defects({ nonConverged: true }) }), []],
-  ])('reports a %s Run exactly as assessRun does', (expected, record, explained) => {
+  it.each<[string, RunReport]>([
+    ['clean', runReport()],
+    ['explained', runReport({ defects: defects({ mirrorGap: { missing: 0, extra: 3 } }) })],
+    ['defect', runReport({ defects: defects({ nonConverged: true }) })],
+  ])('reports a %s Run exactly as assessRun does', (expected, record) => {
     const logText = runLog(JSON.stringify(record))
 
     // The independent source of truth: what `check-run` itself would print.
@@ -91,17 +87,15 @@ describe('deriveStatus', () => {
     expect(status.verdict).toBe(expected)
     expect(status.verdict).toBe(command.verdict)
     expect(status.defects).toEqual(command.defects)
-    // The verdict's own reasons travel with it: the same three `check-run`
-    // prints, so a `defect` the report's defect block does not explain still
-    // reaches the page with its cause (#34 story 11).
+    // The verdict's own reasons travel with it: the same two `check-run` prints
+    // beside the report's defects, so a `defect` the report's defect block does
+    // not explain still reaches the page with its cause (#34 story 11). The
+    // routine classes behind an `explained` verdict stay in core: the page says
+    // the verdict sentence and carries no per-kind detail (#97).
     expect(status.verdictReasons).toEqual({
       stateMatchesReport: command.stateMatchesReport,
       missingOnDisk: command.missingOnDisk,
-      explained: command.explained,
     })
-    // An explained verdict's reason reaches the page as data, not as the
-    // sentence `check-run` prints (#47).
-    expect(status.verdictReasons?.explained).toEqual(explained)
   })
 
   it('reports claimed new files the Mirror does not hold as a defect, with that cause', () => {
@@ -128,7 +122,6 @@ describe('deriveStatus', () => {
     expect(status.verdictReasons).toEqual({
       stateMatchesReport: true,
       missingOnDisk: NEW_FILES,
-      explained: [],
     })
   })
 
@@ -145,7 +138,6 @@ describe('deriveStatus', () => {
     expect(status.verdictReasons).toEqual({
       stateMatchesReport: false,
       missingOnDisk: [],
-      explained: [],
     })
   })
 

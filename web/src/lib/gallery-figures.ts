@@ -20,7 +20,7 @@ import type { ConsoleGalleryPayload } from '../../api-types.js'
 export type GalleryFiguresSource = Pick<ConsoleGalleryPayload, 'officialTotal' | 'mirrorGap'>
 
 /** The four counts of the one line; every one is a data cell in the copy. */
-export interface GalleryFigures {
+export interface GalleryFigureCounts {
   /** What the Gallery list says the gallery holds; `null` = not read. */
   officialTotal: number | null
   /** The official entries whose file is on disk. */
@@ -36,7 +36,7 @@ export interface GalleryFigures {
  * yet. An unread list is not the same thing: it has a payload, all of whose
  * counts are `null`, and the header says "Gallery unread" for it.
  */
-export function galleryFiguresOf(gallery: GalleryFiguresSource | null): GalleryFigures | null {
+export function galleryFiguresOf(gallery: GalleryFiguresSource | null): GalleryFigureCounts | null {
   if (gallery === null) return null
   const { officialTotal, mirrorGap } = gallery
   if (officialTotal === null || mirrorGap === null) {

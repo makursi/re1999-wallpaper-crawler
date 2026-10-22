@@ -14,9 +14,11 @@
 // drawer so the two buttons can never disagree about a start being in flight.
 //
 // "How many are left" is the Mirror gap's missing count (#94) — the same number
-// the header prints — and the downloaded count beside it is the official entries
-// on disk. Only the running band's progress reads the status's live Mirror
-// count: it moves while a Run writes, and it is progress, not the header.
+// the header prints — and the downloaded count beside it is `facts.downloaded`,
+// the figures' complement over the Gallery total, so the resume band and the
+// header cannot disagree. Only the running band's progress reads the status's
+// live Mirror count: it moves while a Run writes, and it is progress, not the
+// header.
 
 import { computed } from 'vue'
 
@@ -25,7 +27,6 @@ import { t } from '../i18n/locale'
 import Message from '../i18n/Message.vue'
 import { startLabelKey } from '../lib/run-start'
 import type { WallBand, WallFacts } from '../lib/wall-state'
-import { remainingOf } from '../lib/wall-state'
 
 const props = defineProps<{
   /** What the wall is saying: the empty invitation, progress, a resume, or nothing. */
@@ -58,12 +59,6 @@ const liveProgressParams = computed(() => ({
   total: props.facts.officialTotal ?? 0,
 }))
 
-/** The official entries on disk: the header's own `downloaded` count. */
-const downloaded = computed(() => {
-  const { officialTotal, missing } = props.facts
-  return officialTotal !== null && missing !== null ? officialTotal - missing : null
-})
-
 /**
  * The progress of a wall that is not being fetched right now: official entries
  * on disk of the list's total, so it agrees with the figures line above. An
@@ -71,12 +66,9 @@ const downloaded = computed(() => {
  * sentence.
  */
 const downloadedProgressParams = computed(() => ({
-  done: downloaded.value ?? props.facts.wallpaperCount,
+  done: props.facts.downloaded ?? props.facts.wallpaperCount,
   total: props.facts.officialTotal ?? 0,
 }))
-
-/** How many listed Wallpapers the Mirror still owes; `null` when unmeasured. */
-const remaining = computed(() => remainingOf(props.facts))
 </script>
 
 <template>
@@ -102,8 +94,9 @@ const remaining = computed(() => remainingOf(props.facts))
     <p class="max-w-[52rem] text-muted text-sm">{{ t('wall.emptyResumeHint') }}</p>
   </section>
 
-  <!-- A Run in flight: two counts that move, and what closing the window means.
-       There is no stop control here and none is wanted (ADR 0016). -->
+  <!-- A Run in flight: two counts that move, and what the two stops mean. The
+       page's only stop is the navigation's Exit (ADR 0022), which asks first;
+       closing the window is the other, and this band adds no stop of its own. -->
   <section
     v-else-if="band === 'running'"
     class="mb-10 flex flex-col gap-2 border border-border bg-surface-raised p-6"
@@ -138,8 +131,8 @@ const remaining = computed(() => remainingOf(props.facts))
     <p class="font-serif text-2xl">
       <Message message="wall.progress" :params="downloadedProgressParams" />
     </p>
-    <p v-if="remaining !== null" class="max-w-[52rem] text-muted text-sm">
-      <Message message="wall.resumeBody" :params="{ remaining }" />
+    <p v-if="facts.missing !== null" class="max-w-[52rem] text-muted text-sm">
+      <Message message="wall.resumeBody" :params="{ remaining: facts.missing }" />
     </p>
     <!-- The band's rule cannot reach here with an unread list, but the copy
          never invents a number on a fact that is absent. -->
