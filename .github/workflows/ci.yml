@@ -55,3 +55,15 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # #108: `build/` is the program, and only a booted artifact catches the
+      # bundling seam typecheck, lint and the unit tests cannot (the
+      # `createRequire` banner in `scripts/build.ts` is why). The command stages
+      # the built tree into a temporary root, drives the page's own API, and
+      # proves a tree missing an artifact refuses. Both steps stay inside this
+      # one required check; a second job would have to join branch protection.
+      - name: Build program
+        run: pnpm build
+
+      - name: Boot built tree
+        run: pnpm smoke:boot
