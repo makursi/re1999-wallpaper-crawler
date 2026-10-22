@@ -23,14 +23,28 @@
 // artifact can demonstrate — a unit test injects the missing file, this runs the
 // program.
 //
+// Finally it runs the third entry, `update.js`, against the staged package with
+// no installation pointer in the redirected `%LOCALAPPDATA%`: the updater must
+// resolve no installation, refuse in Chinese and exit non-zero before it moves
+// anything. That is the updater's bundle proven to load; its real folder swap is
+// still not exercised here.
+//
+// **What "no network" means here.** The staged tree has no `.env`, so the status
+// read never asks the Gallery list, and `--no-open` keeps the browser shut. It
+// needs no real Run either. The boot does make one outbound request of its own —
+// the Console's courtesy update check (`web/server/update-check.ts`), bounded at
+// three seconds and never fatal — and this command neither silences it nor
+// pretends it does not happen. So: no `.env`, no browser and no real Run; the
+// only outbound request is that bounded check.
+//
+// **What the CI claim covers.** The build compiles all three entries; this
+// command boots the Console and runs the updater's refusal. `run.js` is compiled
+// but never executed, so a bundling failure that only `run.js` has stays green —
+// named here rather than implied away.
+//
 // **What it cannot cover, by design.** The Windows-only surfaces stay untested
 // here: `packaging/启动.bat`, `packaging/更新.bat`, the updater's real-folder
-// moves (`update.js` is built but never run), and a `node_modules` junction
-// (`pnpm-workspace.yaml`). The check also needs no site, no real Run and no
-// `.env`: the staged tree has none, so the status read never asks the Gallery
-// list, and the browser is not opened (`--no-open`). The one outbound request is
-// the boot's courtesy update check; its answer is never needed and its failure is
-// already "no notice".
+// moves, and a `node_modules` junction (`pnpm-workspace.yaml`).
 //
 // **What it writes, and where.** Only inside the temporary root: the staged
 // `app`, the `data` directory and a redirected `%LOCALAPPDATA%` for the install
@@ -38,8 +52,16 @@
 // `installRootOf` recognizes). The root is removed on the way out, and its shape
 // is deliberately not asserted: it is scaffolding, not the subject.
 //
+// **A port the fetch standard blocks.** `--port 0` lets the OS choose, and on
+// this machine the dynamic range (1024–15000) includes ports `fetch` refuses
+// (`bad port`, 3659 among them). The server binds one happily and the driver's
+// own request then fails through no fault of the program, so the console case
+// retries the whole boot with a fresh port twice before letting the failure
+// through. Bounded and deterministic: at most three boots, and any other failure
+// is reported on the first attempt.
+//
 // Usage: `pnpm smoke:boot [built-tree]` — the tree defaults to `<repo>/build`,
-// which is why CI runs `pnpm build` first.
+// and both cases stage it, which is why CI runs `pnpm build` first.
 
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
@@ -56,7 +78,7 @@ import {
 } from '../web/server/instance-record.js'
 import { packageVersion } from './package-version.js'
 
-/** The repository root: this script's parent, and the source of the version. */
+/** The repository root: this script's parent. The version comes from `PACKAGE_FILE`. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 
 /** The tree `pnpm build` writes; the argument names another one. */
@@ -65,9 +87,10 @@ const DEFAULT_TREE = path.join(REPO_ROOT, 'build')
 /** The one version this repository declares; the build injects it. */
 const PACKAGE_FILE = path.join(REPO_ROOT, 'package.json')
 
-/** The two entries the refusal case needs to know about by name. */
+/** The entries this command starts or names by name. */
 const SERVER_ENTRY = 'server.js'
 const RUN_ENTRY = 'run.js'
+const UPDATE_ENTRY = 'update.js'
 
 /**
  * The address the Console prints once it is listening: the loopback origin, the
@@ -83,8 +106,18 @@ const BOOT_TIMEOUT_MS = 30_000
 /** An accepted exit answers on the spot and stops the process shortly after. */
 const EXIT_TIMEOUT_MS = 10_000
 
+/** The updater's refusal is immediate; this is only a bound on a hung process. */
+const UPDATER_TIMEOUT_MS = 10_000
+
 /** One API request's budget: loopback, so this is already generous. */
 const REQUEST_TIMEOUT_MS = 10_000
+
+/**
+ * How many more boots a port `fetch` refuses is worth. The OS assigns the port,
+ * and a blocked one is the OS's pick, not the program's fault; two fresh boots
+ * make the check's own probability of a false red effectively zero.
+ */
+const PORT_RETRIES = 2
 
 /**
  * The staged tree's version metadata is rewritten to this, so a status payload
@@ -113,10 +146,21 @@ interface Staged {
   dataRoot: string
 }
 
-/** A started program and the output it has written so far. */
+/**
+ * One started program. The handle owns the child, its output, the address wait,
+ * the close wait and the stop, so a case never subscribes to the same process
+ * twice and no process outlives the case that started it.
+ */
 interface Program {
   child: ChildProcess
-  output: () => string
+  /** Everything the child has written so far, stdout and stderr together. */
+  output(): string
+  /** Resolve once the startup address is printed; reject on exit or timeout. */
+  address(): Promise<string>
+  /** Resolve with the exit code once the child closes; kill it at the limit. */
+  close(timeoutMs: number): Promise<number | null>
+  /** Leave nothing running, even when a check threw mid-boot. */
+  stop(): Promise<void>
 }
 
 /**
@@ -124,7 +168,7 @@ interface Program {
  * printed as it happens so a CI log says how far the boot got; the detail is
  * what a failure prints under the label.
  */
-function check(
+function assertAndReport(
   condition: unknown,
   what: string,
   detail: string | (() => string) = '',
@@ -186,10 +230,10 @@ function rewriteStagedVersion(appRoot: string): void {
  * The child's environment: this machine's, minus the site configuration it could
  * have inherited, plus the two injected roots and a redirected `%LOCALAPPDATA%`.
  *
- * Deleting the configuration keys is what makes "no network" a property of the
- * command rather than a property of the machine running it: with no `BASE_ORIGIN`
- * the Console derives no Gallery-list endpoint and the status read cannot ask the
- * site.
+ * Deleting the configuration keys is what keeps the status read from asking the
+ * site: with no `BASE_ORIGIN` the Console derives no Gallery-list endpoint. It
+ * does not make the boot request-free — the courtesy update check still runs —
+ * so "no network" is not this command's claim; "no site request" is.
  */
 function childEnvironment(staged: Staged): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
@@ -201,26 +245,27 @@ function childEnvironment(staged: Staged): NodeJS.ProcessEnv {
 }
 
 /**
- * Start the staged program exactly as a packaged launcher does: this Node
- * runtime, `app/server.js`, with the two roots in the environment and no browser.
+ * Start one entry of the staged program exactly as a packaged launcher does:
+ * this Node runtime, a file inside `app/`, with the two roots in the environment.
  * The working directory is the staged app root as well, so nothing can lean on
  * where the driver was started from.
+ *
+ * The output is collected once, and the address wait, the close wait and every
+ * failure report read that same buffer.
  */
-function startProgram(staged: Staged): Program {
-  const child = spawn(
-    process.execPath,
-    [path.join(staged.appRoot, SERVER_ENTRY), '--no-open', '--port', '0'],
-    {
-      cwd: staged.appRoot,
-      env: childEnvironment(staged),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    },
-  )
+function startProgram(staged: Staged, entry: string, args: readonly string[] = []): Program {
+  const child = spawn(process.execPath, [path.join(staged.appRoot, entry), ...args], {
+    cwd: staged.appRoot,
+    env: childEnvironment(staged),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
 
   let output = ''
+  let onChunk: (() => void) | null = null
   const collect = (chunk: Buffer): void => {
     output += chunk.toString('utf8')
+    onChunk?.()
   }
   child.stdout?.on('data', collect)
   child.stderr?.on('data', collect)
@@ -228,63 +273,101 @@ function startProgram(staged: Staged): Program {
   // emitter with no listener; the output is what the caller's report reads.
   child.once('error', error => {
     output += `${error.message}\n`
+    onChunk?.()
   })
-  return { child, output: () => output }
-}
 
-/**
- * Wait for the startup address the program prints. The address carries this
- * boot's token, so every later request is made with it — the guard refuses a
- * request without one, and a smoke that bypassed the guard would prove nothing.
- */
-function waitForAddress(program: Program): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let settled = false
-    const finish = (action: () => void): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      action()
-    }
-    const scan = (): void => {
-      const match = BOOT_ADDRESS.exec(program.output())
-      if (match !== null) finish(() => resolve(match[1]))
-    }
-    const timer = setTimeout(() => {
-      finish(() =>
-        reject(new SmokeFailure(`no boot address within ${BOOT_TIMEOUT_MS} ms`, program.output())),
+  // Attached at spawn, so a process that exits before a case asks for its code
+  // cannot fire `close` into the void. The updater exits this fast.
+  const closed = new Promise<number | null>(resolve => {
+    child.once('close', code => resolve(code))
+  })
+
+  const closeWithin = (timeoutMs: number): Promise<number | null> =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.kill()
+        reject(new SmokeFailure(`the program did not stop within ${timeoutMs} ms`, output))
+      }, timeoutMs)
+      void closed.then(code => {
+        clearTimeout(timer)
+        resolve(code)
+        return code
+      })
+    })
+
+  /** Resolve once the address is printed, riding the handle's one collector. */
+  const waitForAddress = (): Promise<string> =>
+    new Promise((resolve, reject) => {
+      let settled = false
+      const finish = (action: () => void): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        onChunk = null
+        action()
+      }
+      const scan = (): void => {
+        const match = BOOT_ADDRESS.exec(output)
+        if (match !== null) finish(() => resolve(match[1]))
+      }
+      const timer = setTimeout(
+        () =>
+          finish(() =>
+            reject(new SmokeFailure(`no boot address within ${BOOT_TIMEOUT_MS} ms`, output)),
+          ),
+        BOOT_TIMEOUT_MS,
       )
-    }, BOOT_TIMEOUT_MS)
 
-    program.child.stdout?.on('data', scan)
-    program.child.stderr?.on('data', scan)
-    program.child.once('error', error => finish(() => reject(error)))
-    program.child.once('exit', code =>
-      finish(() =>
-        reject(
-          new SmokeFailure(
-            `the program exited ${String(code)} before it printed an address`,
-            program.output(),
+      child.once('error', error => finish(() => reject(error)))
+      child.once('exit', code =>
+        finish(() =>
+          reject(
+            new SmokeFailure(
+              `the program exited ${String(code)} before it printed an address`,
+              output,
+            ),
           ),
         ),
-      ),
-    )
-    scan()
-  })
+      )
+      onChunk = scan
+      scan()
+    })
+
+  let address: Promise<string> | null = null
+  return {
+    child,
+    output: () => output,
+    address: () => (address ??= waitForAddress()),
+    close: closeWithin,
+    stop: async () => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        await closed.catch(() => null)
+        return
+      }
+      child.kill()
+      try {
+        await closeWithin(EXIT_TIMEOUT_MS)
+      } catch {
+        // The temporary root is about to go; a kill that did not finish is
+        // reported by the caller's own failure, not by a second one here.
+      }
+    },
+  }
 }
 
-/** Wait for the process to close, with its stdio drained; kill it at the limit. */
-function waitForClose(program: Program, timeoutMs: number): Promise<number | null> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      program.child.kill()
-      reject(new SmokeFailure(`the program did not stop within ${timeoutMs} ms`, program.output()))
-    }, timeoutMs)
-    program.child.once('close', code => {
-      clearTimeout(timer)
-      resolve(code)
-    })
-  })
+/** Start the staged entry, run one case against it, and always stop it. */
+async function withStartedProgram(
+  staged: Staged,
+  entry: string,
+  args: readonly string[],
+  body: (program: Program) => Promise<void>,
+): Promise<void> {
+  const program = startProgram(staged, entry, args)
+  try {
+    await body(program)
+  } finally {
+    await program.stop()
+  }
 }
 
 /** The route on the printed address, keeping the `?token=` it carries. */
@@ -348,49 +431,96 @@ function exitingOf(body: unknown): boolean | null {
   return typeof body.exiting === 'boolean' ? body.exiting : null
 }
 
+/** Whether the text carries at least one CJK character, so "Chinese" is observed. */
+function hasChinese(text: string): boolean {
+  return /[\u4e00-\u9fff]/u.test(text)
+}
+
 /**
  * The complete tree: start it, read its own version and address through the
  * page's API, check the record it published, and stop it through the exit route.
  */
 async function caseCompleteTree(staged: Staged, expectedVersion: string): Promise<void> {
-  const program = startProgram(staged)
-  try {
-    const address = await waitForAddress(program)
+  await withStartedProgram(staged, SERVER_ENTRY, ['--no-open', '--port', '0'], async program => {
+    const address = await program.address()
     const url = new URL(address)
     const token = url.searchParams.get('token') ?? ''
     const port = Number(url.port)
-    check(token.length > 0, 'the printed address carries a boot token')
+    assertAndReport(token.length > 0, 'the printed address carries a boot token')
 
     const status = await request(address, '/api/status')
-    check(status.status === 200, `GET /api/status answers 200 (got ${status.status})`, status.text)
+    assertAndReport(
+      status.status === 200,
+      `GET /api/status answers 200 (got ${status.status})`,
+      status.text,
+    )
     const head = statusOf(status)
-    check(
+    assertAndReport(
       head.version === expectedVersion,
       `the page reports the version the build injected (${expectedVersion})`,
       () => `reported: ${String(head.version)}`,
     )
 
     const recordFile = path.join(staged.dataRoot, INSTANCE_RECORD_FILE_NAME)
-    check(fs.existsSync(recordFile), 'the boot published the instance record')
+    assertAndReport(fs.existsSync(recordFile), 'the boot published the instance record')
     const record = instanceRecordOf(recordFile)
-    check(record.version === INSTANCE_RECORD_VERSION, 'the instance record has a known shape')
-    check(record.port === port, 'the instance record names the bound port')
-    check(record.token === token, "the instance record carries this boot's token")
-    check(record.pid === program.child.pid, "the instance record names this program's pid")
+    assertAndReport(
+      record.version === INSTANCE_RECORD_VERSION,
+      'the instance record has a known shape',
+    )
+    assertAndReport(record.port === port, 'the instance record names the bound port')
+    assertAndReport(record.token === token, "the instance record carries this boot's token")
+    assertAndReport(
+      record.pid === program.child.pid,
+      "the instance record names this program's pid",
+    )
 
     const exit = await request(address, '/api/exit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ confirm: false }),
     })
-    check(exit.status === 202, `an idle exit answers 202 (got ${exit.status})`, exit.text)
-    check(exitingOf(exit.body) === true, 'the exit answer says the service is exiting')
+    assertAndReport(exit.status === 202, `an idle exit answers 202 (got ${exit.status})`, exit.text)
+    assertAndReport(exitingOf(exit.body) === true, 'the exit answer says the service is exiting')
 
-    const code = await waitForClose(program, EXIT_TIMEOUT_MS)
-    check(code === 0, `the program exits 0 once asked (got ${String(code)})`, program.output)
-    check(!fs.existsSync(recordFile), 'the clean exit removed the instance record')
-  } finally {
-    await stopIfAlive(program)
+    const code = await program.close(EXIT_TIMEOUT_MS)
+    assertAndReport(code === 0, `the program exits 0 once asked (got ${String(code)})`, () =>
+      program.output(),
+    )
+    assertAndReport(!fs.existsSync(recordFile), 'the clean exit removed the instance record')
+  })
+}
+
+/**
+ * Why the console case may run again with a fresh port: `fetch` refuses a
+ * WHATWG-blocked port, which the OS can hand out through `--port 0` on this
+ * machine. The program bound the port and answered the printed address; the
+ * failure is the driver's, and a fresh boot is the fix.
+ */
+function isBlockedPortFailure(error: unknown): boolean {
+  return (
+    error instanceof Error && error.cause instanceof Error && /bad port/i.test(error.cause.message)
+  )
+}
+
+/**
+ * The console case, retried when the OS picks a port `fetch` refuses. Bounded by
+ * `PORT_RETRIES`; every other failure is reported on the first attempt.
+ */
+async function caseCompleteTreeWithPortRetry(
+  staged: Staged,
+  expectedVersion: string,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await caseCompleteTree(staged, expectedVersion)
+      return
+    } catch (error) {
+      if (attempt >= PORT_RETRIES || !isBlockedPortFailure(error)) throw error
+      process.stdout.write(
+        `retry - the OS chose a port fetch refuses; booting again with a fresh port (retry ${attempt + 1}/${PORT_RETRIES})\n`,
+      )
+    }
   }
 }
 
@@ -403,28 +533,41 @@ async function caseMissingArtifact(staged: Staged): Promise<void> {
   const missing = path.join(staged.appRoot, RUN_ENTRY)
   fs.rmSync(missing, { force: true })
 
-  const program = startProgram(staged)
-  try {
-    const code = await waitForClose(program, BOOT_TIMEOUT_MS)
+  await withStartedProgram(staged, SERVER_ENTRY, ['--no-open', '--port', '0'], async program => {
+    const code = await program.close(BOOT_TIMEOUT_MS)
     const output = program.output()
-    check(code !== 0, `a tree missing ${RUN_ENTRY} exits non-zero (got ${String(code)})`, output)
-    check(!BOOT_ADDRESS.test(output), 'it refuses before it prints an address', output)
-    check(output.includes(missing), 'the refusal names the artifact it is missing', output)
-  } finally {
-    await stopIfAlive(program)
-  }
+    assertAndReport(
+      code !== 0,
+      `a tree missing ${RUN_ENTRY} exits non-zero (got ${String(code)})`,
+      output,
+    )
+    assertAndReport(!BOOT_ADDRESS.test(output), 'it refuses before it prints an address', output)
+    assertAndReport(
+      output.includes(missing),
+      'the refusal names the artifact it is missing',
+      output,
+    )
+  })
 }
 
-/** Leave nothing running, even when a check threw mid-boot. */
-async function stopIfAlive(program: Program): Promise<void> {
-  if (program.child.exitCode !== null) return
-  program.child.kill()
-  try {
-    await waitForClose(program, EXIT_TIMEOUT_MS)
-  } catch {
-    // The temporary root is about to go; a kill that did not finish is reported
-    // by the caller's own failure, not by a second one here.
-  }
+/**
+ * The updater's third entry, exercised through its own refusal: the staged
+ * package has no installation pointer in the redirected `%LOCALAPPDATA%`, so
+ * `update.js` resolves no installation and says so in Chinese with a non-zero
+ * exit — before it probes for a running service and before it moves a file. It
+ * stays offline, immediate and inside the temporary root.
+ */
+async function caseUpdaterRefusal(staged: Staged): Promise<void> {
+  await withStartedProgram(staged, UPDATE_ENTRY, [staged.root], async program => {
+    const code = await program.close(UPDATER_TIMEOUT_MS)
+    const output = program.output()
+    assertAndReport(
+      code !== 0,
+      `a tree with no installation pointer makes ${UPDATE_ENTRY} exit non-zero (got ${String(code)})`,
+      output,
+    )
+    assertAndReport(hasChinese(output), `${UPDATE_ENTRY} refuses in Chinese`, output)
+  })
 }
 
 /** Remove the temporary root; a failure here must not mask the boot's verdict. */
@@ -449,12 +592,15 @@ function indent(text: string): string {
 }
 
 async function main(): Promise<void> {
+  // The argument names the tree both staged runs start from: the complete one
+  // boots and answers, the broken one loses `run.js` from a copy of the same tree.
   const tree = treeOf(process.argv.slice(2))
   const expectedVersion = packageVersion(PACKAGE_FILE)
 
   const complete = stage(tree)
   try {
-    await caseCompleteTree(complete, expectedVersion)
+    await caseCompleteTreeWithPortRetry(complete, expectedVersion)
+    await caseUpdaterRefusal(complete)
   } finally {
     cleanup(complete.root)
   }
