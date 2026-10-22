@@ -1,15 +1,17 @@
 // ── GET /api/gallery (#33, sizes #48) ───────────────────────────────
 //
-// The Gallery list read against the Mirror: one row per entry, the Mirror's
-// extras after them, the gap as set arithmetic, and the newest Run's
-// `newSinceLastRun`. All the deciding is in the pure `buildGalleryView`; this
-// module only gathers its inputs.
+// The Mirror, with the Gallery list read against it: one row per Wallpaper
+// really on disk (the list's downloaded entries in its order, then the retired
+// extras), the gap as set arithmetic, and the newest Run's `newSinceLastRun`.
+// All the deciding is in the pure `buildGalleryView`; this module only gathers
+// its inputs.
 //
 // The rows' pixel sizes are the masonry's second input (#48): the wall deals
 // tiles into the shortest column, and the measurement has to be the file's,
-// because the page would only learn it once the lazy thumbnail arrived. The
-// measuring runs against the one listing read below, so a name the Mirror no
-// longer holds is skipped rather than opened.
+// because the page would only learn it once the lazy thumbnail arrived. Every
+// row names a file by construction, and the measuring runs against the one
+// listing read below, so a name the Mirror no longer holds is skipped rather
+// than opened.
 
 import * as path from 'node:path'
 
@@ -44,9 +46,9 @@ export function registerGalleryRoute(app: Hono, runtime: ServiceRuntime): void {
       sizeSource === undefined
         ? {}
         : await imageSizesOf(
-            // Only a row with a file can be measured: a `missing` row is a
-            // Gallery entry the Mirror does not hold.
-            view.rows.filter(row => row.state !== 'missing').map(row => row.name),
+            // A row exists only for a Wallpaper really on disk, so every row is
+            // measurable — and nothing else is ever opened.
+            view.rows.map(row => row.name),
             name => mirrorFilePath(config.imagesDir, listed, name),
             sizeSource,
           )
