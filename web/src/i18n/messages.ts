@@ -6,7 +6,7 @@
 // exists in one locale and not the other fails `tsc` here (the English
 // dictionary carries `satisfies Record<MessageKey, string>`, which rejects a
 // missing key *and* an extra one) as well as the parity test in
-// `tests/web/i18n/messages.test.ts`. A Chinese sentence can therefore never
+// `tests/web/src/i18n/messages.test.ts`. A Chinese sentence can therefore never
 // surface inside the English page as a surprise at runtime.
 //
 // This module is pure data plus a lookup: no Vue, no DOM, no `localStorage`.
@@ -22,12 +22,7 @@
 // message-format syntax beyond `{name}`; a framework would add a runtime, a
 // plugin and a second way to name a string, and the page needs none of it.
 
-import type {
-  ConsoleVerdict,
-  ExplainedReasonKind,
-  PrerequisiteCode,
-  RefusalCode,
-} from '../../api-types.js'
+import type { ConsoleVerdict, PrerequisiteCode, RefusalCode } from '../../api-types.js'
 
 /** The locales the page speaks, in the order the switch offers them. */
 export const LOCALES = ['zh-CN', 'en'] as const
@@ -95,29 +90,32 @@ const zhCN = {
   'drawer.title': '运行面板',
   'drawer.close': '关闭(Esc)',
 
-  // The Run panel. Every value the service used to send as prose is now a code
-  // (#47); what is here is the panel's own words, and the code → message maps
-  // at the bottom of this file hold each service code to its copy.
+  // The Run panel (#97) holds four lines: one verdict sentence, `ok N · failed N`,
+  // the figures line the wall's header shows (#94), and at most one problem line.
+  // The run id, the timestamps, the Discovery counters, the success rate, the
+  // defect rows and the routine notes are not here because the panel no longer
+  // shows them — what is here is the whole of what it says.
   'run.heading': '运行',
   'run.readingLog': '正在读取运行日志……',
   'run.noLog': '尚未读取到任何运行日志。',
-  'run.line': '运行 {runId} — 结论:{verdict}',
-  'run.why': '原因:{causes}',
+  // The counts line: `ok N`, and the failure clause only when something failed
+  // (#97). The clause carries its own separator, so the line reads
+  // `ok 1013 · failed 3` — and `ok 1013` when nothing failed.
+  'run.counts': '成功 {ok}',
+  'run.countsFailed': ' · 失败 {failed}',
+  // The verdict's own causes: the last branch of the one problem line, shown one
+  // at a time. The `reasons:` clause that joined them all retired (#97); the
+  // separator stays because a refusal's missing prerequisites still join with it.
   'run.causeSeparator': ';',
   'run.cause.stateNamesAnotherRun': '官网记录和这次运行对不上(可能来自另一次运行)',
   'run.cause.stateUnreadable': '官网记录没读到,没法核对这次运行',
   'run.cause.missingOnDisk': '记录里说新下载了这些文件,磁盘上却找不到:{files}',
-  'run.explained': '这几处是常规情况,已经记下来了,不算失败:',
-  'run.gallery': '官方清单:{line}',
-  'run.galleryReport':
-    '官方总数 {officialTotal} · 上次运行后新增 {newSinceLastRun} · 新增文件 {newFiles}',
-  'run.download': '下载:{line}',
-  'run.downloadReport': '成功 {ok} · 跳过 {skipped} · 失败 {failed} · 成功率 {successRate}',
-  'run.unknown': '未知',
-  'run.defects': '发现的问题:',
   'run.reportMissing': '这次运行的记录没有写完,所以得不出结论。可以再抓一次;已经下载好的会跳过。',
   'run.reportUnreadable': '这次运行的记录是旧格式,这个页面读不懂,所以得不出结论。',
   'run.refusedStart': '没能开始抓取:本地控制台没有接受这次请求。刷新页面后再试一次。',
+  // The site never answered: one sentence, and the start control below it is the
+  // retry. It replaced the defect row that said the same thing without an action
+  // (#97).
   'run.siteUnreachable': '连不上官网,这次一张也没能拿到。检查网络后再抓一次。',
   // The setup notice (#60, #95): with no usable `.env` the panel says why a Run
   // cannot start, and gives the one line to write — two lines, no more. The file
@@ -138,12 +136,11 @@ const zhCN = {
   'verdict.explained': '完成,有几处常规情况已记录,不算失败',
   'verdict.defect': '出现了问题',
 
-  // The Orphaned Run panel: the one state with an action, so its copy has to
-  // explain both what cleaning up does and what it refuses to do.
+  // The Orphaned Run: one sentence and the cleanup control (#97). The long
+  // explanation paragraph retired; what a cleanup does not do is the refusal's
+  // business, not a paragraph's.
   'orphan.line': '孤儿运行 {runId} — 运行日志 {logName} 没有运行报告,且是最近写入的。',
   'orphan.newestLog': '它最新的运行日志',
-  'orphan.explanation':
-    '清理是可选项,不是强制项:它可能仍是一个正在写入的运行,而仅凭日志目录分不清这两种情况。清理会撤回这条提示;运行日志本身永不修改、也不删除,因为它是这次运行的审计轨迹。',
   'orphan.clean': '清理',
   'orphan.refusedCleanup': '本地控制台没有接受这次清理。刷新页面后再试一次。',
 
@@ -228,24 +225,15 @@ const zhCN = {
 
   'prerequisite.envFile': '.env 配置文件',
 
-  'run.explained.discoveryLeak': '有几个不是壁纸的链接混了进来,都已确认来自站点本身:{urls}',
-  'run.explained.mirrorGapExtra': '本地有 {count} 个文件已不在官网清单里',
-
-  // The Run report's defect block, as rows: the page names each class and lays
-  // the values out, instead of printing the raw record. The words are the
-  // wall's, not the report's: "发现了什么" rather than the field's own name.
-  'defect.none': '没有发现问题。',
-  'defect.discoveryLeak': '抓到了 {count} 个不是壁纸的链接',
-  'defect.nonConverged': '没有拿到官网的完整清单',
-  'defect.emptyResult': '一张壁纸也没找到',
-  'defect.persistentFailures': '{count} 张反复下载失败',
+  // The Run report's defects, as the four sentences the panel's one problem line
+  // can say (#97). The nine-row list went with the rest of the panel's log dump;
+  // these remain because the priority in `web/src/lib/run-panel.ts` names them,
+  // and `defect.none` went too: a clean Run's verdict sentence already says so,
+  // and a second "nothing went wrong" line was the noise #97 removed.
   'defect.emptyFiles': '有文件是空的:{files}',
-  'defect.siteAssetNotChecked': '没有核对哪些链接不是壁纸',
-  'defect.siteAssetFalsePositive': '把 {count} 个不是壁纸的链接当成了壁纸',
-  'defect.gallerySourceUnavailable': '没能连上官网,没拿到清单',
-  'defect.mirrorGapNotChecked': '没有核对本地和官网的数量',
+  'defect.persistentFailures': '{count} 张反复下载失败',
+  'defect.emptyResult': '一张壁纸也没找到',
   'defect.mirrorGapMissing': '官网列出的 {count} 张壁纸还没下载',
-  'defect.mirrorGapExtra': '本地有 {count} 个文件已不在官网清单里',
 } as const
 
 /**
@@ -302,8 +290,8 @@ const en = {
   'run.heading': 'Run',
   'run.readingLog': 'Reading the Run log…',
   'run.noLog': 'No Run log has been read.',
-  'run.line': 'Run {runId} — verdict: {verdict}',
-  'run.why': 'Why: {causes}',
+  'run.counts': 'ok {ok}',
+  'run.countsFailed': ' · failed {failed}',
   'run.causeSeparator': '; ',
   'run.cause.stateNamesAnotherRun':
     'the site record does not match this Run (it may belong to another Run)',
@@ -311,14 +299,6 @@ const en = {
     'the site record could not be read, so this Run was not cross-checked',
   'run.cause.missingOnDisk':
     'the log says these files were downloaded, but they are not on disk: {files}',
-  'run.explained': 'These are routine — recorded, not counted as failures:',
-  'run.gallery': 'Gallery: {line}',
-  'run.galleryReport':
-    'officialTotal {officialTotal}, newSinceLastRun {newSinceLastRun}, newFiles {newFiles}',
-  'run.download': 'Download: {line}',
-  'run.downloadReport': 'ok {ok}, skipped {skipped}, failed {failed}, successRate {successRate}',
-  'run.unknown': 'unknown',
-  'run.defects': 'Problems found:',
   'run.reportMissing':
     'This Run’s log stops before its report, so there is no verdict. You can fetch again; wallpapers already downloaded are skipped.',
   'run.reportUnreadable':
@@ -338,8 +318,6 @@ const en = {
   'orphan.line':
     'Orphaned Run {runId} — the Run log {logName} has no Run report and was written recently.',
   'orphan.newestLog': 'its newest Run log',
-  'orphan.explanation':
-    "Cleaning it up is offered, not forced: it may still be a Run that is writing, and the log directory alone cannot tell the two apart. The cleanup withdraws this notice; the Run log itself is never edited or deleted, because it is the Run's audit trail.",
   'orphan.clean': 'Clean up',
   'orphan.refusedCleanup':
     'The Console did not accept the cleanup. Refresh the page and try again.',
@@ -397,22 +375,10 @@ const en = {
 
   'prerequisite.envFile': 'the .env file',
 
-  'run.explained.discoveryLeak':
-    'a few links that are not wallpapers came along; they are the site’s own assets: {urls}',
-  'run.explained.mirrorGapExtra': '{count} local files are no longer in the Gallery list',
-
-  'defect.none': 'Nothing went wrong.',
-  'defect.discoveryLeak': '{count} links that are not wallpapers were picked up',
-  'defect.nonConverged': 'the Gallery list did not answer',
-  'defect.emptyResult': 'no wallpapers were found',
-  'defect.persistentFailures': '{count} wallpapers kept failing to download',
   'defect.emptyFiles': 'files downloaded empty: {files}',
-  'defect.siteAssetNotChecked': 'the non-wallpaper links were not checked',
-  'defect.siteAssetFalsePositive': '{count} non-wallpaper links were taken for wallpapers',
-  'defect.gallerySourceUnavailable': 'the site could not be reached, so there was no list',
-  'defect.mirrorGapNotChecked': 'the local and official counts were not compared',
+  'defect.persistentFailures': '{count} wallpapers kept failing to download',
+  'defect.emptyResult': 'no wallpapers were found',
   'defect.mirrorGapMissing': '{count} listed wallpapers are not downloaded yet',
-  'defect.mirrorGapExtra': '{count} local files are no longer in the Gallery list',
 } satisfies Record<MessageKey, string>
 
 /**
@@ -431,12 +397,6 @@ export const REFUSAL_MESSAGE_KEYS: Record<RefusalCode, MessageKey> = {
 /** The prerequisite code → message key map (#47), same guarantee as above. */
 export const PREREQUISITE_MESSAGE_KEYS: Record<PrerequisiteCode, MessageKey> = {
   'env-file': 'prerequisite.envFile',
-}
-
-/** The explained reason kind → message key map (#47). */
-export const EXPLAINED_REASON_MESSAGE_KEYS: Record<ExplainedReasonKind, MessageKey> = {
-  'discovery-leak': 'run.explained.discoveryLeak',
-  'mirror-gap-extra': 'run.explained.mirrorGapExtra',
 }
 
 /**

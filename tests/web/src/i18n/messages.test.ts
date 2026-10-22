@@ -10,16 +10,10 @@
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  CONSOLE_VERDICTS,
-  EXPLAINED_REASON_KINDS,
-  PREREQUISITE_CODES,
-  REFUSAL_CODES,
-} from '../../../../web/api-types.js'
+import { CONSOLE_VERDICTS, PREREQUISITE_CODES, REFUSAL_CODES } from '../../../../web/api-types.js'
 import type { Locale, MessageKey } from '../../../../web/src/i18n/messages.js'
 import {
   DEFAULT_LOCALE,
-  EXPLAINED_REASON_MESSAGE_KEYS,
   LOCALES,
   PREREQUISITE_MESSAGE_KEYS,
   REFUSAL_MESSAGE_KEYS,
@@ -93,8 +87,8 @@ describe('the locale dictionary', () => {
   })
 
   it('leaves a placeholder with no parameter in the text rather than dropping it', () => {
-    expect(translate('en', 'run.line', { runId: '2026-10-18T01-03-31' })).toBe(
-      'Run 2026-10-18T01-03-31 — verdict: {verdict}',
+    expect(translate('en', 'gallery.figures', { officialTotal: 1013 })).toBe(
+      'Gallery 1013 · downloaded {downloaded} · missing {missing}',
     )
   })
 
@@ -108,11 +102,19 @@ describe('the locale dictionary', () => {
   })
 
   it('marks every parameter in a message, and only the parameters', () => {
-    expect(translateParts('en', 'run.line', { runId: 'r-1', verdict: 'clean' })).toEqual([
-      { text: 'Run ', name: null },
-      { text: 'r-1', name: 'runId' },
-      { text: ' — verdict: ', name: null },
-      { text: 'clean', name: 'verdict' },
+    expect(
+      translateParts('en', 'gallery.figures', {
+        officialTotal: 1013,
+        downloaded: 1001,
+        missing: 12,
+      }),
+    ).toEqual([
+      { text: 'Gallery ', name: null },
+      { text: '1013', name: 'officialTotal' },
+      { text: ' · downloaded ', name: null },
+      { text: '1001', name: 'downloaded' },
+      { text: ' · missing ', name: null },
+      { text: '12', name: 'missing' },
     ])
   })
 })
@@ -222,12 +224,19 @@ describe('the update notice', () => {
 /**
  * The service's codes, and the page's words for them (#47).
  *
- * The contract exports all four vocabularies as runtime tuples — refusals,
- * prerequisites, explained reasons and verdicts — precisely so this loop can be
- * exhaustive: a code added to `web/api-types.ts` without a message is a failure
- * here, in both locales, not an English sentence discovered in a browser. The
+ * The contract exports three of its vocabularies as runtime tuples — refusals,
+ * prerequisites and verdicts — precisely so this loop can be exhaustive: a code
+ * added to `web/api-types.ts` without a message is a failure here, in both
+ * locales, not an English sentence discovered in a browser. The
  * `Record<Code, MessageKey>` maps are what tie a code to a key at compile time;
  * this is the data half of the same promise.
+ *
+ * The explained reasons are the fourth vocabulary, and #97 retired their copy
+ * with the routine-notes list the panel no longer shows: the payload still
+ * carries the reasons, but the page says only the verdict sentence, so there is
+ * no reader-facing sentence left to hold to these two locales. The explained
+ * kinds are therefore not in the loop below — a page surface that returns needs
+ * its own words back.
  */
 describe('every service code has copy in both locales', () => {
   const codeKeys: [string, MessageKey][] = [
@@ -239,10 +248,6 @@ describe('every service code has copy in both locales', () => {
       `prerequisite:${code}`,
       PREREQUISITE_MESSAGE_KEYS[code],
     ]),
-    ...EXPLAINED_REASON_KINDS.map((kind): [string, MessageKey] => [
-      `explained:${kind}`,
-      EXPLAINED_REASON_MESSAGE_KEYS[kind],
-    ]),
     ...CONSOLE_VERDICTS.map((code): [string, MessageKey] => [
       `verdict:${code}`,
       VERDICT_MESSAGE_KEYS[code],
@@ -253,10 +258,7 @@ describe('every service code has copy in both locales', () => {
     // A mapping that dropped a code would be a `tsc` error; this states the
     // intent from the other side, so a tuple that quietly lost a member fails.
     expect(codeKeys).toHaveLength(
-      REFUSAL_CODES.length +
-        PREREQUISITE_CODES.length +
-        EXPLAINED_REASON_KINDS.length +
-        CONSOLE_VERDICTS.length,
+      REFUSAL_CODES.length + PREREQUISITE_CODES.length + CONSOLE_VERDICTS.length,
     )
     expect([...REFUSAL_CODES]).toEqual([
       'run-busy',
@@ -492,6 +494,134 @@ describe('a failure speaks plainly', () => {
       expect(translate(locale, 'run.siteUnreachable')).toMatch(
         locale === 'zh-CN' ? /再抓|重试/ : /try again|fetch again/i,
       )
+    }
+  })
+})
+
+/**
+ * The Run panel's four lines (#97): one verdict sentence, `ok N · failed N`, the
+ * figures the wall's header prints (#94), and at most one problem line. The
+ * subtraction is as much of the ticket as the addition — the run id, the
+ * Discovery counters, the success rate, the nine defect rows, the routine notes
+ * and the `reasons:` clause are gone, and their words went with them.
+ *
+ * What the one problem line can be is `web/src/lib/run-panel.ts`'s priority, and
+ * its every branch is unit-tested there; here is the copy that priority needs,
+ * and the proof that the retired rows' copy is not left behind in either locale.
+ */
+describe('the Run panel’s four lines', () => {
+  it('says ok N, and adds the failure clause only when something failed', () => {
+    // The acceptance criterion's own sentence, and the one it forbids.
+    expect(translate('en', 'run.counts', { ok: 1013 })).toBe('ok 1013')
+    expect(translate('en', 'run.countsFailed', { failed: 3 })).toBe(' · failed 3')
+    expect(translate('en', 'run.counts', { ok: 1013 })).not.toContain('failed')
+
+    for (const locale of LOCALES) {
+      expect(translate(locale, 'run.counts', { ok: 1013 }), `${locale}: counts`).toContain('1013')
+      expect(translate(locale, 'run.countsFailed', { failed: 3 }), `${locale}: failure`).toContain(
+        '3',
+      )
+      // The failure clause carries its own separator, so the two keys compose
+      // into one line rather than into two sentences.
+      expect(
+        translate(locale, 'run.countsFailed', { failed: 3 }),
+        `${locale}: separator`,
+      ).toContain('·')
+    }
+  })
+
+  it('lets the verdict sentence name no Run — no id, timestamp or log name', () => {
+    for (const code of CONSOLE_VERDICTS) {
+      for (const locale of LOCALES) {
+        const sentence = translate(locale, VERDICT_MESSAGE_KEYS[code])
+        // A sentence with no parameter cannot carry an id, a time or a file.
+        expect(placeholders(sentence), `${code} in ${locale}: ${sentence}`).toEqual([])
+      }
+    }
+  })
+
+  it('keeps only the defect classes the one problem line can show', () => {
+    // The nine rows retired. The four that remain are the problem line's own
+    // sentences; `defect.none` went with the list, and the site-unreachable row
+    // is superseded by `run.siteUnreachable`, which names the retry.
+    for (const locale of LOCALES) {
+      expect(
+        keysOf(locale).filter(key => key.startsWith('defect.')),
+        `${locale}: defect keys`,
+      ).toEqual([
+        'defect.emptyFiles',
+        'defect.emptyResult',
+        'defect.mirrorGapMissing',
+        'defect.persistentFailures',
+      ])
+    }
+  })
+
+  it('retires the words of everything the panel no longer shows', () => {
+    const retired = [
+      // The run id, the `reasons:` clause and the routine-notes list.
+      'run.line',
+      'run.why',
+      'run.explained',
+      'run.explained.discoveryLeak',
+      'run.explained.mirrorGapExtra',
+      // The Gallery numbers, the Discovery counters and the success-rate rows.
+      'run.gallery',
+      'run.galleryReport',
+      'run.download',
+      'run.downloadReport',
+      'run.unknown',
+      // The nine-row defect list.
+      'run.defects',
+      'defect.none',
+      'defect.discoveryLeak',
+      'defect.nonConverged',
+      'defect.siteAssetNotChecked',
+      'defect.siteAssetFalsePositive',
+      'defect.gallerySourceUnavailable',
+      'defect.mirrorGapNotChecked',
+      'defect.mirrorGapExtra',
+    ]
+    for (const locale of LOCALES) {
+      for (const key of retired) {
+        expect(keysOf(locale), `${locale} kept ${key}`).not.toContain(key)
+      }
+    }
+  })
+})
+
+/**
+ * The Orphaned Run (#97): one sentence plus the cleanup button. The long
+ * explanation paragraph retired with the rest of the panel's prose; the refusal
+ * has to stay truthful — the Console can say no, and a cleanup never touches the
+ * Run log.
+ */
+describe('the orphan panel', () => {
+  /** The orphan copy in one locale, sorted; `orphan.*` is the panel whole. */
+  function orphanKeysOf(locale: Locale): string[] {
+    return keysOf(locale).filter(key => key.startsWith('orphan.'))
+  }
+
+  it('is one sentence and the control, in both locales', () => {
+    for (const locale of LOCALES) {
+      expect(orphanKeysOf(locale), `${locale}: orphan keys`).toEqual([
+        'orphan.clean',
+        'orphan.line',
+        'orphan.newestLog',
+        'orphan.refusedCleanup',
+      ])
+    }
+  })
+
+  it('keeps the refusal truthful: the Console said no, and no log was deleted', () => {
+    for (const locale of LOCALES) {
+      const refusal = translate(locale, 'orphan.refusedCleanup')
+      expect(refusal, `${locale}: ${refusal}`).toMatch(
+        locale === 'zh-CN' ? /没有接受/ : /did not accept/i,
+      )
+      // The cleanup is an acknowledgement, never an edit: its own copy must not
+      // promise that a log went away (ADR 0009).
+      expect(refusal, `${locale}: ${refusal}`).not.toMatch(/delet|删除|rewrote|重写/i)
     }
   })
 })
