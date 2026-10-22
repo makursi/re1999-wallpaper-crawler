@@ -63,7 +63,13 @@ the dry run that builds everything but creates no Release.
 
 `CHANGELOG.md` is the one user-readable record — Chinese, player-facing, with
 its extraction rule stated in its own header: each version is exactly
-`## X.Y.Z`, and its body runs to the next `## ` heading. Bump
+`## X.Y.Z`, and its body runs to the next `## ` heading. The section is an
+instance of the template that header states — up to seven `###` sections in a
+fixed order (新增 / 变更 / 修复 / 破坏性变更 / 安装 / 升级说明 / 下载文件, only
+the applicable ones written), no preamble line, no personal pronouns — and
+`scripts/release-notes.ts` refuses a body whose headings, order, empty sections,
+archive name or pronouns break it before anything is built, while `pnpm test`
+runs the same check over the version `package.json` names (ADR 0023). Bump
 `package.json`, write that section, commit, then tag. The draft Release is where
 the maintainer downloads the zip, extracts it on a clean Windows machine without
 Node or pnpm, double-clicks `启动.bat`, checks the page, the version and a

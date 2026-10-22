@@ -223,8 +223,9 @@ _Avoid_: storage, workspace, user folder
 **Artifact (制品)**:
 A built file a release carries — the Console entry, the Run entry, the updater
 entry and the page — as opposed to source. A shipped program runs its artifacts
-as they are and compiles nothing.
-_Avoid_: build output, bundle, binary
+as they are and compiles nothing. Not the Release page's 下载文件, which is the
+portable package those artifacts travel in (ADR 0023).
+_Avoid_: build output, bundle, binary, 下载文件, assets
 
 **Launcher (启动器)**:
 The one file a player double-clicks to start the program; in the package it is
@@ -252,6 +253,13 @@ _Avoid_: install record, registry entry, config
 The committed source of the configuration a release carries: the game's site
 constants, never the owner's local settings.
 _Avoid_: .env, default config, sample config
+
+**Release notes (发布说明)**:
+The body of a Release, cut verbatim from one version section of `CHANGELOG.md`
+and written to the fixed template that changelog's header states: seven `###`
+sections in a fixed order, no preamble line, no personal pronouns. The release
+job refuses a section that breaks it (ADR 0023).
+_Avoid_: 正文, release description, notes
 
 ## Architecture
 
