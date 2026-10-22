@@ -40,6 +40,12 @@ export interface ConsoleStatusStore {
   failure: Ref<string | null>
   /** Read once, now — the page's own "try again" after an action. */
   refresh: () => Promise<void>
+  /**
+   * Stop reading for good (#96): after a successful exit there is no service
+   * left to answer, and a poll would only paint a connection failure over the
+   * "exited" notice. Nothing restarts it in this document — the program is gone.
+   */
+  halt: () => void
 }
 
 const status = ref<ConsoleStatusPayload | null>(null)
@@ -51,6 +57,13 @@ let timer: ReturnType<typeof setInterval> | null = null
 /** Whether the first read has been started, so a second consumer does not repeat it. */
 let initialised = false
 
+/**
+ * Whether the page has stopped reading. Set by `halt` only: a status read after
+ * an exit cannot succeed, and the panel must not turn red behind the full-page
+ * "exited" notice.
+ */
+let halted = false
+
 function stopPolling(): void {
   if (timer === null) return
   clearInterval(timer)
@@ -58,13 +71,15 @@ function stopPolling(): void {
 }
 
 function startPolling(): void {
-  if (timer !== null) return
+  if (halted || timer !== null) return
   timer = setInterval(() => void refresh(), POLL_INTERVAL_MS)
 }
 
 async function refresh(): Promise<void> {
+  if (halted) return
   try {
     const reply = await getJson<ConsoleStatusPayload>('/api/status')
+    if (halted) return
     if (!reply.ok) {
       if (status.value === null) failure.value = `HTTP ${reply.status}`
       return
@@ -76,10 +91,17 @@ async function refresh(): Promise<void> {
     if (shouldPoll(reply.body.state)) startPolling()
     else stopPolling()
   } catch (error) {
+    if (halted) return
     if (status.value === null) {
       failure.value = error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/** Stop the page's status reads for good, and say so (#96). */
+function halt(): void {
+  halted = true
+  stopPolling()
 }
 
 /**
@@ -105,5 +127,5 @@ export function useConsoleStatus(): ConsoleStatusStore {
     void refresh()
     reReadOnFocus()
   }
-  return { status, failure, refresh }
+  return { status, failure, refresh, halt }
 }
