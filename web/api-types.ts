@@ -4,10 +4,10 @@
 // type-only in everything that describes a payload — no class, no `enum`, no
 // service logic — so the page's `import type` is erased and no service code
 // reaches the browser bundle (spec decision 27). The exception is the code
-// vocabularies: every code the service can emit — refusals, prerequisites,
-// explained reasons and verdicts — is a runtime tuple, because the dictionary
-// test has to enumerate them to prove that each one has copy in both locales
-// (#47). They are data, not behaviour.
+// vocabularies: every code the service can emit — refusals, prerequisites and
+// verdicts — is a runtime tuple, because the dictionary test has to enumerate
+// them to prove that each one has copy in both locales (#47). They are data, not
+// behaviour.
 
 /** Which Run the Console is looking at (spec decision 16). */
 export type ConsoleRunState = 'idle' | 'running' | 'orphaned'
@@ -50,25 +50,6 @@ export const PREREQUISITE_CODES = ['env-file'] as const
 
 /** A prerequisite's stable code. */
 export type PrerequisiteCode = (typeof PREREQUISITE_CODES)[number]
-
-/** One routine defect class a verdict called `explained`. */
-export const EXPLAINED_REASON_KINDS = ['discovery-leak', 'mirror-gap-extra'] as const
-
-/** An explained reason's stable kind. */
-export type ExplainedReasonKind = (typeof EXPLAINED_REASON_KINDS)[number]
-
-/**
- * One routine class the verdict explained — structured data, not a sentence
- * (`core/report/run-log.ts` built `discoveryLeak: …` / `mirrorGap: extra N`
- * before #47). The page lays it out in the reader's language.
- *
- * The layering is why this restates core's `RunExplainedReason`: the page must
- * not import `core/**`, so the shape is declared here and checked in
- * `web/server/status.ts`.
- */
-export type ConsoleExplainedReason =
-  | { kind: 'discovery-leak'; urls: string[] }
-  | { kind: 'mirror-gap-extra'; count: number }
 
 /** A refusal: the code, and the parameters its copy interpolates. */
 export interface ConsoleRefusal {
@@ -228,35 +209,41 @@ export interface ConsoleExitRequest {
  * `POST /api/exit` — the answer to "stop the program" (#96).
  *
  * `exiting: true` means this service will stop; the answer is written before
- * the shutdown is scheduled so the page receives it. `exiting: false` is a
- * refusal with its code — currently only `exit-confirm-required` — and the page
- * turns that into its confirmation question.
+ * the shutdown is scheduled so the page receives it, and it is exactly
+ * `{"exiting": true}` (spec #93) — there is no refusal to explain an exit that
+ * was permitted. `exiting: false` is a refusal with its code — currently only
+ * `exit-confirm-required` — and the page turns that into its confirmation
+ * question.
  */
 export interface ConsoleExitPayload {
   exiting: boolean
-  /** Why the exit was refused; `null` when the service will stop. */
-  refusal: ConsoleRefusal | null
+  /** Why the exit was refused; absent when the service will stop. */
+  refusal?: ConsoleRefusal
 }
 
 /**
  * Why the verdict is what it is — `assessRun`'s own reasons, which the Run
  * report's `defects` block does not carry.
  *
- * A `defect` is decided from three things beyond the report's defect classes:
- * whether the Gallery state names this Run (`stateMatchesReport`), the claimed
- * new files the probe rejected (`missingOnDisk`), and the routine classes the
- * verdict explained. `check-run` prints all three next to the report's defects
- * (core/check-run.ts › `printVerdict`), so the page can show them too: a Run
- * whose report's defect block is entirely clean must never read `defect` with
- * nothing to explain why (#34 story 11).
+ * A `defect` is decided from two things beyond the report's defect classes:
+ * whether the Gallery state names this Run (`stateMatchesReport`) and the
+ * claimed new files the probe rejected (`missingOnDisk`). `check-run` prints
+ * both next to the report's defects (core/check-run.ts › `printVerdict`), so the
+ * page can show them too: a Run whose report's defect block is entirely clean
+ * must never read `defect` with nothing to explain why (#34 story 11).
+ *
+ * The third thing `assessRun` decides — the routine classes that make a verdict
+ * `explained` — deliberately does not travel here. `core/report/run-log.ts`
+ * still decides it and `core/check-run.ts` still prints it, but #97 retired the
+ * page's routine-notes list and no per-kind detail has copy any more. The page
+ * receives the `explained` verdict sentence alone; adding a page surface for the
+ * kinds means bringing back both their words and this field.
  */
 export interface ConsoleVerdictReasons {
   /** `null` when the Gallery state is unreadable — never confused with `false`. */
   stateMatchesReport: boolean | null
   /** Claimed new files the probe rejected (absent, or zero bytes). */
   missingOnDisk: string[]
-  /** The routine defect classes that were detected, as structured reasons (#47). */
-  explained: ConsoleExplainedReason[]
 }
 
 /**

@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WallFacts } from '../../../../web/src/lib/wall-state.js'
-import { remainingOf, wallBandOf } from '../../../../web/src/lib/wall-state.js'
+import { wallBandOf } from '../../../../web/src/lib/wall-state.js'
 
 /** The wall's facts, with only what a case is about spelled out. */
 function facts(overrides: Partial<WallFacts> = {}): WallFacts {
@@ -158,27 +158,5 @@ describe('the wall’s band', () => {
         }),
       ),
     ).toBe('empty')
-  })
-})
-
-describe('how many Wallpapers are left', () => {
-  it('is the Mirror gap’s missing count, verbatim', () => {
-    expect(remainingOf(facts({ missing: 710 }))).toBe(710)
-    expect(remainingOf(facts({ wallpaperCount: 1009, downloaded: 1009, missing: 1 }))).toBe(1)
-  })
-
-  it('is not the total minus the Mirror count, so retired files cannot mask a gap', () => {
-    // 1013 listed, 3 missing, and 12 retired extras: `total - mirrorCount`
-    // would be 0 here. The band's number stays 3.
-    expect(
-      remainingOf(
-        facts({ wallpaperCount: 1022, downloaded: 1010, officialTotal: 1013, missing: 3 }),
-      ),
-    ).toBe(3)
-  })
-
-  it('is unknown when the list was not read', () => {
-    // Not `0`: the page must not say "nothing left" about a list it never saw.
-    expect(remainingOf(facts({ officialTotal: null, missing: null, downloaded: null }))).toBeNull()
   })
 })

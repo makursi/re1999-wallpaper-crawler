@@ -304,7 +304,7 @@ describe('createExitController', () => {
   it('lets an idle exit go at once, and closes the service exactly once', () => {
     const harness = exitHarness('idle', false)
 
-    expect(harness.exit(false)).toEqual({ exiting: true, refusal: null })
+    expect(harness.exit(false)).toEqual({ exiting: true })
 
     expect(harness.shutdowns).toEqual([{ runInFlight: false, killedOwnRun: false }])
     expect(harness.kills()).toBe(0)
@@ -325,7 +325,7 @@ describe('createExitController', () => {
   it('kills the whole tree it started when the exit is confirmed, once', () => {
     const harness = exitHarness('running', true)
 
-    expect(harness.exit(true)).toEqual({ exiting: true, refusal: null })
+    expect(harness.exit(true)).toEqual({ exiting: true })
 
     expect(harness.kills()).toBe(1)
     expect(harness.shutdowns).toEqual([{ runInFlight: true, killedOwnRun: true }])
@@ -345,8 +345,8 @@ describe('createExitController', () => {
   it('answers a repeated permitted exit without scheduling a second shutdown', () => {
     const harness = exitHarness('idle', false)
 
-    expect(harness.exit(false)).toEqual({ exiting: true, refusal: null })
-    expect(harness.exit(true)).toEqual({ exiting: true, refusal: null })
+    expect(harness.exit(false)).toEqual({ exiting: true })
+    expect(harness.exit(true)).toEqual({ exiting: true })
 
     expect(harness.shutdowns).toHaveLength(1)
   })

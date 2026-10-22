@@ -231,12 +231,12 @@ describe('the update notice', () => {
  * `Record<Code, MessageKey>` maps are what tie a code to a key at compile time;
  * this is the data half of the same promise.
  *
- * The explained reasons are the fourth vocabulary, and #97 retired their copy
- * with the routine-notes list the panel no longer shows: the payload still
- * carries the reasons, but the page says only the verdict sentence, so there is
- * no reader-facing sentence left to hold to these two locales. The explained
- * kinds are therefore not in the loop below — a page surface that returns needs
- * its own words back.
+ * The explained reasons used to be a fourth vocabulary, and #97 retired their
+ * copy with the routine-notes list the panel no longer shows. This fix pass
+ * retires the kind vocabulary from the page's contract too:
+ * `core/report/run-log.ts` still decides whether a verdict is `explained`, and
+ * the page still has the verdict sentence for it, but no per-kind detail reaches
+ * the page. A page surface that returns needs both the field and its words back.
  */
 describe('every service code has copy in both locales', () => {
   const codeKeys: [string, MessageKey][] = [
@@ -407,6 +407,21 @@ describe('the first-run wall', () => {
       const copy = translate(locale, 'wall.progress', { done: 300, total: 1010 })
       expect(copy, `${locale}: ${copy}`).toContain('300')
       expect(copy, `${locale}: ${copy}`).toContain('1010')
+    }
+  })
+
+  it('names both stops while a fetch runs, and that downloads are skipped after one', () => {
+    // The page's Exit (ADR 0022) is the second stop, and the one the reader can
+    // click: the hint must not send them to the window alone. It asks first
+    // while a Run is in flight, which is the fact this sentence carries.
+    for (const locale of LOCALES) {
+      const copy = translate(locale, 'wall.runningHint')
+      expect(copy, `${locale}: ${copy}`).toMatch(
+        locale === 'zh-CN' ? /关闭窗口|关掉窗口/ : /clos(e|ing) the window/i,
+      )
+      expect(copy, `${locale}: ${copy}`).toMatch(locale === 'zh-CN' ? /退出/ : /exit/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(locale === 'zh-CN' ? /确认/ : /ask/i)
+      expect(copy, `${locale}: ${copy}`).toMatch(locale === 'zh-CN' ? /跳过/ : /skip/i)
     }
   })
 

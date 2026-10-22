@@ -3,9 +3,8 @@
 //
 // `Gallery N · downloaded N · missing N`, plus `· extra N` only when the Mirror
 // holds retired files, or "Gallery unread" when the list could not be read. The
-// wall's header renders this line and the Run panel will render the same one,
-// from the same reading — so the two can never disagree about 1001 versus 1013
-// (spec #93, story 9).
+// wall's header and the Run panel both render this line, from the same reading —
+// so the two can never disagree about 1001 versus 1013 (spec #93, story 9).
 //
 // The component is prop-driven and owns no read: `lib/gallery-figures.ts` is
 // where the counts are computed, the dictionary owns the words, and the caller
@@ -16,11 +15,11 @@ import { computed } from 'vue'
 
 import { t } from '../i18n/locale'
 import Message from '../i18n/Message.vue'
-import type { GalleryFigures } from '../lib/gallery-figures'
+import type { GalleryFigureCounts } from '../lib/gallery-figures'
 
 const props = defineProps<{
   /** The four counts; `null` = the page has not read the gallery yet. */
-  figures: GalleryFigures | null
+  figures: GalleryFigureCounts | null
 }>()
 
 /** The line's counts, all present together — or `null` for "Gallery unread". */

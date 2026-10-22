@@ -10,7 +10,7 @@ import { useRunStart } from './composables/useRunStart'
 import { t } from './i18n/locale'
 import Message from './i18n/Message.vue'
 import { galleryFiguresOf } from './lib/gallery-figures'
-import { runProgressOf } from './lib/run-panel'
+import { runProblemOf, runProgressOf } from './lib/run-panel'
 import { startLabelKey } from './lib/run-start'
 import OrphanPanel from './OrphanPanel.vue'
 
@@ -48,9 +48,17 @@ const startWord = computed(() =>
   t(startLabelKey(status.value?.mirrorCount ?? 0, status.value?.verdict === 'defect')),
 )
 
-// Closing the page never stops a Run: nothing here owns a Run, and there is no
-// stop control to add (ADR 0009). The first status read belongs to the store,
-// and so does the poll it keeps while a Run is in flight.
+/**
+ * The panel's at most-one problem line, chosen by `lib/run-panel.ts`'s priority
+ * and rendered after the figures (#93's order). Keeping the rule out here is
+ * what lets the panel decide where the line stands without moving the rule.
+ */
+const problem = computed(() => (status.value === null ? null : runProblemOf(status.value)))
+
+// Closing the page stops nothing; the page's only stop is the navigation's Exit
+// (ADR 0022), and the service makes it ask first while a Run is in flight. This
+// panel owns no Run and adds no second stop. The first status read belongs to
+// the store, and so does the poll it keeps while a Run is in flight.
 </script>
 
 <template>
@@ -64,8 +72,9 @@ const startWord = computed(() =>
     <p v-if="status === null">{{ t('run.readingLog') }}</p>
 
     <template v-else>
-      <!-- A Run in flight: the two counts, not a spinner (#83), and what
-           closing the window means. There is no stop control (ADR 0016). -->
+      <!-- A Run in flight: the two counts, not a spinner (#83), and what the
+           two stops mean. The page's only stop is the navigation's Exit
+           (ADR 0022), which asks first; this panel adds no stop of its own. -->
       <template v-if="status.state === 'running'">
         <p class="font-serif">{{ t('wall.runningHeading') }}</p>
         <p><Message :message="progress.key" :params="progress.params" /></p>
@@ -81,6 +90,12 @@ const startWord = computed(() =>
         <RunVerdict />
         <p>
           <GalleryFigures :figures="figures" />
+        </p>
+        <!-- The panel's last line, after the figures (#93's order): one problem
+             sentence, chosen by the priority in `lib/run-panel.ts`, and only
+             when there is one. -->
+        <p v-if="problem !== null" class="text-danger">
+          <Message :message="problem.key" :params="problem.params" />
         </p>
       </template>
     </template>

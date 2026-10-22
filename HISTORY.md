@@ -717,7 +717,7 @@
 - **被否决的**：保留"页面无停止控件"（实测的失败就是关标签以为停了）；"停 Run 但留服务"（ADR 0009：终端的 Run 没有句柄，这个控件只能半停，还会留一个空转的页面）；让页面按自己最后一次 status 判断要不要问（那就是第二条规则，而且它可能已经过期）；按镜像名杀或只杀服务进程（Windows 上父进程死了子进程照活）；内联 shutdown 靠响应 flush（socket 可能先关掉，`202` 会变成断连）；把中文放进 `启动.bat`（ADR 0020 的实测结论）；成功退出立刻关窗（最后一行中文就是"什么停了"的证据）；重写 ADR 0016 / 0020（它们是当日决策，只被取代一个条款）。
 - **墙就是镜像**：行集 = 清单里、名字是 Wallpaper、文件真在盘上的条目（保持清单顺序）+ 盘上多出来的 Wallpaper；行模型丢掉 `state` 与 `viewable`，`GALLERY_ROW_STATES`、`ConsoleGalleryRowState` 与那套 copy 一起退役，页面不再判断"这张能不能显示"，也就永远不为一个不在的文件请求缩略图。**缺口仍是集合运算**：`mirrorGap` 的两个数由服务端算，绝不从行里反推——一旦从行反推，"本地多出的旧图"就会把缺失数抵消成 0，正是这次要修的那个谎。头一行 `官方清单 N · 已下载 N · 缺失 N`（有旧图再补 `· 本地多出 N`，清单没读到就是"官方清单未读到"），墙头和面板读同一个 `galleryFiguresOf`，两个地方不可能一个说 1001 一个说 1013。
 - **一次读**：整页只读一次 `/api/gallery`（`composables/useGallery.ts`），墙和面板共用一个快照；两次读就是两个答案。
-- **续抓判断改看缺口的 `missing`**（`lib/wall-state.ts` 的 `wallBandOf`），不再比较官方总数与镜像数；"还剩多少"就是同一个数（`remainingOf`），头一行与续抓控件因此不可能各说一套。
+- **续抓判断改看缺口的 `missing`**（`lib/wall-state.ts` 的 `wallBandOf`），不再比较官方总数与镜像数；"还剩多少"就是同一个数（`facts.missing`），"已下载"就是 `facts.downloaded`（数字行的补数），头一行与续抓控件因此不可能各说一套。
 - **运行面板只剩四行**：一句结论、`成功 N · 失败 N`（失败为 0 时不印）、与墙头同一行数字、最多一句问题话，另加开始控件；孤儿清理仍是有动作的那个状态，压成一句 + 一个按钮。问题话的优先级钉在 `lib/run-panel.ts`：报告缺失 → 报告读不懂 → 空文件 → 持续失败 → 连不上官网 → 空结果 → 缺口 → 结论自己的原因。退役的是 Run id、时间戳、六个 Discovery 数、成功率、重试救援率、九行缺陷与 `reasons:` 子句——它们没有一个回答"这次成没成"。
 - **设置提示自清**：只留两行（为什么不能开始 + 要写的那一行），文件名说成"程序旁边"的那个 `.env`。窗口重新获得焦点、抽屉打开各重读一次 status，用的还是 start 的 `env-file` 拒绝那一个谓词；照提示建好文件，切回页面就没了，不用刷新。
 - **版本 1.0.1**（ADR 0021 的 PATCH：修，不新增配置键也不动数据布局）。#92（`chore(ci): drop an input the setup action does not have`，删掉 `pnpm/setup@v2` 不存在的 `require-lockfile` 输入，三个工作流行为不变）随这一版发出，对玩家不可见，所以它只在本文留这一句，**不进 CHANGELOG**。
@@ -726,11 +726,11 @@
 
 - `pnpm build`：`version 1.0.1`，页面 112 个文件，`server.js` 935 KiB、`run.js` 2127 KiB、`update.js` 17 KiB，外部依赖仍只有 `sharp`，打进 bundle 的 25 个包。
 - **构建树搬到仓库之外真启动**（`%TEMP%\re1999-smoke\app` + 同级 `data\`，`packaging/site.env` → `app\.env`，这棵树里没有 `node_modules`、没有 `.ts`、没有 tsx/vite）：`GET /api/status` → `200`，`{"version":"1.0.1",…,"runConfigAvailable":true}`。
-- **空闲退出**：`POST /api/exit {"confirm":false}` → `202 {"exiting":true,"refusal":null}`，窗口打印「服务已停止。」「程序已退出。」，退出码 0，`data\instance.json` 被清掉，**再启动一次照常**（同一棵树，第二次 `200` + `1.0.1`）。
+- **空闲退出**：`POST /api/exit {"confirm":false}` → `202 {"exiting":true}`，窗口打印「服务已停止。」「程序已退出。」，退出码 0，`data\instance.json` 被清掉，**再启动一次照常**（同一棵树，第二次 `200` + `1.0.1`）。
 - **Run 在飞时先问**：服务起来**之后**再往 `data\logs\` 写一条 `run-2026-10-22T11-45-00.jsonl`（只有 `run_meta`、没有 `run_report`、mtime 是现在）→ `{"confirm":false}` → `409 {"exiting":false,"refusal":{"code":"exit-confirm-required","missing":[]}}`；`{"confirm":true}` → `202`，窗口只打印「本 WebUI 没有启动那个运行:只有服务停止,它可能还在继续写入。」+ 服务已停止 + 程序已退出，退出码 0，**Run log 逐字节未动**（ADR 0009）。
 - **孤儿日志与新一次启动**：第三次启动看到那条日志已是 `orphaned`（启动时就在的未完成日志），status 照常、退出不需要确认（`202`）、退出码 0、记录不残留——中断过的 Run 不挡下一次双击。
 - **启动器字节**：`packaging/启动.bat` 1768 字节、`>127` 的字节 0 个、38 个 CRLF 且裸 LF 为 0、成功路径以无条件 `pause` + `exit /b 0` 结尾（失败路径仍是 `pause` + `exit /b 1`）。
-- 四件套：`pnpm typecheck` 0、`pnpm test` **58 文件 / 643 tests**、`pnpm lint` 0 warning 0 error、`pnpm fmt:check` 通过（`pnpm fmt` 先跑）。
+- 四件套：`pnpm typecheck` 0、`pnpm test` **59 文件 / 643 tests**、`pnpm lint` 0 warning 0 error、`pnpm fmt:check` 通过（`pnpm fmt` 先跑）。
 - **没有做的**：真下 2 GB 的完整 Run；真实双击窗口（本轮是 `node server.js --no-open --port 0`，窗口字符串由同一份 composition root 打印）；smoke 树里没放 `sharp`（status 与 exit 都不经过缩略图）——发布前的人工双击仍要按 AGENTS.md 的发布流程在干净 Windows 上做一遍。
 
 **教训**：

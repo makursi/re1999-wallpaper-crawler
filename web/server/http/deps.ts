@@ -47,8 +47,8 @@ export type RunCleaner = () => Promise<RunCleanupResult>
 
 /**
  * What an exit request answers (#96). `exiting: false` is the confirmation
- * refusal, and `status` is the HTTP status it carries (409); a permitted exit
- * is 202.
+ * refusal, and `status` is the HTTP status it carries (409); a permitted exit is
+ * 202 and carries no `refusal` at all — the body is exactly `{"exiting": true}`.
  */
 export interface ExitResult extends ConsoleExitPayload {
   status?: number

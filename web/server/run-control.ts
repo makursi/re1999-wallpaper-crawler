@@ -315,7 +315,7 @@ export function createExitController(deps: ExitControllerDeps): ExitProgram {
   return confirmed => {
     // Already going down: answer the same thing, and do not schedule a second
     // shutdown. A double-click on Exit must not race the first one.
-    if (permitted) return { exiting: true, refusal: null }
+    if (permitted) return { exiting: true }
 
     const state = deps.runState()
     if (exitDecisionOf(state, confirmed) === 'refuse-confirm') {
@@ -330,7 +330,9 @@ export function createExitController(deps: ExitControllerDeps): ExitProgram {
     if (killedOwnRun) deps.launcher.stop()
     const outcome: ExitOutcome = { runInFlight: state === 'running', killedOwnRun }
     schedule(() => deps.shutdown(outcome))
-    return { exiting: true, refusal: null }
+    // The accepted answer is exactly `{"exiting": true}` (spec #93): there is no
+    // refusal field to explain an exit that was permitted.
+    return { exiting: true }
   }
 }
 
