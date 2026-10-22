@@ -19,9 +19,10 @@
 // Every version section is an instance of the template the changelog's header
 // states: seven `###` headings in a fixed order, at least one change section,
 // 安装 and 下载文件 in every release, no preamble line, and no personal
-// pronouns. `checkTemplate` is the executable half of that rule; the
-// imperative mood itself is left to the template's example and to review,
-// because a word list cannot see it.
+// pronouns. `checkTemplate` is the executable half of that rule — headings,
+// order, emptiness, the archive's name and the pronoun list. The imperative
+// mood and the wording are left to the template's example and to review,
+// because a word list cannot see them.
 //
 // CLI (the workflow's "extract the notes" step):
 //
@@ -151,23 +152,11 @@ interface Section {
   /** The heading's 1-based line within the body. */
   readonly line: number
   /** The lines between this heading and the next one. */
-  readonly body: string[]
+  readonly lines: string[]
 }
 
-/** The body split at its section headings, in the order they appear. */
-function sectionsOf(lines: readonly string[]): Section[] {
-  const sections: Section[] = []
-  let current: Section | undefined
-  lines.forEach((line, index) => {
-    if (line.startsWith(SECTION_HEADING)) {
-      current = { heading: line.slice(SECTION_HEADING.length).trim(), line: index + 1, body: [] }
-      sections.push(current)
-      return
-    }
-    current?.body.push(line)
-  })
-  return sections
-}
+/** A section that says nothing: the template asks for the section to go away. */
+const NOTHING = /^[-*]?\s*无[。.]?$/
 
 /** The first pronoun a line addresses the reader with, if any. */
 function pronounIn(line: string): string | undefined {
@@ -180,8 +169,10 @@ function pronounIn(line: string): string | undefined {
  * The template's rules, applied to one version's body.
  *
  * Throws on the first violation, naming the version and the line, because the
- * caller is a release job that has to say what to fix. A body that passes has
- * the shape the changelog's header documents; its wording is not checked.
+ * caller is a release job that has to say what to fix. The checks are the ones
+ * a machine can make — headings, order, emptiness, the archive's name and the
+ * pronoun list; the imperative mood and the wording are the template's example
+ * and review, and the changelog's header says so rather than implying more.
  */
 export function checkTemplate(body: string, version: string): void {
   if (version.trim() === '') {
@@ -191,14 +182,26 @@ export function checkTemplate(body: string, version: string): void {
   }
 
   const lines = body.split(/\r?\n/)
+  const sections: Section[] = []
+  let current: Section | undefined
 
   lines.forEach((line, index) => {
-    if (line.startsWith(RELEASE_HEADING)) {
-      throw new Error(
-        `release notes: ${version}'s body has a "${RELEASE_HEADING}" heading at line ${index + 1} — ` +
-          'a second-level heading ends the section, so the body may only use "### "',
-      )
+    const level = /^(#+)/.exec(line)?.[1]
+    if (level !== undefined) {
+      // Only `### ` is a section. Any other level would either end the body
+      // (`## `) or hide inside the previous section (`#### `), which is how an
+      // empty section would slip past the check below.
+      if (level !== '###' || !line.startsWith(SECTION_HEADING)) {
+        throw new Error(
+          `release notes: ${version}'s body has a "${level}" heading at line ${index + 1} — ` +
+            'the template uses "### " and no other heading level',
+        )
+      }
+      current = { heading: line.slice(SECTION_HEADING.length).trim(), line: index + 1, lines: [] }
+      sections.push(current)
+      return
     }
+    current?.lines.push(line)
   })
 
   const first = lines.findIndex(line => line.trim() !== '')
@@ -213,8 +216,6 @@ export function checkTemplate(body: string, version: string): void {
         'has no preamble; the first line is a "### " section heading',
     )
   }
-
-  const sections = sectionsOf(lines)
 
   let previous = -1
   const seen = new Set<string>()
@@ -241,10 +242,17 @@ export function checkTemplate(body: string, version: string): void {
     seen.add(section.heading)
     previous = order
 
-    if (section.body.every(line => line.trim() === '')) {
+    const content = section.lines.map(line => line.trim()).filter(line => line !== '')
+    if (content.length === 0) {
       throw new Error(
         `release notes: ${version}'s "${section.heading}" section (line ${section.line}) is empty — ` +
           'write what changed, or drop a section that does not apply',
+      )
+    }
+    if (content.length === 1 && NOTHING.test(content[0] ?? '')) {
+      throw new Error(
+        `release notes: ${version}'s "${section.heading}" section (line ${section.line}) only says ` +
+          '无 — drop the section instead of writing that it does not apply',
       )
     }
   }
@@ -264,17 +272,17 @@ export function checkTemplate(body: string, version: string): void {
     }
   }
 
-  const assets = sections.find(section => section.heading === '下载文件')
+  const downloads = sections.find(section => section.heading === '下载文件')
   const archive = `re1999-wallpaper-crawler-v${version}.zip`
-  if (assets !== undefined && !assets.body.join('\n').includes(archive)) {
+  if (downloads !== undefined && !downloads.lines.join('\n').includes(archive)) {
     throw new Error(
-      `release notes: ${version}'s "下载文件" section (line ${assets.line}) does not name ` +
+      `release notes: ${version}'s "下载文件" section (line ${downloads.line}) does not name ` +
         `${archive} — the body has to name this version's package`,
     )
   }
 
   for (const section of sections) {
-    section.body.forEach((line, offset) => {
+    section.lines.forEach((line, offset) => {
       const pronoun = pronounIn(line)
       if (pronoun !== undefined) {
         throw new Error(

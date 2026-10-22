@@ -20,7 +20,9 @@ the literal block, so the two cannot drift apart.
 Seven `###` sections in a fixed order: 新增, 变更, 修复, 破坏性变更, 安装,
 升级说明, 下载文件. Only `###` is allowed — a `## ` line ends a section, so a
 second-level heading inside the body would truncate it to empty and the job would
-draft a Release with no notes.
+draft a Release with no notes. A `#` or `####` line is refused for the other
+half of the same reason: it would hide inside the previous section and make an
+empty section look filled.
 
 - At least one of 新增 / 变更 / 修复, because a release changed something.
 - 安装 and 下载文件 in every release, with the same text each time.
@@ -40,22 +42,25 @@ one thing to read rather than a glossary of headings.
 ## The gate
 
 `scripts/release-notes.ts` checks the extracted body before it writes anything,
-so a tag fails in seconds rather than publishing a malformed body: no `## ` line,
-headings a subset of the seven in order and without duplicates, no empty section,
-at least one change section, 下载文件 naming this version's package, no banned
-pronoun. A failure names the version and the line, because its reader is a
-maintainer looking at a red job.
+so a tag fails in seconds rather than publishing a malformed body: no heading
+level other than `###`, headings a subset of the seven in order and without
+duplicates, no empty section, no section whose only content is 无, at least one
+change section, 下载文件 naming this version's package, no banned pronoun. A
+failure names the version and the line, because its reader is a maintainer
+looking at a red job.
 
-The heading list is exported from the same module, and a test compares it with
-the `###` lines of the template block in the changelog's header: the document a
-maintainer reads and the code that refuses their body cannot disagree. The
-repository's own current version is checked by the test suite too, so a version
-bump that forgets its section fails before the tag exists.
+The heading list is exported from the same module, and a test locates the
+template block in the changelog's header and compares its `###` lines with that
+list: the document a maintainer reads and the code that refuses their body
+cannot disagree on the sections. The pronoun list and the at-least-one / always
+sets live in that module alone; the header states them in prose and no test pins
+them. The repository's own current version is checked by the test suite too, so
+a version bump that forgets its section fails before the tag exists.
 
-The imperative mood is not checked. A word list can find 你; it cannot tell
-「精简运行面板：只留四行」 from a sentence about the panel. The template's
-example and review carry that half, and this record says so rather than implying
-the gate is complete.
+What no gate sees is the prose: the imperative mood and the verb-initial bullet.
+A word list can find 你; it cannot tell 「精简运行面板：只留四行」 from a sentence
+about the panel. The template's example and review carry that half, and this
+record says so rather than implying the gate is complete.
 
 ## What it costs
 

@@ -151,7 +151,15 @@ describe('checkTemplate', () => {
     const body = CONFORMING.replace('### 安装', '## 安装')
 
     expect(() => checkTemplate(body, VERSION)).toThrow(/1\.2\.0/)
-    expect(() => checkTemplate(body, VERSION)).toThrow(/## /)
+    expect(() => checkTemplate(body, VERSION)).toThrow(/##/)
+  })
+
+  it('refuses a deeper heading that would hide inside a section', () => {
+    // `#### 修复` under `### 变更` leaves that section "non-empty" while saying
+    // nothing, so the empty-section rule has to see the level.
+    const body = CONFORMING.replace('### 新增', '### 新增\n\n#### 修复')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/####/)
   })
 
   it('refuses a heading the template does not have', () => {
@@ -209,6 +217,13 @@ describe('checkTemplate', () => {
     expect(() => checkTemplate(body, VERSION)).toThrow(/变更/)
   })
 
+  it('refuses a section that only says 无', () => {
+    // The template asks for an inapplicable section to be dropped, not filled.
+    const body = CONFORMING.replace('### 安装', '### 破坏性变更\n\n无\n\n### 安装')
+
+    expect(() => checkTemplate(body, VERSION)).toThrow(/无/)
+  })
+
   it('refuses a preamble line before the first section', () => {
     const body = `只修用起来别扭的地方。\n\n${CONFORMING}`
 
@@ -228,8 +243,8 @@ describe('checkTemplate', () => {
     expect(() => checkTemplate(body, VERSION)).toThrow(/你/)
   })
 
-  it('does not mistake 其他 for a pronoun', () => {
-    const body = CONFORMING.replace('导航条点一下即结束程序', '其他下载不受影响')
+  it.each(['其他', '其它', '迷你', '自我'])('does not mistake %s for a pronoun', compound => {
+    const body = CONFORMING.replace('导航条点一下即结束程序', `${compound}下载不受影响`)
 
     expect(() => checkTemplate(body, VERSION)).not.toThrow()
   })
@@ -245,10 +260,16 @@ describe('checkTemplate', () => {
   it('documents exactly the headings the validator accepts, in order', () => {
     // The template in the changelog's header is the rule a maintainer reads;
     // this is what keeps it from drifting away from the code that enforces it.
+    // The block is located rather than assumed: a stray `###` in the prose
+    // around it must not be read as part of the template.
     const lines = REPOSITORY_CHANGELOG.split(/\r?\n/)
-    const firstVersion = lines.findIndex(line => line.startsWith('## '))
+    const opening = lines.findIndex(line => line.trim() === '```markdown')
+    const closing = lines.findIndex((line, index) => index > opening && line.trim() === '```')
+    expect(opening).toBeGreaterThan(-1)
+    expect(closing).toBeGreaterThan(opening)
+
     const documented = lines
-      .slice(0, firstVersion)
+      .slice(opening + 1, closing)
       .filter(line => line.startsWith('### '))
       .map(line => line.slice(4).trim())
 
