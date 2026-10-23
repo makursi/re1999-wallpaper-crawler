@@ -5,3 +5,13 @@
 allowBuilds:
   esbuild: true
   simple-git-hooks: true
+
+# A git worktree's `node_modules` is a junction onto the parent checkout, and
+# pnpm 12's pre-script install refuses to write through it ("workspace hoist
+# directory is not a real directory"). In one fan-out, 53 `pnpm <script>` calls
+# across six implementing agents failed this way and then warned that
+# node_modules may be out of sync with the lockfile — pointing at the wrong
+# problem. Every agent pasted the same `npm_config_*` prefix onto every command.
+# What this check stands in for — a lockfile that disagrees with the manifest —
+# is enforced where it actually runs: the frozen install in CI (#107).
+verifyDepsBeforeRun: false

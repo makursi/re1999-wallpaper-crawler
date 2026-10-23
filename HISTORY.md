@@ -769,6 +769,43 @@
 - **能自动守住的只有形状**（标题集合 / 顺序 / 空节 / 包名 / 代词词表），语气守不住：正则分不出「精简运行面板：只留四行」和一句关于面板的叙述。这条限制写在 ADR 里，而不是让门禁显得比它更强。
 - **代词词表要留后门**：`其他` / `其它` / `迷你` / `自我` 里都含代词字符，不先剥掉就会把正常句子判成违规。
 
+### 2026-10-22 — 迭代循环还清债务：产物在 CI 里启动、worktree 第一遍能跑、决策离开会话就落纸（spec #107 / 票 #108–#113）
+
+**触因**：这一轮改的是产出改动的循环，不是玩家看见的东西。18 个会话、929 步、1,330 次工具调用交出一份正确的改动，同时把同样三笔债原样付了一遍——它们都不是判断失误，所以再小心也修不掉。
+
+- **构建树从没在 CI 里启动过。** `build/` 就是程序——便携包发它，`pnpm webui` 跑它——而 ESM 打包 CommonJS 依赖必须靠 `createRequire` 横幅，这类失败 typecheck、lint 和一千条测试全数放行。CI 只构建页面包，三个程序入口第一次编译、第一次启动都发生在打 tag 时。唯一抓得住它的检查住在维护者桌面上：一份 git 忽略、机器本地的临时脚本，一张票里手写、另一张票里重写，其中一次重写带了个 token bug，只有真跑才现形。
+- **worktree 是另一台半坏的机器。** 它的 `node_modules` 是指向父检出的 junction，pnpm 12 的运行前安装拒绝写穿它：一次 fan-out 里 `pnpm <script>` 以 `workspace hoist directory is not a real directory` 失败 53 次，随后又警告「node_modules 可能与 lockfile 不同步」——把读者指向错误的问题。六个实现 agent 各自发明了同一条 120 字符的 `npm_config_*` 前缀并贴到每条命令上；真正解释原因的那句话只存在于一个 agent 勾过的提示里。
+- **设计会话什么也不留下。** 同一个问题十二分钟内被重新打开三次，每次重读同样的八个文件、以同样的资料堆收尾；两条后续设计线程得出一致建议，然后没有 issue、没有计划、没有分支。决策在有人写代码之前没有落脚点。
+- **数字解析不到 ADR。** 23 个 ADR 没有索引，一天里 agent 猜错三个文件名（`0016`、`0014`、`0022`）——决策的主题无法从编号推出来。
+- **常驻的 steering 文件是查找结果的缓存。** 每轮 385 个非空行 / 34.5 KB，其中 118 行 Gotcha 只有打包、构建与 Run log 的工作才需要，另有一段复述格式化器自己的配置。
+
+**决策**：
+
+- **一次维护迭代还清五笔。** 玩家看不到任何变化：不升版本、不写 changelog 小节、便携包里不多一个文件；发布工作流、包布局、更新器与玩家文案一个字没动。整轮只落这一条 `HISTORY.md`，随下一次有话可说的发布一起走。
+- **每个 PR 都证明 Console 能启动。** `pnpm smoke:boot`（`scripts/smoke-boot.ts`）把构建树（默认 `build/`）拷进临时根并生成并列的 `app` / `data`，用 OS 分配端口、抑制浏览器启动程序，只经页面自己的 API 驱动：地址里带的 boot token、`/api/status` 报告的版本必须等于构建注入的 `RE1999_VERSION`、磁盘上 `instance.json` 的端口 / token / pid 必须是这次启动的、`/api/exit` 必须答 `202` 再退 0 并清掉记录。同一脚本把 `run.js` 删掉跑第二遍，要求启动前的非零拒绝；再把 `update.js` 放在没有安装指针的临时根上跑第三遍，要求中文拒绝并非零退出——更新器 bundle 因此也证明能加载。它不读 `.env`、不开浏览器、不跑真 Run；唯一的出站请求是 Console 自己那次有界的更新检查（3 秒，永不致命），脚本没有把它关掉。CI 在既有 required check 里加两步（`pnpm build`、`pnpm smoke:boot`），不新增 job：**三个入口都编译，启动的是 Console**，`run.js` 编译后并不执行。
+- **worktree 第一遍就能跑 `pnpm`。** `pnpm-workspace.yaml` 写 `verifyDepsBeforeRun: false`，注释点名 junction 与那 53 次失败；它替下的检查——lockfile 与 manifest 不一致——仍在真正执行它的地方：CI 的 frozen install。这是设置，不是要靠 agent 记住的仪式。
+- **设计会话留下一条笔记。** `docs/notes/` 一题一文件，四段固定：问题、已定分支、开放分支、被否决分支及理由；约定写在 `docs/agents/design-notes.md`，与 issue-tracker、domain 指针并列。grilling skill 加同一条完成判据，让约定有触发而不只有家；skill 住在仓库之外，这是本轮唯一没有本仓门禁的一步。
+- **编号解析到 ADR。** `docs/adr/README.md` 一行一条（编号 + slug + 一句话决策，升序），从 steering 文件指向；`tests/docs/adr-index.test.ts` 用真实目录双向守它——每个 ADR 文件有一行，每一行指向存在的文件——否则索引就是下一个会腐烂的东西。它不是从 ADR 正文生成的：那行是摘要，生成器要么抄标题，要么诱使正文长出第二种格式。
+- **常驻文件只留第一条命令需要的。** 包管理器版本策略与 build allow-list 留下（它们会在第一次安装时咬人），`createRequire` 横幅、启动器 ASCII、手册编码、行尾规则、同步 Run log 与钩子段落搬到 `docs/agents/branch-reference.md`，由一个以分支名开头的指针指向；格式化器规则不再复述，`.oxfmtrc.json` 是唯一出处。命令表加三行：满足 edit guard 的 `read`、沙箱下跑一次性脚本的写文件方式、这台机器上真有的搜索。
+- **失去消费者的词表让 CI 变红。** `tests/web/src/i18n/vocabulary-guard.test.ts` 从契约源（`web/api-types.ts` 的导出运行时元组）取名单，要求每条要么被字典测试枚举、要么在 `EXEMPT_VOCABULARIES` 里带一行理由；它断言的是豁免而不是缺席——删元组与删文案因此是两次有意的编辑。
+
+**验证**：
+
+- `pnpm smoke:boot`：17 条 `ok`——地址带 boot token、`/api/status` 200、页面报告构建注入的 `1.0.1`（staged `package.json` 的版本被改写成 `0.0.0-smoke`，所以这个数只能来自 define）、`instance.json` 存在且形状 / 端口 / token / pid 全对、`/api/exit` 202 且 `exiting: true`、进程退 0 并清掉记录；删掉 `run.js` 的树退非零、不打印地址、拒绝里点名缺失路径；没有安装指针时 `update.js` 退非零并打印中文拒绝。
+- `pnpm build`：`version 1.0.1`，页面 112 个文件，`server.js` 935 KiB、`run.js` 2127 KiB、`update.js` 17 KiB，外部依赖仍只有 `sharp`，打进 bundle 的 26 个包。
+- 合并后的最终树上四件套：`pnpm typecheck` 0、`pnpm test` **61 文件 / 672 tests**、`pnpm lint` 0 warning 0 error（165 files / 218 rules）、`pnpm fmt:check` 通过（176 files）。
+- steering 文件：385 个非空行 / 34,560 字节（34.5 KB）→ 329 个非空行 / 31,964 字节（32.0 KB），Gotcha 段 118 行 → 33 行，另开 99 行 / 5,649 字节的 `docs/agents/branch-reference.md`；ADR 索引 23 行对 23 个文件。
+- **两件没能本地证明的。** worktree 设置：一次安静的探针（新 worktree、junctioned `node_modules`、强制依赖检查、改过的 manifest）没有复现失败，所以它的证明是下一次 fan-out 的日志里不出现任何 `installing dependencies` 行；若设置不生效，退路是每个 worktree 建好后跑一次 `pnpm install --ignore-scripts`。grilling skill 的完成判据：skill 住在仓库之外，本仓没有任何门禁能覆盖它，只能靠这条记录。
+- **没有做的**：Windows 专属面（两个 `.bat`、更新器的真实换目录、junction 布局、手册渲染）仍由真机手验，启动脚本自己的注释写明了这个边界；跑一次完整 Run 不在本轮范围。
+
+**教训**：
+
+- **门禁全绿不等于产物能启动。** typecheck、lint 与测试从不加载 `build/`；`createRequire` 横幅只在真启动时被调用。#84 的教训这一轮被写成每个 PR 的两步，而不是又一句提醒。
+- **被复述五遍的坑仍会复发，除非它住进工具。** `npm_config_*` 前缀被六个 agent 各自发明，说明写进提示等于没写；`verifyDepsBeforeRun: false` 是唯一不靠记性的形态。
+- **算不出来的东西要落纸。** 同一个问题重启三次就是同一份资料重读三次；一条带「已定 / 开放 / 否决」的笔记把这次探索变成下次的输入。笔记没有门禁，只能靠下一个读者从它出发——这一篇本身就是这么被检验的。
+- **索引要自带守卫。** 23 个 ADR 没有索引时，猜错三个文件名是正常行为；一行一条加一个双向测试之后，新增 ADR 不带行就红。
+- **测试只断言它真读到的。** 词表守卫从契约源码取名单，不做第二份手抄；启动冒烟断言「删产物必须拒绝」，不抄那句中文拒绝——重复一句文案会锁死一句本可以改的话。
+
 ---
 
 ## 已否决方案速查（改动前先看这里）
@@ -863,6 +900,11 @@
 | 每版单独一个 Release 正文文件 | 同一次发布两份记录，「只写一遍」的不变式（#88）随第二份死掉 | 2026-10-22 / #101 / ADR 0023 |
 | 保留 `## What's Changed` 外壳 | `## ` 会截断小节；而且「安装」语义上不是变更 | 2026-10-22 / #101 / ADR 0023 |
 | 用规则检查祈使语气 | 机器判不了语气，能守住的只有代词词表与标题形状 | 2026-10-22 / #101 / ADR 0023 |
+| 给 steering 文件每个链接做存在性测试 | 链接能解析不等于读者会打开它；这次量到的失败是 agent 从不打开分支文档，验证只能是行为性的（下一次 fan-out 能否经指针找到打包规则）。链接测试会把散文的形状钉死，却在真正的触发失败时照样绿 | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
+| 从 ADR 正文或 frontmatter 生成索引 | 那行的一句话是摘要，生成器要么抄标题、要么诱使 ADR 长出第二种格式；索引会从查找表变成决策的第二份副本 | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
+| 把词表守卫并进 ADR 索引测试 | 两者读不同的对象（`docs/adr/` 的 Markdown 对 `web/api-types.ts` 的导出元组）、为不同原因失败；一个测试两条不变式会让红的意义含糊，并让一条躲在另一条后面腐烂 | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
+| 把启动检查写成单测 | 它要真实进程、真实 socket 与临时应用根；降低一层就丢掉它唯一测的东西——打包与启动的接缝（既有 socket 测试就是先例：驱动真实监听器，不 mock 传输） | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
+| 为启动检查新增第二个 CI job | 分支保护只认一个 required check，第二个 job 得先加进保护设置；两步放进现有检查零成本，也不新增 required check | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
 
 ## 验证规范（所有迭代通用）
 
@@ -888,3 +930,4 @@
 - **CI 只跑 ubuntu + node 24**：本仓在 Windows 上开发（#76 之前还有 `--filename` 那段 Windows 专属坑，现在已随载荷删除），若想覆盖，加一个 `windows-latest` job 跑 `typecheck` + `test` 即可；单测是纯逻辑，跨平台收益有限。
 - ~~**跑完但日志整段丢失（`run_report` 缺失、进程仍退 0）**~~ **已解决（2026-09-15 深夜，ADR 0007）**：Run log 的文件 sink 改成不经 worker 的同步 destination，`pino-pretty` 也从 transport 改成主线程流，于是进程里不再有 thread-stream——「worker 停摆后主线程静默写进死通道」这一类故障被**结构性消除**，不是缓解。**根因仍然未知**：worker 当初为什么停摆始终没查明，只是它再也无法让报告消失。若将来再出现缺失的 `run_report`，按 `SKILL.md` 的步骤用 `data/images/.gallery-state.json` 与官方清单分账，不要假定是同一个原因。
 - ~~**慢网行为待验证**~~ **已验证：修复工作正常。** 2026-09-04 修复后实跑确认 waitForList 触发、滚动探测持续推进、收敛正常；21 张是官网无新资源的真实反映，与慢网修复预期相符。慢网下不再因 idle>45 冻结滚动。
+- **本机动态端口区间与 fetch 的 blocked ports 重叠（2026-10-22 记录，本机）**：这台机器的 `netsh int ipv4 show dynamicport tcp` 报 1024–15000，其中包含 fetch 判为 `bad port` 的端口（实测 3659）；用 0 端口监听、再由 fetch 驱动的检查因此出现过 `fetch failed` / `bad port`，单独重跑换了端口就过。Linux CI 的区间从 49152 起，不撞；启动检查为此对 0 端口做两次重试。看到这个错先查端口，不要先怀疑被测代码。

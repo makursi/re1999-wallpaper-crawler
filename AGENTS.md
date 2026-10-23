@@ -15,11 +15,16 @@ manual inside the package, `packaging/使用说明.txt` (#89) — never a termin
 never `pnpm install`.
 
 **Developers and agents** need Node 22 and pnpm, then `pnpm install` for project
-dependencies. A source Run needs one line in `.env` —
-`BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup notice says so
-when it is missing. `pnpm webui` runs the built program in `build/` but points the data root at the repository's `data/` (`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the page shows: the packaged shape's `app\\` beside `data\\`, reproduced. `pnpm build` recreates
-`build/`, and the README's developer section says so rather than implying the
-repository's `.env` is used.
+dependencies. A worktree's `node_modules` is a junction onto the parent checkout:
+never run `pnpm install` there, and `verifyDepsBeforeRun: false` in
+`pnpm-workspace.yaml` means its scripts install nothing. A source Run needs one
+line in `.env` — `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup
+notice says so when it is missing. `pnpm webui` runs the built program in
+`build/` but points the data root at the repository's `data/`
+(`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the
+page shows: the packaged shape's `app\\` beside `data\\`, reproduced. `pnpm build`
+recreates `build/`, and the README's developer section says so rather than
+implying the repository's `.env` is used.
 
 ## Commands
 
@@ -28,6 +33,7 @@ repository's `.env` is used.
 | Scrape wallpapers | `pnpm core:run` (`tsx core/main.ts`) |
 | Check the newest Run | `pnpm check-run` (`tsx core/check-run.ts`) |
 | Build the program | `pnpm build` (`tsx scripts/build.ts` → `build/`; needed before `webui`) |
+| Boot the built tree | `pnpm smoke:boot` (scope and limits: `docs/agents/branch-reference.md`) |
 | Package the portable release | `pnpm package` (`pnpm build` + `tsx scripts/package.ts` → `dist-package/re1999-wallpaper-crawler-v<version>.zip`) |
 | WebUI (local page) | `pnpm webui` (`tsx scripts/webui.ts` — build/ as the program, the repository's data/ as its data; flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
@@ -35,6 +41,12 @@ repository's `.env` is used.
 | Typecheck | `pnpm typecheck` (`tsc --noEmit` + `vue-tsc --noEmit -p web/tsconfig.web.json`) |
 | Lint | `pnpm lint` (`oxlint --type-aware .`) |
 | Format | `pnpm fmt` / `pnpm fmt:check` (`oxfmt`) |
+
+Three facts about working in this shell, not project commands:
+
+- **Inspect a file** with the harness's `read <path>` tool, not `cat`/`Get-Content`: the edit guard counts the read tool's observation, so a shell read costs a step — the file must be read again before the next edit
+- **Run a one-off snippet** by writing it to a file and running it — `node <file>.mjs`, or `pnpm exec tsx <file>.ts`; do not capture a spawned child's output through a pipe (`spawn`/`exec` default stdio): under the sandbox that pipe is refused with `EPERM`
+- **Search the tree** with the harness's grep tool, or `git grep -n <pattern>` in this shell: `rg` is not installed on this machine, and PowerShell has no `grep`
 
 `pnpm build` writes `build/` — `server.js`, `run.js`, `update.js`, `package.json`
 and `web/dist/` — and that tree is the program: it runs with no `node_modules`,
@@ -45,7 +57,10 @@ fresh checkout has to be built once, and the Console refuses to boot without the
 artifacts rather than compiling them on the owner's first click (#84).
 
 CI (`.github/workflows/ci.yml`) runs `fmt:check`, `lint`, `typecheck`, the page
-bundle build and `test` on every PR and on pushes to `main`. `.github/workflows/autofix.yml` runs
+bundle build and `test` on every PR and on pushes to `main`, then builds the
+program and boots it (`pnpm build`, then `pnpm smoke:boot`): all three entries
+compile and the Console boots on every PR instead of first on a tag.
+`.github/workflows/autofix.yml` runs
 `pnpm lint:fix && pnpm fmt` on PRs and commits the result back to the branch, so
 a PR does not have to be formatted by hand — it needs the
 [autofix.ci App](https://github.com/apps/autofix-ci) installed on the repo.
@@ -120,7 +135,16 @@ The five canonical triage roles map 1:1 to `needs-triage`, `needs-info`, `ready-
 
 ### Domain docs
 
-Multi-context: `CONTEXT-MAP.md` at the repo root names the contexts, whose glossaries are sections of the single root `CONTEXT.md`, plus `docs/adr/` and `HISTORY.md`. See `docs/agents/domain.md`.
+Multi-context: `CONTEXT-MAP.md` at the repo root names the contexts, whose
+glossaries are sections of the single root `CONTEXT.md`, plus `docs/adr/` and
+`HISTORY.md`. See `docs/agents/domain.md`.
+
+A decision's subject finds its number in `docs/adr/README.md`: one line per ADR,
+ascending by number, with the clause it decides.
+
+Design notes are the third way a decision is recorded: a design or grill session
+opens by looking for prior art in open issues and `docs/notes/`, and closes by
+writing its decision tree to one note. See `docs/agents/design-notes.md`.
 
 ## Project history (read before changing pipeline internals)
 
@@ -221,6 +245,8 @@ tests/                       — mirrors the sources it tests
 │       ├── report.test.ts
 │       ├── list-run-report.test.ts
 │       └── run-log.test.ts
+├── docs/                    — the tests whose subject is a committed document, not source
+│   └── adr-index.test.ts    — every ADR in docs/adr/ has an index line, and every line names one (#109)
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
@@ -240,7 +266,8 @@ tests/                       — mirrors the sources it tests
         │   ├── run-start.test.ts
         │   └── wall-state.test.ts
         └── i18n/
-            └── messages.test.ts
+            ├── messages.test.ts
+            └── vocabulary-guard.test.ts — every runtime tuple in web/api-types.ts is enumerated by the dictionary test or exempt with a reason (#112)
 scripts/
 ├── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ├── build.ts          — the build: Vite's page + three esbuild entries (Console, Run, updater) into `build/`, one `RE1999_VERSION` define, the tree's package.json, and a refusal when a bundle left an undeclared import
@@ -250,6 +277,8 @@ scripts/
 ├── package.ts        — `pnpm package`: collect `build/` + `packaging/` + Node + sharp's closure into `dist-package/re1999-wallpaper-crawler-v<version>.zip`, asserting the whitelist before the zip is written
 ├── release-notes.ts  — the Release body: exactly one `## X.Y.Z` section of `CHANGELOG.md`, failing loudly when it is missing, empty or duplicated; CLI prints it or writes `--out` (#88, unit-tested)
 ├── release-tag.ts    — the tag/version agreement: a `vX.Y.Z` tag must equal `package.json`'s version, checked by function rather than inline YAML; CLI prints the version, `--package` is the dry run (#88, unit-tested)
+├── smoke-boot.ts     — the boot check (#108): stages a built tree into a temporary root, starts it on an OS-assigned port, drives the page's own API with the boot token, runs the updater's refusal, and proves a tree missing an artifact refuses — `pnpm smoke:boot`
+├── webui.ts          — `pnpm webui`: runs `build/` as the program with the repository's `data/` as its data, so the developer's own Mirror and Run logs are what the page shows
 └── zip.ts            — the hand-written zip writer (node:zlib, UTF-8 names, no zip64) (unit-tested)
 packaging/
 ├── 启动.bat          — the portable package's entry point (#85): ASCII-only, `cd /d "%~dp0app"`, the two root variables, `app\node.exe app\server.js`, then an unconditional `pause` so the window keeps its last lines after a clean exit too, and `pause` before a non-zero exit (#96). #86 copies it to the archive root byte for byte
@@ -281,7 +310,19 @@ what keep a release from carrying the owner's data.
 
 A Run's data lives in the data directory, never in the program directory: `<data>/images` (the Mirror), `<data>/logs` (the Run logs) and `<data>/cache/thumbnails` (the disposable thumbnail cache, outside the Mirror by ADR 0010), with `data/user.env` from #78. `core/data-layout.ts` owns that arrangement and the `layout.json` version marker; a pre-#80 checkout is migrated by a same-volume rename on the first start, and an unrecognised or newer layout refuses to start instead of guessing. The built tree (`build/`) is what travels with the program — three bundles and the page — and no source file does; there is no other root directory — the run-code copy that used to live in `.run-cache/` went with the browser crawl (#76). Nothing under the data directory is ever deleted by the program (ADR 0019).
 
-Tests mirror the source tree under `tests/` (`core/report/report.ts` → `tests/core/report/report.test.ts`, `web/server/server.ts` → `tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` → `tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to `tests/**/*.test.ts`, so a test file left in a source tree never runs. The service's surface is the exception in the other direction: `routes/` and `http/` have no per-file tests, because what they are is only meaningful as a whole — their tests are the socket tests at `tests/web/server/`, which drive the bound service over a real socket.
+Tests mirror the source tree under `tests/` (`core/report/report.ts` →
+`tests/core/report/report.test.ts`, `web/server/server.ts` →
+`tests/web/server/server.test.ts`, `web/src/lib/masonry.ts` →
+`tests/web/src/lib/masonry.test.ts`); `vitest.config.ts` scopes collection to
+`tests/**/*.test.ts`, so a test file left in a source tree never runs. There are
+two deliberate exceptions. The service's surface has no per-file tests, because
+what `routes/` and `http/` are is only meaningful as a whole — their tests are
+the socket tests at `tests/web/server/`, which drive the bound service over a
+real socket. And a test whose subject is a committed document rather than source
+keeps the document's own name instead of a source path:
+`tests/docs/adr-index.test.ts` guards the index over `docs/adr/`, and
+`tests/scripts/packaging-docs.test.ts` guards the manual and the licence
+agreement.
 
 **Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
 the site's own list endpoint returns every entry and every `pictureUrl` in one
@@ -325,90 +366,14 @@ same-day `1.83.0`) rather than relaxing the policy.
 `ERR_PNPM_IGNORED_BUILDS`. pnpm 12 reads its settings from that file, **not**
 from a `pnpm` field in `package.json` (which it now warns about and ignores).
 
-### An ESM bundle of CommonJS packages needs `createRequire`
+## Branch-specific reference (packaging, build, Console boot, Run log)
 
-`scripts/build.ts` prepends a banner to both entries:
-`const require = createRequire(import.meta.url)`. It is not decoration. esbuild
-inlines a CommonJS dependency's `require` as its own shim, and in ESM output that
-shim calls a `require` that does not exist — the first bundled CJS package that
-requires a builtin kills the program at import. Measured, not guessed: without
-the banner the built Console died on `dotenv` (`Dynamic require of "fs" is not
-supported`) before it printed a URL, while typecheck, lint and every test passed.
-Only booting the artifact catches this class of failure.
-
-### The launcher is ASCII, and the program prints the Chinese
-
-A `.bat` with Chinese text is not reliable on Windows, and `chcp 65001` is not a
-universal fix. Measured on a real Chinese Windows 11 in fresh console windows
-(936): a UTF-8 no-BOM script shows the line as mojibake; UTF-8 + `chcp 65001`
-shows it correctly but only while the file stays BOM-less (and turns cmd's own
-messages English); a UTF-8 **BOM** makes the first line run as
-`'锘緻echo' 不是内部或外部命令`, so `@echo off` never happens; GBK is correct on
-that machine and on no other. So `packaging/启动.bat` and `packaging/更新.bat`
-are pure ASCII — `cd`, the two root variables (or the package root and `%*`),
-`app\node.exe app\<entry>.js`, and `pause` on both paths (a start's window keeps
-its last lines after a clean exit too, #96; a failure keeps its message) — and
-every Chinese line
-(the window title, the "do not close" line, the Mark-of-the-Web steps, every
-updater answer) is Node's, which writes Unicode to the console. Do not add
-Chinese to a script, and do not let its line endings be normalized: they are
-stored with CRLF, and `.gitattributes` marks `*.bat -text`.
-
-### The user manual is UTF-8 with a BOM, and CRLF
-
-`packaging/使用说明.txt` is the one document a player opens after unzipping, in
-Notepad. A BOM is Notepad's one unambiguous "this is UTF-8" signal — without it
-the reader uses a heuristic, and a wrong guess is mojibake; CRLF is one line per
-line. `.gitattributes` marks `packaging/*.txt -text` so git neither normalizes
-nor rewrites those bytes, and the packager copies the file verbatim. Measured on
-this machine: Notepad's status bar reports `UTF-8 BOM` and `Windows (CRLF)`, and
-the document reads back through UI Automation with no replacement character and
-the Chinese intact. `tests/scripts/packaging-docs.test.ts` pins the BOM, the line
-endings, the facts the manual must name, and `LICENSE`'s agreement with
-`package.json`. Do not let a formatter or an editor "fix" the encoding.
-
-### Git history is LF, the Windows worktree is CRLF
-
-The repository stores LF; `core.autocrlf=true` only makes Windows checkouts
-CRLF, and `.gitattributes` (`* text=auto eol=lf`) now pins the worktree to LF so
-the formatter, CI and the checkout agree.
-
-**Do not judge line endings from text output.** `git cat-file` runs the smudge
-filter when it prints a blob, so `git cat-file blob <sha> | grep -c $'\r'`
-reports CRLF for content that is stored as LF — and in this shell `grep -c $'\r'`
-silently degrades to counting *lines* (it returns the line count for both CRLF
-and LF input). Compare **sizes** instead:
-
-```sh
-sha=$(git rev-parse HEAD:core/main.ts)
-git cat-file --batch-check='%(objectsize)' <<< "$sha"   # vs wc -c on the file
-```
-
-A blob smaller than its file by roughly one byte per line is LF.
-
-### The Run log is written synchronously, and must stay that way
-
-`core/logger.ts` writes the JSONL Run log through `pino.destination({ sync: true })`
-on the main thread, with `pino-pretty` as a plain stream rather than a second
-`transport` target. That costs one blocking write per record and buys the one
-property the log exists for: a transport puts the file sink in a worker thread,
-and a worker that stops leaves the process logging into a dead channel while
-still exiting 0 — which is how Run `2026-09-15T09-36-50` lost its `run_report`
-(ADR 0007). The file sink also keeps the **lower level** of the two sinks,
-because pino's multistream writes in level order and has no error isolation: the
-record has to reach the file before a console stream that throws can eat it
-(pino sorts the streams by level in `add()`, so the order of the array in the
-source is decoration, not the mechanism — raising the file's level above the
-console's is what would invert it). Do not "optimize" this back into a
-transport.
-
-### Git hooks live in `.git/hooks`, and `core.hooksPath` must stay unset
-
-`simple-git-hooks` writes `.git/hooks/*` from the `prepare` script. A leftover
-`git config core.hooksPath .githooks` (the removed shell-hook setup) points at a
-deleted directory and makes git skip hooks **silently** — clear it with
-`git config --unset core.hooksPath`. Verify the hooks actually fire by trying a
-commit on `main`: it must be refused.
+**Packaging, build, Console boot or Run-log work** opens one document first:
+`docs/agents/branch-reference.md`. It carries the six lessons that moved out of
+this file — the `createRequire` bundling banner, the launcher's ASCII rule, the
+manual's encoding, the line-ending rule, the synchronous Run log, and where the
+git hooks live — unchanged. A new lesson that only one of those branches needs
+goes there, not here: this file keeps what a first command needs.
 
 ## Code style
 
@@ -420,11 +385,10 @@ commit on `main`: it must be refused.
   `dotenv/config`, `virtual:uno.css` and the `@fontsource-variable/*` families —
   the virtual module *is* the stylesheet and a font import *is* its `@font-face`
   rules, so neither has a binding to assign).
-- Format: **oxfmt** (`pnpm fmt` → `oxfmt`, `pnpm fmt:check` gates CI), configured
-  in `.oxfmtrc.json`: no semicolons, single quotes, no parens on a sole arrow
-  parameter, 100 columns, LF, sorted imports. Markdown is not formatted yet.
-  Formatting is not a matter of taste here — run `pnpm fmt` instead of
-  hand-aligning.
+- Format: **oxfmt** (`pnpm fmt` → `oxfmt`; `pnpm fmt:check` gates CI) — run it
+  instead of hand-aligning. Its rules live in `.oxfmtrc.json`, which is their one
+  source of truth and not a second statement here; `.editorconfig` states the
+  editor defaults for the files oxfmt does not reach.
 - TypeScript strict mode, ESM module system, run via `tsx` at **development**
   time (ADR 0003) — the shipped tree is a bundle (`pnpm build`), and nothing the
   owner runs loads a transpiler or a bundler
@@ -447,6 +411,3 @@ commit on `main`: it must be refused.
   names the refusal and HTTP is the vocabulary it is translated into. The
   response headers are hand-built in `web/server/http/respond.ts` — no router
   default serves a response a test asserts on (ADR 0017).
-- Formatting: semicolons off, single quotes, 2-space indent, LF — enforced by
-  oxfmt, not hand-maintained (`.editorconfig` still states the editor defaults
-  for files outside its reach).
