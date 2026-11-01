@@ -24,7 +24,22 @@ const README_EN_FILE = path.join(REPO_ROOT, 'README.en.md')
 const LICENCE_FILE = path.join(REPO_ROOT, 'LICENSE')
 
 /** The one Node floor: `package.json`'s `engines.node` without its `>=`. */
-const NODE_FLOOR = '22.22.1'
+function repoNodeFloor(): string {
+  const parsed: unknown = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'))
+  if (typeof parsed === 'object' && parsed !== null && 'engines' in parsed) {
+    const { engines } = parsed
+    if (typeof engines === 'object' && engines !== null && 'node' in engines) {
+      const { node } = engines
+      if (typeof node === 'string' && /^>=\s*\d+\.\d+\.\d+$/.test(node.trim())) {
+        return node.trim().replace(/^>=\s*/, '')
+      }
+    }
+  }
+  throw new Error('the repository package.json declares no >=X.Y.Z engines.node')
+}
+
+/** The floor the documents must name, read from the same manifest the floor lives in. */
+const NODE_FLOOR = repoNodeFloor()
 
 /** The documents, and their own names for the update section. */
 const DOCUMENTS = [

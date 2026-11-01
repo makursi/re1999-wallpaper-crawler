@@ -67,17 +67,35 @@
 // checkout's `package.json` version names. No archive is a failure that says so
 // — never a crash.
 
-import { spawn, spawnSync } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import process from 'node:process'
 
 import { DATA_LAYOUT_FILE_NAME } from '../core/data-layout.js'
-import type { ConsoleStatusPayload } from '../web/api-types.js'
+import type { Program, ProgramOptions, Reply } from './boot-probe.js'
+import {
+  assertCheck,
+  BOOT_ARGS,
+  childEnvironment as baseChildEnvironment,
+  dataEntries,
+  exitingOf,
+  indent,
+  isStatusPayload,
+  reportOk as report,
+  request,
+  startShippedProgram,
+} from './boot-probe.js'
+import { isRecord } from './json.js'
+import {
+  archiveRequiredEntries,
+  NPMRC_FILE_NAME,
+  NPMRC_TEXT,
+  packagePathOffenders,
+} from './package-layout.js'
 import { packageVersion } from './package-version.js'
-import { extractZip } from './unzip.js'
+import { extractZip, readZip } from './unzip.js'
 
 /** The repository root: this script's parent. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
@@ -90,19 +108,6 @@ const ARCHIVE_PREFIX = 're1999-wallpaper-crawler-v'
 
 /** The one version this checkout declares; the archive has to be that release. */
 const PACKAGE_FILE = path.join(REPO_ROOT, 'package.json')
-
-/** The root entries the extracted archive must carry, as archive-relative paths. */
-const REQUIRED_ARCHIVE_FILES: readonly string[] = [
-  'README.md',
-  'LICENSE.txt',
-  'package.json',
-  'package-lock.json',
-  '.npmrc',
-  '.env',
-  'server.js',
-  'run.js',
-  'web/dist/index.html',
-]
 
 /** The manifest the extracted archive carries, as this check reads it. */
 interface ArchiveManifest {
@@ -122,16 +127,6 @@ const INSTALL_ARGS = ['install', '--omit=dev', '--no-audit', '--no-fund'] as con
 /** The install's one command, in full, for the log. */
 const INSTALL_COMMAND = ['npm', ...INSTALL_ARGS].join(' ')
 
-/**
- * The arguments the check passes to the entry through the manifest's start
- * script: an OS-assigned port and no browser. They must arrive after `--`, which
- * is what proves the start script forwards its caller's arguments.
- */
-const BOOT_ARGS = ['--no-open', '--port', '0'] as const
-
-/** The address the Console prints once it is listening. */
-const BOOT_ADDRESS = /WebUI: (http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]+)/
-
 /** An install of one native dependency from the registry; generous, not infinite. */
 const INSTALL_TIMEOUT_MS = 10 * 60_000
 
@@ -146,9 +141,6 @@ const EXIT_TIMEOUT_MS = 15_000
 
 /** One API request's budget: loopback, so this is already generous. */
 const REQUEST_TIMEOUT_MS = 15_000
-
-/** The configuration keys the boot must not inherit from the developer's shell. */
-const CONFIG_ENV_KEYS = ['BASE_ORIGIN', 'IMAGES_DIR', 'LOG_DIR', 'BATCH_SIZE', 'USER_AGENT']
 
 /**
  * A loopback address nothing listens on. The archive's `.env` names the game's
@@ -205,31 +197,16 @@ interface Extracted {
 }
 
 /**
- * One started program. The handle owns the child, its output, the address wait,
- * the close wait and the stop, so the check never subscribes to the same process
- * twice and no server outlives the step that started it.
+ * One started program and the address it printed.
+ *
+ * The handle itself is `scripts/boot-probe.ts`'s: it owns the child, its output,
+ * the address wait, the close wait and the stop, so no server outlives the step
+ * that started it. This interface only pairs it with the printed address.
  */
-interface Program {
-  /** Everything the child has written so far, stdout and stderr together. */
-  output(): string
-  /** Resolve once the startup address is printed; reject on exit or timeout. */
-  address(): Promise<string>
-  /** Resolve with the exit code once the child closes; kill it at the limit. */
-  close(timeoutMs: number): Promise<number | null>
-  /** Leave nothing running, even when a check threw mid-boot. */
-  stop(): Promise<void>
-}
-
-/** One started program and the address it printed. */
 interface Started {
   program: Program
   /** The page's URL, with this boot's `?token=`. */
   address: string
-}
-
-/** Print one check as it passes: a CI log reads how far the chain got. */
-function report(what: string): void {
-  process.stdout.write(`ok - ${what}\n`)
 }
 
 /**
@@ -242,11 +219,7 @@ function assert(
   what: string,
   detail: string | (() => string) = '',
 ): asserts condition {
-  if (condition) {
-    report(what)
-    return
-  }
-  throw new CheckFailure(step, what, typeof detail === 'function' ? detail() : detail)
+  assertCheck(condition, what, detail, (message, text) => new CheckFailure(step, message, text))
 }
 
 /** Wrap a helper's ordinary failure in the step that called it. */
@@ -258,42 +231,6 @@ function atStep(step: Step, error: unknown): CheckFailure {
 /** `6.9 MB`, for the report. */
 function megabytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-/** A JSON object, checked without trusting the response's shape. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** The fields that identify `/api/status`, so the version can be read safely. */
-function isStatusPayload(body: unknown): body is ConsoleStatusPayload {
-  return isRecord(body) && 'version' in body && 'state' in body && 'runConfigAvailable' in body
-}
-
-/** The exit answer's one flag, or `null` when the body is not that contract. */
-function exitingOf(body: unknown): boolean | null {
-  if (!isRecord(body) || !('exiting' in body)) return null
-  return typeof body.exiting === 'boolean' ? body.exiting : null
-}
-
-/** Indent a detail block under its label, so one failure stays one log entry. */
-function indent(text: string): string {
-  const trimmed = text.trimEnd()
-  if (trimmed === '') return ''
-  return trimmed
-    .split('\n')
-    .map(line => `  ${line}`)
-    .join('\n')
-}
-
-/** What is directly under the data directory, for the check's own report. */
-function dataEntries(dataRoot: string): string {
-  try {
-    const names = fs.readdirSync(dataRoot).toSorted()
-    return names.length === 0 ? '(empty)' : names.join(', ')
-  } catch {
-    return '(missing)'
-  }
 }
 
 /**
@@ -404,13 +341,43 @@ function extractStage(archive: string, programRoot: string, declaredVersion: str
   }
   report(`extracted ${extracted.entries} files (${megabytes(extracted.bytes)}) from ${archive}`)
 
-  for (const name of REQUIRED_ARCHIVE_FILES) {
+  // The required list is `scripts/package-layout.ts`'s, not a copy: the module
+  // that decides what may enter the archive also says which of those entries a
+  // release cannot be missing.
+  for (const name of archiveRequiredEntries()) {
     assert(
       '解压',
       fs.existsSync(path.join(programRoot, ...name.split('/'))),
       `the archive carries ${name}`,
     )
   }
+
+  // The other direction of the same rule, over the archive's real entries: a
+  // path the whitelist does not name fails the check, so "the root entries and
+  // the whitelist are one-to-one" is proved about a zip, not about the plan.
+  let archivePaths: string[]
+  try {
+    archivePaths = readZip(archive).map(entry => entry.name)
+  } catch (error) {
+    throw atStep('解压', error)
+  }
+  const offenders = packagePathOffenders(archivePaths)
+  assert(
+    '解压',
+    offenders.length === 0,
+    `every extracted path is on the release whitelist (${archivePaths.length} files, none outside scripts/package-layout.ts)`,
+    offenders.join('\n'),
+  )
+
+  // The extracted copy is what a player's `npm install` reads, so the generated
+  // text is asserted here rather than taken from the packager's constant.
+  const npmrcText = fs.readFileSync(path.join(programRoot, NPMRC_FILE_NAME), 'utf8')
+  assert(
+    '解压',
+    npmrcText === NPMRC_TEXT,
+    `the archive's ${NPMRC_FILE_NAME} is the generated engine-strict configuration`,
+    () => `expected ${JSON.stringify(NPMRC_TEXT)}, got ${JSON.stringify(npmrcText)}`,
+  )
 
   const manifest = manifestOf(programRoot, declaredVersion)
   report(
@@ -505,170 +472,26 @@ function installStage(programRoot: string): void {
  * site's origin pointed at a closed loopback port.
  */
 function childEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env }
-  for (const key of Object.keys(env)) {
-    if (key.startsWith('RE1999_')) delete env[key]
-  }
-  for (const key of CONFIG_ENV_KEYS) delete env[key]
-  env.BASE_ORIGIN = OFFLINE_BASE_ORIGIN
-  return env
+  return baseChildEnvironment({ BASE_ORIGIN: OFFLINE_BASE_ORIGIN })
 }
 
-/**
- * Stop the whole tree the start script began. `npm start` puts npm (or the shell
- * that resolved it) between this driver and the Console, so killing only the
- * direct child would leave the program holding its port. Windows kills the tree
- * with `taskkill /T`; on POSIX the child is spawned detached so its process group
- * can be signalled, with a direct kill as the fallback.
- */
-function killTree(child: ChildProcess): void {
-  const pid = child.pid
-  if (pid === undefined) {
-    child.kill()
-    return
-  }
-  if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    })
-    killer.on('error', () => child.kill())
-    return
-  }
-  try {
-    process.kill(-pid, 'SIGTERM')
-  } catch {
-    child.kill()
-  }
-}
-
-/**
- * Collect one spawned process into the handle the steps use. The output is
- * collected once, and the address wait, the close wait and every failure report
- * read that same buffer.
- */
-function track(child: ChildProcess): Program {
-  let output = ''
-  let onChunk: (() => void) | null = null
-  const collect = (chunk: Buffer): void => {
-    output += chunk.toString('utf8')
-    onChunk?.()
-  }
-  child.stdout?.on('data', collect)
-  child.stderr?.on('data', collect)
-  child.once('error', error => {
-    output += `${error.message}\n`
-    onChunk?.()
-  })
-
-  // Attached at spawn, so a process that exits before a step asks for its code
-  // cannot fire `close` into the void.
-  const closed = new Promise<number | null>(resolve => {
-    child.once('close', code => resolve(code))
-  })
-
-  const closeWithin = (timeoutMs: number): Promise<number | null> =>
-    new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        killTree(child)
-        reject(new CheckFailure('退出', `the program did not stop within ${timeoutMs} ms`, output))
-      }, timeoutMs)
-      void closed.then(code => {
-        clearTimeout(timer)
-        resolve(code)
-        return code
-      })
-    })
-
-  /** Resolve once the address is printed, riding the handle's one collector. */
-  const waitForAddress = (): Promise<string> =>
-    new Promise((resolve, reject) => {
-      let settled = false
-      const finish = (action: () => void): void => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        onChunk = null
-        action()
-      }
-      const scan = (): void => {
-        const match = BOOT_ADDRESS.exec(output)
-        if (match !== null) finish(() => resolve(match[1]))
-      }
-      const timer = setTimeout(
-        () =>
-          finish(() =>
-            reject(
-              new CheckFailure('启动', `no boot address within ${BOOT_TIMEOUT_MS} ms`, output),
-            ),
-          ),
-        BOOT_TIMEOUT_MS,
-      )
-
-      child.once('error', error => finish(() => reject(atStep('启动', error))))
-      child.once('exit', code =>
-        finish(() =>
-          reject(
-            new CheckFailure(
-              '启动',
-              `the program exited ${String(code)} before it printed an address`,
-              output,
-            ),
-          ),
-        ),
-      )
-      onChunk = scan
-      scan()
-    })
-
+/** This command's failure wording and timeouts, handed to the shared handle. */
+function programOptions(): ProgramOptions {
   return {
-    output: () => output,
-    address: waitForAddress,
-    close: closeWithin,
-    stop: async () => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        await closed.catch(() => null)
-        return
-      }
-      killTree(child)
-      try {
-        await closeWithin(EXIT_TIMEOUT_MS)
-      } catch {
-        // The temporary root is about to go; a kill that did not finish is
-        // reported by the check's own failure, not by a second one here.
-      }
-    },
+    addressTimeoutMs: BOOT_TIMEOUT_MS,
+    exitTimeoutMs: EXIT_TIMEOUT_MS,
+    addressFailure: (message, detail) => new CheckFailure('启动', message, detail),
+    closeFailure: (message, detail) => new CheckFailure('退出', message, detail),
+    spawnFailure: error => new CheckFailure('启动', error.message),
   }
 }
 
 /**
  * Start the extracted root the way a user does: through the manifest's own
  * `scripts.start`, with the check's arguments after `--`.
- *
- * Windows resolves `npm` through `npm.cmd`, which Node refuses to spawn without
- * a shell; the command is the check's own fixed literals, so one command string
- * is exact. POSIX spawns npm directly and detached, so a failed check can signal
- * the whole group instead of orphaning the Console.
  */
-function startShippedProgram(programRoot: string): Program {
-  const startArgs = ['start', '--', ...BOOT_ARGS]
-  const child =
-    process.platform === 'win32'
-      ? spawn(['npm', ...startArgs].join(' '), {
-          cwd: programRoot,
-          env: childEnvironment(),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          shell: true,
-        })
-      : spawn('npm', startArgs, {
-          cwd: programRoot,
-          env: childEnvironment(),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          detached: true,
-        })
-  return track(child)
+function startArchiveProgram(programRoot: string): Program {
+  return startShippedProgram(programRoot, BOOT_ARGS, childEnvironment(), programOptions())
 }
 
 /**
@@ -681,7 +504,7 @@ function startShippedProgram(programRoot: string): Program {
 async function startStage(programRoot: string, dataRoot: string): Promise<Started> {
   assert('启动', !fs.existsSync(dataRoot), 'the extracted archive carries no data directory')
 
-  const program = startShippedProgram(programRoot)
+  const program = startArchiveProgram(programRoot)
   try {
     const address = await program.address()
     const url = new URL(address)
@@ -695,27 +518,6 @@ async function startStage(programRoot: string, dataRoot: string): Promise<Starte
   }
 }
 
-interface Reply {
-  status: number
-  body: unknown
-  text: string
-}
-
-/** One request to the page's own API, with the boot token still on the URL. */
-async function request(address: string, route: string, init: RequestInit = {}): Promise<Reply> {
-  const url = new URL(address)
-  url.pathname = route
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-  const text = await response.text()
-  let body: unknown = null
-  try {
-    body = JSON.parse(text)
-  } catch {
-    // A non-JSON body is reported by the caller's status check; `text` carries it.
-  }
-  return { status: response.status, body, text }
-}
-
 /**
  * The 探活 step: `GET /api/status` with the printed token, which must answer 200
  * and report the version the archive declares — the proof that the manifest the
@@ -726,7 +528,7 @@ async function request(address: string, route: string, init: RequestInit = {}): 
 async function probeStage(started: Started, extracted: Extracted): Promise<void> {
   let status: Reply
   try {
-    status = await request(started.address, '/api/status')
+    status = await request(started.address, '/api/status', REQUEST_TIMEOUT_MS)
   } catch (error) {
     throw new CheckFailure('探活', 'GET /api/status did not answer', String(error))
   }
@@ -760,7 +562,7 @@ async function probeStage(started: Started, extracted: Extracted): Promise<void>
 async function exitStage(started: Started): Promise<void> {
   let exit: Reply
   try {
-    exit = await request(started.address, '/api/exit', {
+    exit = await request(started.address, '/api/exit', REQUEST_TIMEOUT_MS, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ confirm: false }),

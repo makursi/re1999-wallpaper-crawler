@@ -41,13 +41,24 @@ import { parse as parseDotenv } from 'dotenv'
 
 import type { ConfigValues } from '../core/config-read.js'
 import { readConfig } from '../core/config-read.js'
-import { PAGE_ENTRY_FILE } from '../web/server/build-artifacts.js'
+import {
+  PAGE_ENTRY_FILE,
+  RUN_ENTRY_FILE,
+  SERVER_ENTRY_FILE,
+} from '../web/server/build-artifacts.js'
+import { isRecord } from './json.js'
 
 /** The name of the committed site-constants template, inside `packaging/`. */
 export const SITE_ENV_FILE_NAME = 'site.env'
 
-/** The two program entries the archive carries, taken from the built tree. */
-export const ARCHIVE_ENTRY_FILES: readonly string[] = ['server.js', 'run.js']
+/**
+ * The two program entries the archive carries, taken from the built tree.
+ *
+ * The names come from `web/server/build-artifacts.ts`, the module that says what
+ * the built tree is made of: a literal here would be a second answer to "what is
+ * the Console entry called".
+ */
+export const ARCHIVE_ENTRY_FILES: readonly string[] = [SERVER_ENTRY_FILE, RUN_ENTRY_FILE]
 
 /**
  * Every file that may live directly at the archive root, by name.
@@ -223,11 +234,6 @@ export function readSiteEnv(packagingDir: string): SiteEnvTemplate {
   }
 
   return { file, text, values, baseOrigin: values.BASE_ORIGIN }
-}
-
-/** Whether an unknown value is a JSON object, the shape a lockfile is read as. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** A lockfile's root descriptor: the manifest the lockfile was resolved from. */

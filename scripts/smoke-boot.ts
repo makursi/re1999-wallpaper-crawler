@@ -75,8 +75,6 @@
 // Usage: `pnpm smoke:boot [built-tree]` — the tree defaults to `<repo>/build`,
 // and both cases stage it, which is why CI runs `pnpm build` first.
 
-import { spawn } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -88,6 +86,20 @@ import {
   INSTANCE_RECORD_FILE_NAME,
   INSTANCE_RECORD_VERSION,
 } from '../web/server/instance-record.js'
+import type { Program, ProgramOptions, Reply } from './boot-probe.js'
+import {
+  assertCheck,
+  BOOT_ADDRESS,
+  BOOT_ARGS,
+  childEnvironment as baseChildEnvironment,
+  dataEntries,
+  exitingOf,
+  indent,
+  isStatusPayload,
+  request,
+  startShippedProgram,
+} from './boot-probe.js'
+import { isRecord } from './json.js'
 import { packageVersion } from './package-version.js'
 
 /** The repository root: this script's parent. The version comes from `PACKAGE_FILE`. */
@@ -102,21 +114,6 @@ const PACKAGE_FILE = path.join(REPO_ROOT, 'package.json')
 /** The entries this command starts or names by name. */
 const SERVER_ENTRY = 'server.js'
 const RUN_ENTRY = 'run.js'
-
-/**
- * The arguments the check passes to the entry through the manifest's start
- * script: an OS-assigned port and no browser. They must arrive after `--`, which
- * is what proves the start script forwards its caller's arguments.
- */
-const BOOT_ARGS = ['--no-open', '--port', '0'] as const
-
-/**
- * The address the Console prints once it is listening: the loopback origin, the
- * page's `/`, and the token every request must carry. Parsing it is how the
- * driver learns the port and the token without reading the instance record
- * first — the record is then checked against what the address said.
- */
-const BOOT_ADDRESS = /WebUI: (http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]+)/
 
 /** A boot that prints no address in this long is not going to. */
 const BOOT_TIMEOUT_MS = 30_000
@@ -141,9 +138,6 @@ const PORT_RETRIES = 2
  */
 const STAGED_VERSION = '0.0.0-smoke'
 
-/** The configuration keys the child must not inherit from the developer. */
-const CONFIG_ENV_KEYS = ['BASE_ORIGIN', 'IMAGES_DIR', 'LOG_DIR', 'BATCH_SIZE', 'USER_AGENT']
-
 /** A check that failed: the label says which disagreement stopped the command. */
 class SmokeFailure extends Error {
   constructor(message: string, detail = '') {
@@ -160,22 +154,6 @@ interface Staged {
 }
 
 /**
- * One started program. The handle owns the child, its output, the address wait,
- * the close wait and the stop, so a case never subscribes to the same process
- * twice and no process outlives the case that started it.
- */
-interface Program {
-  /** Everything the child has written so far, stdout and stderr together. */
-  output(): string
-  /** Resolve once the startup address is printed; reject on exit or timeout. */
-  address(): Promise<string>
-  /** Resolve with the exit code once the child closes; kill it at the limit. */
-  close(timeoutMs: number): Promise<number | null>
-  /** Leave nothing running, even when a check threw mid-boot. */
-  stop(): Promise<void>
-}
-
-/**
  * Record one check, or stop the command at the first disagreement. Success is
  * printed as it happens so a CI log says how far the boot got; the detail is
  * what a failure prints under the label.
@@ -185,11 +163,7 @@ function assertAndReport(
   what: string,
   detail: string | (() => string) = '',
 ): asserts condition {
-  if (condition) {
-    process.stdout.write(`ok - ${what}\n`)
-    return
-  }
-  throw new SmokeFailure(what, typeof detail === 'function' ? detail() : detail)
+  assertCheck(condition, what, detail, (message, text) => new SmokeFailure(message, text))
 }
 
 /** The one tree to stage: the build by default, or the argument. */
@@ -259,169 +233,29 @@ function rewriteStagedVersion(root: string): void {
  * so "no network" is not this command's claim; "no site request" is.
  */
 function childEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env }
-  for (const key of Object.keys(env)) {
-    if (key.startsWith('RE1999_')) delete env[key]
-  }
-  for (const key of CONFIG_ENV_KEYS) delete env[key]
-  return env
+  return baseChildEnvironment()
 }
 
-/**
- * Stop the whole tree the start script began. `npm start` puts npm (or the
- * shell that resolved it) between this driver and the Console, so killing only
- * the direct child would leave the program holding its port. Windows kills the
- * tree with `taskkill /T`; on POSIX the child is spawned detached so its process
- * group can be signalled, with a direct kill as the fallback.
- */
-function killTree(child: ChildProcess): void {
-  const pid = child.pid
-  if (pid === undefined) {
-    child.kill()
-    return
-  }
-  if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    })
-    killer.on('error', () => child.kill())
-    return
-  }
-  try {
-    process.kill(-pid, 'SIGTERM')
-  } catch {
-    child.kill()
-  }
-}
-
-/**
- * Collect one spawned process into the handle the cases use. The output is
- * collected once, and the address wait, the close wait and every failure report
- * read that same buffer; `killChild` is how a stuck start is torn down.
- */
-function track(child: ChildProcess, killChild: (child: ChildProcess) => void): Program {
-  let output = ''
-  let onChunk: (() => void) | null = null
-  const collect = (chunk: Buffer): void => {
-    output += chunk.toString('utf8')
-    onChunk?.()
-  }
-  child.stdout?.on('data', collect)
-  child.stderr?.on('data', collect)
-  // A spawn that failed (no runtime, no entry) emits `error` and would crash an
-  // emitter with no listener; the output is what the caller's report reads.
-  child.once('error', error => {
-    output += `${error.message}\n`
-    onChunk?.()
-  })
-
-  // Attached at spawn, so a process that exits before a case asks for its code
-  // cannot fire `close` into the void. A refused second start exits this fast.
-  const closed = new Promise<number | null>(resolve => {
-    child.once('close', code => resolve(code))
-  })
-
-  const closeWithin = (timeoutMs: number): Promise<number | null> =>
-    new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        killChild(child)
-        reject(new SmokeFailure(`the program did not stop within ${timeoutMs} ms`, output))
-      }, timeoutMs)
-      void closed.then(code => {
-        clearTimeout(timer)
-        resolve(code)
-        return code
-      })
-    })
-
-  /** Resolve once the address is printed, riding the handle's one collector. */
-  const waitForAddress = (): Promise<string> =>
-    new Promise((resolve, reject) => {
-      let settled = false
-      const finish = (action: () => void): void => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        onChunk = null
-        action()
-      }
-      const scan = (): void => {
-        const match = BOOT_ADDRESS.exec(output)
-        if (match !== null) finish(() => resolve(match[1]))
-      }
-      const timer = setTimeout(
-        () =>
-          finish(() =>
-            reject(new SmokeFailure(`no boot address within ${BOOT_TIMEOUT_MS} ms`, output)),
-          ),
-        BOOT_TIMEOUT_MS,
-      )
-
-      child.once('error', error => finish(() => reject(error)))
-      child.once('exit', code =>
-        finish(() =>
-          reject(
-            new SmokeFailure(
-              `the program exited ${String(code)} before it printed an address`,
-              output,
-            ),
-          ),
-        ),
-      )
-      onChunk = scan
-      scan()
-    })
-
-  let address: Promise<string> | null = null
+/** This command's failure wording and timeouts, handed to the shared handle. */
+function programOptions(): ProgramOptions {
   return {
-    output: () => output,
-    address: () => (address ??= waitForAddress()),
-    close: closeWithin,
-    stop: async () => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        await closed.catch(() => null)
-        return
-      }
-      killChild(child)
-      try {
-        await closeWithin(EXIT_TIMEOUT_MS)
-      } catch {
-        // The temporary root is about to go; a kill that did not finish is
-        // reported by the caller's own failure, not by a second one here.
-      }
-    },
+    addressTimeoutMs: BOOT_TIMEOUT_MS,
+    exitTimeoutMs: EXIT_TIMEOUT_MS,
+    addressFailure: (message, detail) => new SmokeFailure(message, detail),
+    closeFailure: (message, detail) => new SmokeFailure(message, detail),
+    // A spawn error here is the caller's own report: the boot cases read the
+    // output, and the message already says what failed to start.
+    spawnFailure: error => error,
   }
 }
 
 /**
  * Start the staged tree the way a user does: through the manifest's own
- * `scripts.start`, with the check's arguments after `--` (#117).
- *
- * Windows resolves `npm` through `npm.cmd`, which Node refuses to spawn without
- * a shell; the command is the check's own fixed literals, so one command string
- * is exact. POSIX spawns npm directly and detached, so a failed check can signal
- * the whole group instead of orphaning the Console.
+ * `scripts.start`, with the check's arguments after `--` (#117). The spawn
+ * itself, the address wait and the tree-wide stop are `scripts/boot-probe.ts`'s.
  */
-function startShippedProgram(staged: Staged, args: readonly string[]): Program {
-  const startArgs = ['start', '--', ...args]
-  const child =
-    process.platform === 'win32'
-      ? spawn(['npm', ...startArgs].join(' '), {
-          cwd: staged.root,
-          env: childEnvironment(),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          shell: true,
-        })
-      : spawn('npm', startArgs, {
-          cwd: staged.root,
-          env: childEnvironment(),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          detached: true,
-        })
-  return track(child, killTree)
+function startStagedProgram(staged: Staged, args: readonly string[]): Program {
+  return startShippedProgram(staged.root, args, childEnvironment(), programOptions())
 }
 
 /** How a case starts the staged tree: the shipped start script. */
@@ -441,45 +275,6 @@ async function withStartedProgram(
   }
 }
 
-/** The route on the printed address, keeping the `?token=` it carries. */
-function endpointOf(address: string, route: string): URL {
-  const url = new URL(address)
-  url.pathname = route
-  return url
-}
-
-interface Reply {
-  status: number
-  body: unknown
-  text: string
-}
-
-/** One request to the page's own API, with the boot token still on the URL. */
-async function request(address: string, route: string, init: RequestInit = {}): Promise<Reply> {
-  const response = await fetch(endpointOf(address, route), {
-    ...init,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  })
-  const text = await response.text()
-  let body: unknown = null
-  try {
-    body = JSON.parse(text)
-  } catch {
-    // A non-JSON body is reported by the caller's status check; `text` carries it.
-  }
-  return { status: response.status, body, text }
-}
-
-/** A JSON object, checked without trusting the response's shape. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** The fields that identify `/api/status`, so the version can be read safely. */
-function isStatusPayload(body: unknown): body is ConsoleStatusPayload {
-  return isRecord(body) && 'version' in body && 'state' in body && 'runConfigAvailable' in body
-}
-
 /** The status payload, or a failure naming what arrived instead. */
 function statusOf(reply: Reply): ConsoleStatusPayload {
   const body = reply.body
@@ -496,22 +291,6 @@ function instanceRecordOf(file: string): Record<string, unknown> {
   return parsed
 }
 
-/** The exit answer's one flag, or `null` when the body is not that contract. */
-function exitingOf(body: unknown): boolean | null {
-  if (!isRecord(body) || !('exiting' in body)) return null
-  return typeof body.exiting === 'boolean' ? body.exiting : null
-}
-
-/** What is directly under the data directory, for the check's own report. */
-function dataEntries(dataRoot: string): string {
-  try {
-    const names = fs.readdirSync(dataRoot).toSorted()
-    return names.length === 0 ? '(empty)' : names.join(', ')
-  } catch {
-    return '(missing)'
-  }
-}
-
 /**
  * The complete tree: start it through its manifest, read its own version and
  * address through the page's API, check the record it published and the data
@@ -520,7 +299,7 @@ function dataEntries(dataRoot: string): string {
 async function caseCompleteTree(staged: Staged, expectedVersion: string): Promise<void> {
   await withStartedProgram(
     staged,
-    stagedTree => startShippedProgram(stagedTree, BOOT_ARGS),
+    stagedTree => startStagedProgram(stagedTree, BOOT_ARGS),
     async program => {
       const address = await program.address()
       const url = new URL(address)
@@ -528,7 +307,7 @@ async function caseCompleteTree(staged: Staged, expectedVersion: string): Promis
       const port = Number(url.port)
       assertAndReport(token.length > 0, 'the printed address carries a boot token')
 
-      const status = await request(address, '/api/status')
+      const status = await request(address, '/api/status', REQUEST_TIMEOUT_MS)
       assertAndReport(
         status.status === 200,
         `GET /api/status answers 200 (got ${status.status})`,
@@ -578,14 +357,14 @@ async function caseCompleteTree(staged: Staged, expectedVersion: string): Promis
       // is proven here at the artifact level — same root, same command, no
       // `RE1999_*` — and the first program has to survive it.
       await caseSecondStart(staged, address)
-      const stillUp = await request(address, '/api/status')
+      const stillUp = await request(address, '/api/status', REQUEST_TIMEOUT_MS)
       assertAndReport(
         stillUp.status === 200,
         `the running program still answers after the second start (got ${stillUp.status})`,
         stillUp.text,
       )
 
-      const exit = await request(address, '/api/exit', {
+      const exit = await request(address, '/api/exit', REQUEST_TIMEOUT_MS, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ confirm: false }),
@@ -620,7 +399,7 @@ async function caseCompleteTree(staged: Staged, expectedVersion: string): Promis
 async function caseSecondStart(staged: Staged, runningAddress: string): Promise<void> {
   await withStartedProgram(
     staged,
-    stagedTree => startShippedProgram(stagedTree, BOOT_ARGS),
+    stagedTree => startStagedProgram(stagedTree, BOOT_ARGS),
     async program => {
       const code = await program.close(BOOT_TIMEOUT_MS)
       const output = program.output()
@@ -680,7 +459,7 @@ async function caseMissingArtifact(staged: Staged): Promise<void> {
 
   await withStartedProgram(
     staged,
-    stagedTree => startShippedProgram(stagedTree, BOOT_ARGS),
+    stagedTree => startStagedProgram(stagedTree, BOOT_ARGS),
     async program => {
       const code = await program.close(BOOT_TIMEOUT_MS)
       const output = program.output()
@@ -708,16 +487,6 @@ function cleanup(root: string): void {
       `smoke: could not remove ${root}: ${error instanceof Error ? error.message : String(error)}\n`,
     )
   }
-}
-
-/** Indent a detail block under its label, so one failure stays one log entry. */
-function indent(text: string): string {
-  const trimmed = text.trimEnd()
-  if (trimmed === '') return ''
-  return trimmed
-    .split('\n')
-    .map(line => `  ${line}`)
-    .join('\n')
 }
 
 async function main(): Promise<void> {

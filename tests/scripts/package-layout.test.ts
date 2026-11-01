@@ -28,6 +28,8 @@ import {
   isPackagedPath,
   lockfileCommand,
   lockfileRefusal,
+  NPMRC_FILE_NAME,
+  NPMRC_TEXT,
   packagePathOffenders,
   readSiteEnv,
 } from '../../scripts/package-layout.js'
@@ -225,6 +227,17 @@ describe('packagePathOffenders', () => {
     expect(() =>
       assertPackagedPaths(['README.md', 'server.js', 'web/dist/index.html']),
     ).not.toThrow()
+  })
+})
+
+describe('NPMRC_TEXT', () => {
+  it('is the exact engine-strict configuration the archive carries, not just a file name', () => {
+    // The extracted copy is what a player's `npm install` obeys, so the text is
+    // the assertion: a root entry named `.npmrc` with different bytes would pass
+    // a presence check and enforce nothing.
+    expect(NPMRC_TEXT).toBe('engine-strict=true\n')
+    expect(ARCHIVE_ROOT_FILES).toContain(NPMRC_FILE_NAME)
+    expect(archiveRequiredEntries()).toContain(NPMRC_FILE_NAME)
   })
 })
 

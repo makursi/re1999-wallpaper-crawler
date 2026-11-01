@@ -107,6 +107,24 @@ interface EntryBundle {
   inputs: string[]
 }
 
+/**
+ * The esbuild target the floor names: `>=22.22.1` → `node22`.
+ *
+ * The target is derived rather than written beside the floor, so the manifest,
+ * the injected check and the syntax esbuild emits cannot disagree. The floor's
+ * syntax is the one `core/node-floor.ts` supports; a different form is a build
+ * failure rather than a target this script guessed.
+ */
+function nodeTargetOf(floor: string): string {
+  const match = /^>=\s*(\d+)\.\d+\.\d+$/.exec(floor)
+  if (match === null) {
+    throw new Error(
+      `build: engines.node "${floor}" is not >=X.Y.Z, so the esbuild target cannot be derived from it`,
+    )
+  }
+  return `node${match[1]}`
+}
+
 /** One entry, bundled into the built tree with the manifest's two defines. */
 async function bundleEntry(entry: Entry, manifest: ShippedManifest): Promise<EntryBundle> {
   const result = await esbuild({
@@ -119,8 +137,9 @@ async function bundleEntry(entry: Entry, manifest: ShippedManifest): Promise<Ent
     platform: 'node',
     format: 'esm',
     // The runtime floor `package.json`'s `engines` names, which the manifest
-    // prints and the Console enforces (#117).
-    target: 'node22',
+    // prints and the Console enforces (#117). Derived from the floor itself, so
+    // the syntax esbuild emits cannot disagree with the check.
+    target: nodeTargetOf(manifest.engines.node),
     external: [...ALLOWED_EXTERNALS],
     define: {
       RE1999_VERSION: JSON.stringify(manifest.version),
@@ -145,8 +164,9 @@ async function bundleEntry(entry: Entry, manifest: ShippedManifest): Promise<Ent
  * `build\package.json`: the manifest the flat install root carries (#117).
  *
  * Without `"type": "module"` Node would read `server.js` as CommonJS and the
- * program would not start at all; `scripts.start` is how a shipped root boots,
- * and `sharp` is the one dependency the user's `npm install` has to resolve.
+ * program would not start at all; `scripts.start` is how the program directory
+ * boots, and `sharp` is the one dependency the user's `npm install` has to
+ * resolve.
  * The version is repeated rather than derived so the tree is self-describing —
  * the `define` is what the running program uses, and `core/version.ts` reads
  * this file only as a source run's fallback.

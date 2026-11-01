@@ -60,6 +60,7 @@ import {
   NPMRC_TEXT,
   readSiteEnv,
 } from './package-layout.js'
+import { shippedDependenciesOf } from './package-manifest.js'
 import { packageVersion } from './package-version.js'
 import type { ZipEntrySource } from './zip.js'
 import { writeZip } from './zip.js'
@@ -178,29 +179,13 @@ function assertBuildTree(version: string): void {
   }
 }
 
-/** The shipped manifest's dependency map, read back from the build's own text. */
+/** The shipped manifest's dependency map, read through the module that owns its shape. */
 function shippedDependencies(manifestText: string): Record<string, string> {
-  const parsed: unknown = JSON.parse(manifestText)
-  const dependencies =
-    typeof parsed === 'object' && parsed !== null && 'dependencies' in parsed
-      ? parsed.dependencies
-      : undefined
-  if (typeof dependencies !== 'object' || dependencies === null || Array.isArray(dependencies)) {
+  const dependencies = shippedDependenciesOf(JSON.parse(manifestText))
+  if (dependencies === null) {
     throw new Error('package: build/package.json declares no dependencies — run pnpm build')
   }
-
-  // One field at a time, so this reads as a check rather than a cast: the
-  // lockfile is compared against exactly what the build wrote.
-  const resolved: Record<string, string> = {}
-  for (const [name, spec] of Object.entries(dependencies)) {
-    if (typeof spec !== 'string' || spec.trim() === '') {
-      throw new Error(
-        `package: build/package.json's ${name} has no usable version — run pnpm build`,
-      )
-    }
-    resolved[name] = spec
-  }
-  return resolved
+  return dependencies
 }
 
 /**

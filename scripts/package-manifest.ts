@@ -1,4 +1,4 @@
-// ── The manifest a shipped root carries (#117) ──────────────────────
+// ── The manifest the program directory carries (#117) ───────────────
 //
 // The built tree IS the install root of the flat, npm-delivered release
 // (spec #116): copied out of the repository, `npm install` puts `sharp` in
@@ -6,7 +6,9 @@
 // the working directory — the one property that makes the zero-argument root
 // resolution (`core/app-root.ts`) land on the tree itself. This module owns the
 // shape of the manifest the build writes as `build/package.json`;
-// `scripts/build.ts` reads the repository's fields and writes the result.
+// `scripts/build.ts` reads the repository's fields and writes the result, and
+// `scripts/package.ts` reads the dependency map back through this module rather
+// than parsing the shape a second time.
 //
 // It repeats three facts from the repository manifest on purpose, and each has
 // exactly one source:
@@ -23,10 +25,12 @@
 // `private: true` keeps the tree from ever being published by accident, and
 // `type: "module"` is what lets Node read the bundles as ESM at all.
 
+import { isRecord } from './json.js'
+
 /** The one start script: the arguments enter through `npm start -- …`. */
 export const START_SCRIPT = 'node server.js'
 
-/** The shipped root's `package.json`, in the order the build writes it. */
+/** The program directory's `package.json`, in the order the build writes it. */
 export interface ShippedManifest {
   name: string
   version: string
@@ -45,13 +49,8 @@ function requiredString(value: unknown, field: string): string {
   return value.trim()
 }
 
-/** Whether an unknown value is a JSON object, the shape both manifests are read as. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 /**
- * Build the manifest the shipped root carries.
+ * Build the manifest the program directory carries.
  *
  * `repository` is the parsed repository `package.json` — its `name` and the two
  * single-sourced fields; `version` is what `scripts/package-version.ts` read.
@@ -83,4 +82,27 @@ export function shippedManifestOf(repository: unknown, version: string): Shipped
     scripts: { start: START_SCRIPT },
     dependencies: { sharp: sharpSpec },
   }
+}
+
+/**
+ * The runtime dependencies a shipped manifest declares, as name → spec.
+ *
+ * The packager reads `build/package.json` back and compares the generated
+ * lockfile against exactly this map, so the shape is read here — where the
+ * manifest's shape is decided — rather than parsed again by the caller. `null`
+ * means the value is not a manifest with a dependency map; a dependency whose
+ * spec is not a usable string throws, because a lockfile comparison that skipped
+ * it would accept a resolution the archive does not declare.
+ */
+export function shippedDependenciesOf(manifest: unknown): Record<string, string> | null {
+  if (!isRecord(manifest) || !isRecord(manifest.dependencies)) return null
+
+  const dependencies: Record<string, string> = {}
+  for (const [name, spec] of Object.entries(manifest.dependencies)) {
+    if (typeof spec !== 'string' || spec.trim() === '') {
+      throw new Error(`shipped manifest: ${name} has no usable version`)
+    }
+    dependencies[name] = spec
+  }
+  return dependencies
 }
