@@ -1,4 +1,4 @@
-// ── The second double-click's handshake (#82) ───────────────────────
+// ── The second start's handshake (#82) ──────────────────────────────
 //
 // The record (`web/server/instance-record.ts`) says where a running Console
 // lives; this module asks whether it is still there. The question is one plain
@@ -24,7 +24,7 @@ import { INSTANCE_PROBE_PATH } from './routes/instance.js'
 /**
  * How long the probe may take. A local service answers this route in
  * milliseconds; a second is already generous. Long enough not to be read as
- * "gone" while the running Console is busy, short enough that a double-click
+ * "gone" while the running Console is busy, short enough that a second start
  * with a dead record still opens in about the time the service takes to boot.
  */
 export const HANDSHAKE_TIMEOUT_MS = 1500

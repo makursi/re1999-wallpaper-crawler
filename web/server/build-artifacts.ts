@@ -10,9 +10,9 @@
 //   1. **The Run entry is a sibling of the Console entry, inside the app root.**
 //      The Console starts a Run by handing `process.execPath` one argument, and
 //      that argument is `runEntryPath(appRoot)`. There is no transpiler in a
-//      packaged tree and no `node_modules` to find one in, so this must never
-//      name one. The root is the injected input (#78); the entries' depth is
-//      what bundling collapses.
+//      packaged tree, and no dependency that could provide one, so this must
+//      never name one. The root is the injected input (#78); the entries' depth
+//      is what bundling collapses.
 //   2. **A missing artifact is a broken build or a broken package**, and the
 //      start says so once, in Chinese, before it binds a port. The alternative —
 //      building the page on the owner's first click — is what #84 removed: a
@@ -36,14 +36,6 @@ export const SERVER_ENTRY_FILE = 'server.js'
  * source through tsx, but that is a repository command, not a shipped one.
  */
 export const RUN_ENTRY_FILE = 'run.js'
-
-/**
- * The updater's entry in the built tree (#87): what `更新.bat` starts. It is a
- * build artifact beside the other two because a shipped package runs no
- * transpiler, and because the update is the one operation that must be tested
- * on real folders — a `.bat` cannot be.
- */
-export const UPDATE_ENTRY_FILE = 'update.js'
 
 /** The page's entry document, inside the page directory Vite writes. */
 export const PAGE_ENTRY_FILE = 'index.html'

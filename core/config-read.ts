@@ -216,9 +216,10 @@ export function readLayeredConfig(options: LayeredConfigOptions): LayeredConfigR
  * the Console serve the Mirror, the Run log directory and the Gallery state
  * without any configuration.
  *
- * All of it is under the data directory, never the program directory: the
- * program is what an update replaces (#80). The data root itself is an injected
- * input from `core/app-root.ts`, not derived here.
+ * All of it is under the data directory, never the program's own files: a new
+ * release replaces those wholesale, and the data is what must survive it (#80,
+ * #116). The data root itself is an injected input from `core/app-root.ts`, not
+ * derived here.
  */
 export interface SiteConfig {
   /** The user's data directory every other path is under. */
@@ -237,9 +238,8 @@ export interface SiteConfig {
  * write into, and never invents a second set of locations.
  *
  * `dataRoot` is an explicit parameter for the reason `core/app-root.ts` gives:
- * a source tree keeps its data at `<repo>/data`, the package beside `<app>/`;
- * the two layouts cannot be told apart by one rule, so the entry point says
- * which one it is (#78, #80).
+ * a source tree keeps its data at `<repo>/data`, and so does a released program
+ * at `<root>/data`; the entry point names which root it is (#78, #117).
  */
 export function siteConfig(
   appRoot: string,

@@ -1,4 +1,4 @@
-// ── The second double-click's handshake, over a real socket (#82) ────
+// ── The second start's handshake, over a real socket (#82) ──────────
 //
 // A bound service, a real record, and the question every later start asks: "is
 // the program that wrote this still answering?" The answer is a page URL the
@@ -87,7 +87,7 @@ describe('runningInstanceUrl', () => {
 
     const url = await runningInstanceUrl(config.dataRoot)
 
-    // Exactly the URL the first service printed: the second double-click points
+    // Exactly the URL the first service printed: the second start points
     // the browser back at the page that is already up. Nothing bound a second
     // port, and the record still names the one service that did.
     expect(url).toBe(service.url)

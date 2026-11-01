@@ -205,53 +205,62 @@ _Avoid_: header, preamble
 ### Distribution
 
 **Portable package (便携包)**:
-The folder a player gets from the release zip: the program, its launcher, its
-updater and its manual, with the player's own data beside them.
+The folder a player gets from the release zip: the program root itself — its one
+document, the licence, the manifest with its generated lockfile, the npm
+configuration, the generated site configuration, the two entries and the page —
+plus the player's own `data\` child, created on the first start. There is no
+runtime, no launcher, no updater and no installer in it.
 _Avoid_: installer, app, 安装包
 
 **Program directory (程序目录)**:
-The part of the portable package the program owns and an update replaces whole;
-in the package it is `app\`.
-_Avoid_: install directory, program folder
+The install folder itself: the directory the release zip extracted to. It is
+where the program runs from, its `package.json` is the shipped manifest, and
+`data\` is its `data` child — there is no `app\` level and no sibling directory
+for the program. The player extracted it and knows where it is, so nothing
+outside it records the address: the install pointer is retired.
+`install root` is the same folder's name in the build and packaging code: the
+folder the player unzipped, which is the program root, whose `data` child is the
+data directory.
+_Avoid_: app, program folder, install pointer, 安装指针
 
 **Data directory (数据目录)**:
-The part of the portable package that belongs to the player: the Mirror, the Run
-logs, the cache and their overrides. No update writes to it, and deleting it is
-the player's own act.
+The program directory's `data\` child, which belongs to the player: the Mirror
+(`images\`), the Run logs (`logs\`), the thumbnail cache (`cache\`) and
+`user.env`. A release never carries it, no update touches it, and moving it is
+the player's own act in the update's second step.
 _Avoid_: storage, workspace, user folder
 
 **Artifact (制品)**:
-A built file a release carries — the Console entry, the Run entry, the updater
-entry and the page — as opposed to source. A shipped program runs its artifacts
-as they are and compiles nothing. Not the Release page's 下载文件, which is the
-portable package those artifacts travel in (ADR 0023).
+A built file a release carries — the two entries (Console and Run) and the page —
+as opposed to source. The updater's third entry went with the updater (#119). A
+shipped program runs its artifacts as they are and compiles nothing. Not the
+Release page's 下载文件, which is the portable package those artifacts travel in
+(ADR 0023).
 _Avoid_: build output, bundle, binary, 下载文件, assets
 
-**Launcher (启动器)**:
-The one file a player double-clicks to start the program; in the package it is
-`启动.bat`.
-_Avoid_: entry point, starter, shortcut
+**Start command (启动命令)**:
+The shipped manifest's one script, `npm start` (a zero-argument `node server.js`),
+run from the program directory. npm runs the script with the package root as the
+working directory, which is what makes the program root and its `data\` child the
+two defaults. The launcher is retired: the start is this command, not a `.bat`.
+_Avoid_: launcher, starter, shortcut, .bat, 启动器
 
-**Updater (更新器)**:
-The one file a player double-clicks to replace the program directory with a newer
-release; in the package it is `更新.bat`.
-_Avoid_: installer, patcher, update package (the release is the package)
+**Update (更新)**:
+The three documented steps: extract the new zip into a new folder, move the old
+`data\` into it, delete the old folder. The program never replaces itself and
+nothing in it deletes a player-visible directory; the updater is retired.
+_Avoid_: updater, patcher, in-place update, 更新器
 
 **Fallback point (回退点)**:
-The previous program directory, kept beside the current one after an update so the
-player can rename it back when a new version does not start. One generation only;
-in the package it is `app.old\`.
-_Avoid_: backup, snapshot, rollback
-
-**Install pointer (安装指针)**:
-The program's own note, outside the package folder, of where the installation it
-last started from lives — so the updater can still find a folder that has been
-renamed or moved.
-_Avoid_: install record, registry entry, config
+The previous install folder the player still has, kept until the new one has run
+at least once; rolling back is moving `data\` back and starting the old folder.
+There is no `app.old\`, no automatic rollback and no generation counter.
+_Avoid_: backup, snapshot, rollback generation, app.old
 
 **Site-constants template (站点常量模板)**:
 The committed source of the configuration a release carries: the game's site
-constants, never the owner's local settings.
+constants, never the owner's local settings. The packager writes it as the
+program directory's root `.env`.
 _Avoid_: .env, default config, sample config
 
 **Release notes (发布说明)**:

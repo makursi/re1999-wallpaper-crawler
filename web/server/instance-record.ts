@@ -1,10 +1,10 @@
 // ── The running Console's address (#82) ─────────────────────────────
 //
-// One program, one service. A second double-click must not start a second
-// service over the same Run log directory: instead the start records how to
-// reach itself — the port it actually bound and the token this boot generated —
-// in the data directory, and every later start reads that record and asks it
-// whether the service is still there.
+// One program, one service. A second start must not start a second service over
+// the same Run log directory: instead the start records how to reach itself — the
+// port it actually bound and the token this boot generated — in the data
+// directory, and every later start reads that record and asks it whether the
+// service is still there.
 //
 // The record is a private handshake, not a saved credential. Its token is
 // random per boot (`web/server/console.ts` generates it), so the URL it names is
@@ -15,8 +15,8 @@
 // Every failure to read the record is a reason to start normally, never a reason
 // to fail: an absent file is a first start, a half-written one is a crash, an
 // unreadable one is someone else's business. The record lives under the data
-// directory — never under the program directory, which an update replaces — and
-// it is removed when the boot that wrote it shuts down cleanly.
+// directory — never among the program's own files, which a new release does not
+// carry over — and it is removed when the boot that wrote it shuts down cleanly.
 //
 // The network half (asking the recorded address whether it answers, and what
 // makes it the *same* service rather than a stranger on the port) lives in

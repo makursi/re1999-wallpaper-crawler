@@ -1,63 +1,88 @@
 # Reverse: 1999 Wallpaper Downloader
 
-[中文](README.md) | **English**
+[中文](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/README.md) | **English**
 
-Fetches the complete wallpaper list from the [official gallery](https://re.bluepoch.com/home/detail.html#wallpaper) in one request, downloads every wallpaper to your computer, and shows them on a local page. The program runs only on your machine; other devices cannot reach it.
+Fetches the complete wallpaper list from the [official gallery](https://re.bluepoch.com/home/detail.html#wallpaper) in one request, downloads every wallpaper to this computer, and shows them on a local page. The program runs only on this machine; other devices cannot reach it.
 
-![The wallpaper wall](docs/screenshots/console-en.webp)
+![The wallpaper wall](https://raw.githubusercontent.com/makursi/re1999-wallpaper-crawler/main/docs/screenshots/console-en.webp)
 
-## Download and use (players)
+## Installation
 
-Nothing to install — no Node.js, no Chrome, no command line.
+[Node.js](https://nodejs.org/) **22.22.1 or newer** is required — check with `node -v` on a terminal. Nothing else has to be installed.
 
-1. Download the latest `.zip` from [Releases](https://github.com/makursi/re1999-wallpaper-crawler/releases).
-2. Extract it anywhere — Chinese characters and spaces in the path are fine.
-3. Double-click `启动.bat`. Your browser opens the wallpaper page. To stop the program, close the black window or click “Exit” in the page’s top navigation; after the program exits, the window waits for any key before it closes.
-4. On first use, open “运行” in the top navigation and click “开始运行” (“Start a Run” after switching the page to English). Expect roughly 1,000+ wallpapers, about 2 GB in total, and 10–40 minutes depending on your connection. Closing it halfway is fine: the next start skips what is already downloaded.
+1. Download the latest `re1999-wallpaper-crawler-v<version>.zip` from [Releases](https://github.com/makursi/re1999-wallpaper-crawler/releases).
+2. Extract it into any folder — Chinese characters and spaces in the path are fine. The extracted folder is the program directory: do not split it up or move files out of it.
+3. Open a terminal in that folder (type `cmd` in the Explorer address bar and press Enter) and run `npm install` once. It downloads the only runtime dependency (the `sharp` thumbnail library) from the npm registry, with versions pinned by the shipped `package-lock.json`.
+4. Run `npm start`. The browser opens the wallpaper page, and the terminal prints the page address as well.
 
-Updating, rolling back, uninstalling, where your files live, and what to do when Windows or an antivirus blocks the program are all covered by the manual shipped in the package, [`使用说明.txt`](packaging/使用说明.txt) (Chinese).
+If Node is too old, `npm install` fails during installation (`engine-strict` is set in the package's `.npmrc`); even with that check bypassed, the program refuses at startup with one Chinese sentence and a non-zero exit code.
+
+## Starting and stopping
+
+Run `npm start` in the install folder each time. If the program is already running, another `npm start` only points the browser at the running page; it does not start a second service.
+
+Two ways to stop, with the same effect:
+
+- close the terminal window that ran `npm start`;
+- click “Exit” in the page's top navigation. While a download is running it asks for confirmation first.
+
+Closing only the browser tab does not stop the program.
+
+## Where the data lives
+
+Wallpapers, logs and settings all live under `data\` in the install folder, created on the first start:
+
+| Location | Contents |
+|----------|----------|
+| `data\images\` | the downloaded wallpapers, which are the wall on the page |
+| `data\logs\` | one log per run |
+| `data\cache\` | the thumbnail cache; deleting it only makes the next visit slower |
+| `data\user.env` | optional local configuration overrides, rarely needed |
+
+The program itself writes nothing outside this folder: no registry entry, no system service, no pointer file recording where the installation is. The npm that runs `npm install` keeps its own download cache in the user profile; that belongs to npm, not to this program.
+
+## Updating
+
+Three steps; the program never replaces itself:
+
+1. Extract the new zip into a **new folder** — do not overwrite the old folder.
+2. Stop the running program, then move the whole `data\` from the old folder into the new one, next to `README.md` and `package.json`.
+3. Run `npm install` once in the new folder, check the page with `npm start`, then delete the old folder.
+
+There is no in-place overwrite: the old folder is the fallback point.
+
+## Rolling back
+
+If the new version misbehaves, the old folder is enough: stop the new version, move `data\` from the new folder back into the old one, and run `npm start` there. The old folder still has its program and dependencies, so nothing has to be reinstalled.
+
+Do not delete the old folder until the new version has run at least once.
+
+## Uninstalling
+
+Delete the one install folder; the program and `data\` are both gone. No uninstaller, service or registry entry is left in the system, so there is nothing else to clean up.
+
+## What the first scrape looks like
+
+On the first visit, click “运行” in the page's top navigation, then “开始运行” (“Start a Run” after switching the page to English). Expect roughly 1,000+ wallpapers, about 2 GB in total, and 10–40 minutes depending on the connection. Stopping halfway is fine: the next “开始运行” skips what is already downloaded and fetches only the rest.
+
+## If `npm install` fails
+
+Failures are almost always about the dependency source or the Node version; check in this order:
+
+1. **Node version**: `node -v` must be 22.22.1 or newer. Below that, npm reports `EBADENGINE` and exits non-zero; install a newer Node and run the command again.
+2. **Registry reachability**: run `npm ping` on the same machine. Corporate networks, campus networks or proxies can block `registry.npmjs.org`.
+3. **Proxy and registry settings**: read `npm config get registry` and `npm config get proxy`; when a mirror or proxy address is wrong, point npm at a reachable one with `npm config set registry <address>` and run `npm install` again.
+
+The program itself makes no network request during installation: the whole chain uses only npm.
 
 ## Copyright
 
-The wallpapers are the property of the official site (Bluepoch). This project does not store or distribute them: neither the repository nor the release ships an image, and the program only saves the images the official site serves onto the computer of the person running it. See [LICENSE](LICENSE).
+The wallpapers are the property of the official site (Bluepoch). This project does not store or distribute them: neither the repository nor the release ships an image, and the program only saves the images the official site serves onto the computer of the person running it. The licence is MIT: [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE) in the repository, and the same text ships as `LICENSE.txt` in the release.
 
-## Build from source (developers)
+## Reporting a problem
 
-Node 22 and pnpm are required.
+Open an [issue](https://github.com/makursi/re1999-wallpaper-crawler/issues). Include the version shown in the page's top navigation and the newest run log under `data\logs\`; that makes the problem much faster to locate.
 
-```bash
-pnpm install
-pnpm build
-pnpm webui
-```
+## Developers
 
-`pnpm build` produces `build/`: the Console, the Run entry, the updater and the prebuilt page. `pnpm webui` runs that tree directly, and `build/` is its application root — site configuration is read from `build/.env` and data is written to `build/data/`, while `pnpm build` recreates `build/`. To scrape from the source page, copy the repository's `.env` in first (or set `BASE_ORIGIN` before starting):
-
-```powershell
-Copy-Item .env build\.env
-pnpm webui
-```
-
-Long-lived data belongs in the repository's `data/` (that is what `pnpm core:run` uses).
-
-Other commands:
-
-| Task | Command |
-|------|---------|
-| Package the portable release | `pnpm package` (`pnpm build` + `dist-package/re1999-wallpaper-crawler-v<version>.zip`) |
-| Tests | `pnpm test` |
-| Typecheck | `pnpm typecheck` |
-| Lint | `pnpm lint` |
-| Format | `pnpm fmt` / `pnpm fmt:check` |
-| Build the page only | `pnpm build:web` |
-
-The agent-facing terminal entries (`pnpm core:run`, `pnpm check-run`), the full command table, the directory structure and every convention live in [AGENTS.md](AGENTS.md).
-
-## Layout
-
-- `core/`: the crawler. One request reads the complete official list, then parallel downloads; no browser and no session.
-- `web/`: the local Console, service and page together.
-- `scripts/`: the build, the packager and the pre-commit guard.
-- `packaging/`: the files at the release's archive root (`启动.bat`, `更新.bat`, `使用说明.txt`) and the site-constants template.
-
-Design decisions live in [`docs/adr/`](docs/adr/); each round's trigger, rejected alternatives and measured numbers live in [`HISTORY.md`](HISTORY.md).
+Commands, layout and every convention live in [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md); this README is about using the program.

@@ -12,13 +12,15 @@
 //
 // Two details are load-bearing on this platform:
 //
-//   - **Names are UTF-8, flagged as such** (general-purpose bit 11). The archive
-//     root's launcher is `启动.bat`; a reader that guesses GBK would show the
-//     owner a different file name than the one they downloaded.
-//   - **No zip64.** A package is ~150 MB unpacked with one entry of ~92 MB, far
-//     under the 4 GiB and 65,535-entry limits. The writer checks those limits and
-//     fails with a clear message rather than emitting a corrupt archive, because
-//     a silent zip64 gap is a file that only some unzippers open.
+//   - **Names are UTF-8, flagged as such** (general-purpose bit 11). The
+//     archive's page entry is `web/dist/index.html`; a reader that guesses the
+//     local code page instead of honouring the flag is wrong the moment a name
+//     is not ASCII, so the writer always sets the bit.
+//   - **No zip64.** A package is ~10 MB unpacked with entries of a few MB at
+//     most, far under the 4 GiB and 65,535-entry limits. The writer checks those
+//     limits and fails with a clear message rather than emitting a corrupt
+//     archive, because a silent zip64 gap is a file that only some unzippers
+//     open.
 //
 // Entry names go through `archivePathSegments` from the whitelist module: a name
 // with `..`, a backslash or a drive letter is refused here too, so the writer

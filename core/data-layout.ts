@@ -1,10 +1,10 @@
 // ── The layout of the user's data ───────────────────────────────────
 //
-// The user's things live in one directory that is not the program directory:
-// beside the package's `app/`, or — in a source checkout — the repository's own
-// `data/` (#80). Replacing the program therefore cannot touch the Mirror, the
-// Run logs or the thumbnail cache, and deleting the folder is the only
-// uninstall.
+// The user's things live in one directory that is not the program's files: the
+// root's own `data/` in a released program, or — in a source checkout — the
+// repository's `data/` (#80, #117). Replacing the program therefore cannot touch
+// the Mirror, the Run logs or the thumbnail cache, and deleting the folder is the
+// only uninstall.
 //
 // The Data root is an injection, never a deduction from a module's position:
 // `core/app-root.ts` resolves it once and every layer receives it (#78). What
@@ -47,7 +47,7 @@ export const GALLERY_STATE_FILE_NAME = '.gallery-state.json'
 const LEGACY_CACHE_PATH = ['web', '.console-cache'] as const
 
 export interface DataLayoutInput {
-  /** The program directory, injected by the entry point (#78). */
+  /** The application root, injected by the entry point (#78). */
   appRoot: string
   /** The user's data directory, injected by the entry point (#78). */
   dataRoot: string
@@ -78,7 +78,7 @@ export interface DataLayout {
  *
  * `configuredImagesDir` and `configuredLogDir` are the schema's values, so the
  * mirror path stays configurable; both are resolved against the data root, not
- * the program directory, because they are the user's data.
+ * the program's files, because they are the user's data.
  */
 export function dataLayoutOf(input: DataLayoutInput): DataLayout {
   const appRoot = path.resolve(input.appRoot)

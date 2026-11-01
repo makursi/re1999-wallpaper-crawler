@@ -808,6 +808,44 @@
 
 ---
 
+### 2026-11-01 — 发布形态换成扁平 npm 目录：随包运行时、启动器、更新器、安装指针与包内说明书一起退役（spec #116 / 票 #117–#122，v2.0.0）
+
+**触因**：发布包是一份自包含的 Windows 便携包——zip 里带 92.5 MB 的 `node.exe`、`sharp` 及其 4 个包、两个 `.bat` 和一份 `使用说明.txt`，根目录 `app\`（程序）与 `data\`（数据）平级。四笔代价都从这一个形态来：每次发布替使用者再买一份机器上本来就有的运行时；启动器只做切目录、设两个根变量和 exec，为让中文不在控制台乱码又必须纯 ASCII、零逻辑，所有判断被推回程序；原地更新器是全仓唯一会递归删除玩家可见目录的模块，于是需要安装指针、探活握手、路径白名单和一代 `app.old\` 回退；`node_modules` 由打包器手工挑包，任何依赖变化都要有人记得改白名单。使用者只差一步：机器上有 Node，zip 却不利用这一点。
+
+**决策**：
+
+- **安装根就是构建树**（#117 / #118 / ADR 0024）。解压后的根目录就是程序根：`README.md`、`LICENSE.txt`、`package.json`、`package-lock.json`、`.npmrc`、`.env`、`server.js`、`run.js`、`web/dist/**`。没有 `app\`、没有 `node.exe`、没有 `.bat`、没有说明书、没有 `update.js`、没有 `node_modules\`、没有 `data\`。白名单因此从「目录谓词」变成「按名字列出的根条目 + `web/dist/**` 一个通配」；`scripts/package.ts` 在写 zip 之前断言，运行依赖只剩 `sharp`。
+- **启动是出厂清单的脚本**（#117）。构建写出 `"start": "node server.js"`、`engines.node`、`private`、`type` 与 `sharp` 一个依赖；`npm start` 保证包根是工作目录，于是 Console 原有的工作目录回退落到安装根，`dataRootOf()` 落到它的 `data` 子目录。没有启动器、没有新命令行参数、没有新的根变量；`RE1999_*` 仍是源码树、`pnpm webui` 与测试的唯一覆盖手段。
+- **数据是安装文件夹的一个子目录**（#117）。`data\` 仍由 `core/data-layout.ts` 创建并写 `layout.json`，`images\`、`logs\`、`cache\`、`user.env` 原样不动。程序不往文件夹外写任何东西：没有安装指针、没有 `%LOCALAPPDATA%` 写入、没有服务或注册表项，所以卸载是删一个文件夹。单实例探活保留，记录里的身份仍是端口 + 本次 boot 的 token；pid 记录的是本 boot 自己的 Node 进程（父进程是 npm，不是被探测的那个身份）。
+- **更新是文档里的三步**（#121 / ADR 0024）。解压到新文件夹 → 把旧 `data\` 移进去 → 确认新版可用后删旧文件夹。零原地覆盖、程序零删除，旧文件夹就是回退点（旧程序与依赖都还在，回退＝把 `data\` 移回去再启动）。数据布局不变，所以这一版没有迁移代码，只有升级说明的一段话。
+- **Node 地板一个来源、两处拦截**（#117）。仓库清单的 `engines.node` → 构建注入 `RE1999_NODE_FLOOR` → 启动第一句中文拒绝并退 1；包里的 `.npmrc` 写 `engine-strict=true`，安装阶段先拒一次。自检是纯函数（当前版本 + 地板 → 拒绝文案或 `null`），由 `tests/core/node-floor.test.ts` 钉住仓库自己的地板写法。
+- **lockfile 打包时生成，不进仓库**（#118）。第二份 lockfile 会是第二份「这一版装了什么」的真相，并与构建写出的出厂清单漂移；打包器拿清单在临时目录跑 `npm install --package-lock-only`、读回、核对依赖名与版本，再作为内存条目进包。这是 `pnpm package` 唯一需要 registry 的一步，脚本注释写明。
+- **删干净**（#119）：两个 `.bat`、包内说明书、原地更新器（换目录 / 回滚 / 一代回退点）、安装指针与系统位置写入、构建的第三个入口、随包 Node 运行时的解析 seam、发布工作流里取运行时的步骤。全仓不再有删除玩家可见目录的模块；探活、Mark-of-the-Web 中文说明、退出与关窗口两个停止都保留。
+- **文档与记录跟着主语搬家**（#121）。`README.md` 成为唯一产品文档并随包（安装、启动与停止、数据位置、更新三步、回退、卸载、首次抓取预期、装依赖失败查什么、版权、问题入口），开发命令只在 `AGENTS.md`，README 留一行指针；`tests/scripts/packaging-docs.test.ts` 改名为 `readme-docs.test.ts`，钉中英两份 README 的 UTF-8、`npm install` / `npm start`、地板、`data\` 与更新的三步，执照断言不变。`CONTEXT.md` 里启动器、更新器、安装指针退役，回退点与程序目录改义，替代词写进 `_Avoid_`；`CONTEXT-MAP.md` 的 Distribution 去掉三个已删模块并改写两条关系。ADR 0024 逐条取代 0019 的兄弟目录句、0020 的启动器与指针句、0021 的 shape / update / pointer 整节与「包里没有执照」句、0022 的启动器 `pause` 句，旧 ADR 原文一字未改；新增 design note 记下问题、已定、开放与六条被否决分支。
+- **版本 2.0.0**。ADR 0021 的 semver 读法补一条：**安装与更新方式的变更也是 MAJOR**。旧便携包不能就地更新、`data\` 要手工搬，两个已发布版本的正文不动。
+- **被否决的**：每次发布再 siphon 一份运行时；保留启动器当胶水；保留原地更新器 + 指针 + 一代回退点；仓库里放第二份 lockfile；随包 `node_modules`；`npm i -g` / `npx`；包内再留一份说明书。理由逐条进下面的速查表与 design note。
+
+**验证**：
+
+- 四件套：`pnpm fmt:check` 通过（178 files）、`pnpm lint` 0 warning 0 error（167 files / 218 rules）、`pnpm typecheck` 0、`pnpm test` **62 files / 677 tests**。
+- `pnpm build`：`version 2.0.0`；`server.js` 935 KiB、`run.js` 2127 KiB；页面 112 files；外部依赖只有 `sharp`，打进 bundle 25 个包；出厂清单 `engines.node >=22.22.1`、`sharp@^0.35.5`。
+- `pnpm package`：`dist-package/re1999-wallpaper-crawler-v2.0.0.zip`，**120 files、9.2 MB 解包、6.6 MB zip**；根条目逐项与白名单一致（`package-lock.json` 20,179 bytes、`.npmrc` 19 bytes、`.env` 646 bytes）。
+- **归档核对**：解压后 `README.md` 与仓库根 `README.md` 的 SHA-256 相同（打包器按名字取根文件）；`app` / `node.exe` / `启动.bat` / `更新.bat` / `使用说明.txt` / `update.js` / `node_modules` / `data` 全部不存在。
+- **`pnpm package:check` 真跑真实 zip**：解压 120 files → `npm install` 519 ms / 5 packages → `sharp 0.35.5`（libvips 8.18.7）加载并编码 1×1 PNG → `npm start` 打印 4464 端口地址 → `/api/status` 200 且版本 2.0.0 → 安装根下生成 `data/layout.json` 与运行中的 `instance.json` → 空闲 exit 202 → 进程退 0。
+- `pnpm exec tsx scripts/release-notes.ts 2.0.0` 打印正文，五节：变更 / 破坏性变更 / 安装 / 升级说明 / 下载文件；模板校验与 `pnpm test` 里的当前版本校验都绿。ADR 索引测试覆盖 0024，新 README 测试 6 条全绿。
+- **没有做的**：真下 2 GB 的完整 Run；macOS / Linux 制品；离线安装。发布前仍按 AGENTS.md 在干净 Windows 上解压、`npm install`、`npm start`、看页面 / 版本 / 一张缩略图；`package:check` 已在临时根上走过同一条链路。
+
+**教训**：
+
+- **每一层胶水都在替机器已经会做的事买单。** 启动器只为切目录和设两个变量，而 npm 一直保证包根是工作目录；删掉它以后，程序根与数据根各自只剩一个来源，反而更结实。
+- **「程序不删数据」的最强证明是让程序没有删除动作。** 更新从「换目录 + 回退一代」变成三步文档动作后，指针、探活、路径闸与 `app.old` 一起失去存在理由；ADR 0019 的意图因此更强，而不是被推翻。
+- **文档的断言要跟着主语搬家。** 包内说明书退役后，旧测试钉的执照还在，但它描述的「包内文档」已经不存在；把文件名改成 `readme-docs.test.ts`，并把「读者会照着做的命令」变成断言，这份测试才继续守住发布包的承诺。
+- **术语退役要给出替代词。** 只从词表里删掉旧词，同义词会以别的拼写回来；`CONTEXT.md` 的 `_Avoid_` 是新词真正被使用的地方——`launcher` / `启动器`、`updater` / `更新器`、`install pointer` / `安装指针` 被写进替代词的回避行。
+- **ADR 的「取代」要逐条点名。** 0019 的兄弟目录句、0021 的整节 shape / update / pointer、0020 的启动器与指针句、0022 的 `启动.bat` pause 句各自点名；旧原文不动，读者才知道哪一句还成立、哪一句只属于当天。
+- **打包机与使用者的依赖路径是两条。** lockfile 在打包时对着出厂清单生成，`npm install` 在使用者机器上解析 `sharp`，两条都要 registry；`package:check` 证明的是这两条链在同一次真实 zip 上闭合，而不是单测里的形状。
+
+---
+
 ## 已否决方案速查（改动前先看这里）
 
 | 方案 | 否决原因 | 出处 |
@@ -905,6 +943,13 @@
 | 把词表守卫并进 ADR 索引测试 | 两者读不同的对象（`docs/adr/` 的 Markdown 对 `web/api-types.ts` 的导出元组）、为不同原因失败；一个测试两条不变式会让红的意义含糊，并让一条躲在另一条后面腐烂 | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
 | 把启动检查写成单测 | 它要真实进程、真实 socket 与临时应用根；降低一层就丢掉它唯一测的东西——打包与启动的接缝（既有 socket 测试就是先例：驱动真实监听器，不 mock 传输） | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
 | 为启动检查新增第二个 CI job | 分支保护只认一个 required check，第二个 job 得先加进保护设置；两步放进现有检查零成本，也不新增 required check | 2026-10-22 / spec #107 / docs/notes/iteration-loop.md |
+| 每次发布再随包带一份 Node 运行时（`node.exe`） | 机器上本来就有 Node，92.5 MB 是每版的重复体积，还要单独跟补丁；它也是启动器、两个注入根与纯 ASCII `.bat` 的来源。发布包改为要求使用者自备 Node | 2026-11-01 / spec #116 / ADR 0024 |
+| 保留启动器当胶水（只切目录、设两个根变量、exec） | `.bat` 装不下判断与中文，剩下的那点事 npm 的包根工作目录本来就保证；多一个入口只多一条没人负责的缝 | 2026-11-01 / spec #116 / ADR 0024 |
+| 保留原地更新器 + 安装指针 + 一代 `app.old\` 回退点 | 全仓唯一递归删除玩家可见目录的模块，需要指针、探活、路径白名单与一个可能失败的回滚；更新改成「解压到新文件夹、搬 `data\`、删旧文件夹」后零删除，旧目录就是回退点 | 2026-11-01 / #116 / #119 / ADR 0024 |
+| 在仓库里放第二份 lockfile | 第二个「这一版装了什么」的真相，会与构建写出的出厂清单漂移；改为打包时对着清单生成，并由打包器核对依赖名与版本 | 2026-11-01 / #118 / ADR 0024 |
+| 把 `node_modules` 打进发布包 | 依赖解析规则、平台二进制与体积一起进包，每次依赖变化都要有人手工改白名单；`npm install` 是使用者的一次动作，运行依赖只有 `sharp` | 2026-11-01 / spec #116 / #118 |
+| 用 `npm i -g` / `npx` 分发 | 全局安装往文件夹外写东西，与「卸载 = 删一个文件夹」矛盾，也需要本仓不发布的 registry 包名；本次只做 zip | 2026-11-01 / spec #116 |
+| 包内再留一份 `使用说明.txt` | 与 README 描述同一套安装，两份文档会漂移；启动器退役时说明书一起删除，README 成为唯一产品文档 | 2026-11-01 / #119 / #121 |
 
 ## 验证规范（所有迭代通用）
 

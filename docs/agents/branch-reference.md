@@ -1,6 +1,6 @@
 # Branch reference: packaging, build, Console boot and the Run log
 
-These six lessons used to sit in `AGENTS.md` and load on every turn. Each one only
+These four lessons used to sit in `AGENTS.md` and load on every turn. Each one only
 bites in four kinds of work — **packaging, build, Console boot, or a change to the
 Run log** — so they live here, and the pointer in `AGENTS.md` leads with those
 triggers. The wording is the wording they had there: nothing was softened in the
@@ -14,18 +14,22 @@ the PR that removes it instead of first on a tag.
 ## The boot check (`pnpm smoke:boot`)
 
 `scripts/smoke-boot.ts` is the command CI runs after `pnpm build`. It stages the
-built tree into a temporary root, starts `server.js` on an OS-assigned port with
-the browser suppressed, and drives the program only through the page's own API
-with the boot token: `/api/status` must report the version the build injected,
-`<data>/instance.json` must name this boot's port, token and pid, and
-`/api/exit` must answer `202` and end the process with code 0. A second case
-stages the same tree with `run.js` removed and requires the boot refusal, and a
-third runs `update.js` against a package with no installation pointer and
-requires its Chinese, non-zero refusal.
+built tree into a temporary root, starts it through the manifest's own
+`npm start -- --no-open --port 0` with no `RE1999_*` variable set, and drives the
+program only through the page's own API with the boot token: `/api/status` must
+report the version the build injected, `<data>/instance.json` must name this
+boot's port, token and pid, and `<data>/layout.json` must prove the data
+directory landed under the install root. While the program still runs, a second
+start goes through the same script from the same root: it must print the Chinese
+"already running" line naming that page, print no new boot address and exit 0.
+The check then exits the first program through `/api/exit`, which must answer
+`202` and end it with code 0. The second case stages the same tree with `run.js`
+removed and requires the boot refusal.
 
-**What the CI claim covers.** All three entries compile; the check boots the
-Console and runs the updater's refusal. `run.js` is compiled but never executed,
-so a bundling failure that only `run.js` has stays green.
+**What the CI claim covers.** Both entries compile; the check boots the Console
+and proves a second start points back at the running page. `run.js` is compiled
+but never executed, so a bundling failure that only `run.js` has stays green.
+The check runs on the build tree, not on the shipped archive.
 
 **What "no network" means.** No `.env`, no browser and no real Run: the staged
 tree has no configuration, so the status read never asks the Gallery list. The
@@ -37,11 +41,17 @@ pretends it does not happen.
 the dynamic range (1024–15000) includes ports `fetch` refuses (`bad port`), so
 the console case retries the whole boot with a fresh port twice before failing.
 
-**What it cannot cover.** The Windows-only surfaces stay manual: the two
-launchers, the updater's real folder swap, a `node_modules` junction, and the
-manual's rendering.
+**What the two checks cannot cover.** The PR check (`pnpm smoke:boot`) proves
+the build tree boots. The release check (`pnpm package:check`, run by
+`.github/workflows/release.yml` and not by CI, because it needs the registry)
+takes the real zip, extracts it outside the checkout, runs a real `npm install`
+and `npm start`, and probes `/api/status`: that additionally proves the shipped
+manifest, the generated lockfile, `.npmrc`'s `engine-strict` and a real native
+install. Neither proves a player's clean machine, an offline install or a first
+crawl; the page's Windows rendering is not observed either, and `run.js`'s
+bundle is still never executed.
 
-## The six lessons
+## The four lessons
 
 ### An ESM bundle of CommonJS packages needs `createRequire`
 
@@ -53,37 +63,6 @@ requires a builtin kills the program at import. Measured, not guessed: without
 the banner the built Console died on `dotenv` (`Dynamic require of "fs" is not
 supported`) before it printed a URL, while typecheck, lint and every test passed.
 Only booting the artifact catches this class of failure.
-
-### The launcher is ASCII, and the program prints the Chinese
-
-A `.bat` with Chinese text is not reliable on Windows, and `chcp 65001` is not a
-universal fix. Measured on a real Chinese Windows 11 in fresh console windows
-(936): a UTF-8 no-BOM script shows the line as mojibake; UTF-8 + `chcp 65001`
-shows it correctly but only while the file stays BOM-less (and turns cmd's own
-messages English); a UTF-8 **BOM** makes the first line run as
-`'锘緻echo' 不是内部或外部命令`, so `@echo off` never happens; GBK is correct on
-that machine and on no other. So `packaging/启动.bat` and `packaging/更新.bat`
-are pure ASCII — `cd`, the two root variables (or the package root and `%*`),
-`app\node.exe app\<entry>.js`, and `pause` on both paths (a start's window keeps
-its last lines after a clean exit too, #96; a failure keeps its message) — and
-every Chinese line
-(the window title, the "do not close" line, the Mark-of-the-Web steps, every
-updater answer) is Node's, which writes Unicode to the console. Do not add
-Chinese to a script, and do not let its line endings be normalized: they are
-stored with CRLF, and `.gitattributes` marks `*.bat -text`.
-
-### The user manual is UTF-8 with a BOM, and CRLF
-
-`packaging/使用说明.txt` is the one document a player opens after unzipping, in
-Notepad. A BOM is Notepad's one unambiguous "this is UTF-8" signal — without it
-the reader uses a heuristic, and a wrong guess is mojibake; CRLF is one line per
-line. `.gitattributes` marks `packaging/*.txt -text` so git neither normalizes
-nor rewrites those bytes, and the packager copies the file verbatim. Measured on
-this machine: Notepad's status bar reports `UTF-8 BOM` and `Windows (CRLF)`, and
-the document reads back through UI Automation with no replacement character and
-the Chinese intact. `tests/scripts/packaging-docs.test.ts` pins the BOM, the line
-endings, the facts the manual must name, and `LICENSE`'s agreement with
-`package.json`. Do not let a formatter or an editor "fix" the encoding.
 
 ### Git history is LF, the Windows worktree is CRLF
 

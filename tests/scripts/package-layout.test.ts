@@ -1,21 +1,17 @@
-// ── What may enter the portable archive (#86) ───────────────────────
+// ── What may enter the flat package (#118) ──────────────────────────
 //
-// The release promise is not "I remembered to check": the archive's contents are
-// a whitelist, and the packager refuses to write the zip when the collected list
-// holds one path outside it. So the predicate is the deliverable, and these are
-// the rules it has to hold:
+// The archive's extracted root **is** the program root (spec #116), so the
+// contents are a short list of names: the one product document, the licence, the
+// shipped manifest, the lockfile generated against it, the npm configuration,
+// the site configuration, the two entries, and the page. Everything else is
+// refused — the runtime binary a flat package does not carry, the dependency
+// tree the user's `npm install` creates, the data directory the first start
+// creates, and every source, test, script and repository document.
 //
-//   - the archive root carries the launcher and the documents that ship beside
-//     it, and nothing else — no `data\`, no owner's `.env`, no `.git`;
-//   - `app\` carries the built program, the page, `node.exe`, the generated
-//     `.env`, and sharp's runtime closure — no sources, tests or dev tooling;
-//   - a path under a data directory, a gitignored path, or a Windows-shaped
-//     relative escape is refused, because those are how an owner's images,
-//     logs and local configuration would physically enter a release.
-//
-// The template and the runtime are two more decisions with their own rules: the
-// generated `app\.env` comes from a committed template (never the working
-// tree's), and `node.exe` comes from the running Node unless #88 supplies one.
+// The predicate is the deliverable: `scripts/package.ts` refuses to write the
+// zip when the collected list holds one path outside it. The other rules here
+// are the page's one wildcard, the required entries that make a legal archive
+// still a broken one, and the lockfile's agreement with the shipped manifest.
 
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -26,13 +22,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { readConfig } from '../../core/config-read.js'
 import {
+  ARCHIVE_ROOT_FILES,
+  archiveRequiredEntries,
   assertPackagedPaths,
   isPackagedPath,
-  nodeRuntimeFile,
+  lockfileCommand,
+  lockfileRefusal,
+  NPMRC_FILE_NAME,
+  NPMRC_TEXT,
   packagePathOffenders,
   readSiteEnv,
-  rootPackageFiles,
 } from '../../scripts/package-layout.js'
+import type { ShippedManifest } from '../../scripts/package-manifest.js'
 
 const roots: string[] = []
 
@@ -46,51 +47,82 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
+/** The shipped manifest, as `scripts/build.ts` writes it (#117). */
+const MANIFEST: ShippedManifest = {
+  name: 're1999-wallpaper-crawler',
+  version: '2.0.0',
+  private: true,
+  type: 'module',
+  engines: { node: '>=22.22.1' },
+  scripts: { start: 'node server.js' },
+  dependencies: { sharp: '^0.34.4' },
+}
+
+/** A lockfile as npm writes it for that manifest, trimmed to what matters. */
+function lockfile(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify(
+    {
+      name: MANIFEST.name,
+      version: MANIFEST.version,
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        '': {
+          name: MANIFEST.name,
+          version: MANIFEST.version,
+          dependencies: { sharp: '^0.34.4' },
+        },
+        'node_modules/sharp': { version: '0.34.4', license: 'Apache-2.0' },
+        'node_modules/@img/sharp-win32-x64': { version: '0.34.4', license: 'Apache-2.0' },
+        ...overrides,
+      },
+    },
+    null,
+    2,
+  )
+}
+
 describe('isPackagedPath', () => {
-  it('lets the archive root hold the launcher and the documents that ship beside it', () => {
-    // #85 shipped 启动.bat; #87 and #89 add these two. The seam is the
-    // extension, not a filename list, so those tickets add a file and no code.
-    expect(isPackagedPath('启动.bat')).toBe(true)
-    expect(isPackagedPath('更新.bat')).toBe(true)
-    expect(isPackagedPath('使用说明.txt')).toBe(true)
+  it('lets the named root entries — the program root is the archive root', () => {
+    expect([...ARCHIVE_ROOT_FILES].toSorted()).toEqual([
+      '.env',
+      '.npmrc',
+      'LICENSE.txt',
+      'README.md',
+      'package-lock.json',
+      'package.json',
+      'run.js',
+      'server.js',
+    ])
+    for (const archivePath of ARCHIVE_ROOT_FILES) {
+      expect(isPackagedPath(archivePath)).toBe(true)
+    }
   })
 
-  it('lets the built program, the page, the runtime and the generated configuration', () => {
+  it('lets the page under web/dist, and nothing else under web', () => {
     for (const archivePath of [
+      'web/dist/index.html',
+      'web/dist/assets/index-abc123.js',
+      'web/dist/assets/index-abc123.css',
+      'web/dist/assets/fonts/subset.woff2',
+    ]) {
+      expect(isPackagedPath(archivePath)).toBe(true)
+    }
+  })
+
+  it('refuses the runtime, the dependency tree, the launchers and the data directory', () => {
+    // The shape this ticket replaces: a self-contained Windows package whose
+    // root was two folders. Every one of these is now refused by shape.
+    for (const archivePath of [
+      'node.exe',
       'app/server.js',
-      'app/run.js',
-      'app/update.js',
-      'app/package.json',
-      'app/node.exe',
-      'app/.env',
-      'app/web/dist/index.html',
-      'app/web/dist/assets/index-abc123.js',
-    ]) {
-      expect(isPackagedPath(archivePath)).toBe(true)
-    }
-  })
-
-  it('lets sharp and the packages sharp itself loads at run time', () => {
-    // `sharp` is the build's one external, but it is not self-contained: its
-    // own metadata names four runtime packages, and the package carries them
-    // beside it (`scripts/package-layout.ts` is where that closure is argued).
-    for (const archivePath of [
       'app/node_modules/sharp/package.json',
-      'app/node_modules/sharp/dist/index.cjs',
-      'app/node_modules/@img/colour/index.cjs',
-      'app/node_modules/@img/sharp-win32-x64/sharp.node',
-      'app/node_modules/detect-libc/lib/detect-libc.js',
-      'app/node_modules/semver/index.js',
-    ]) {
-      expect(isPackagedPath(archivePath)).toBe(true)
-    }
-  })
-
-  it('refuses the data directory, the owner local files and the gitignored locations', () => {
-    // This is the failure the whitelist exists for: a release carrying the
-    // owner's images, logs or `.env` because the packager collected a directory
-    // it should never have looked at.
-    for (const archivePath of [
+      'node_modules/sharp/package.json',
+      'node_modules/@img/sharp-win32-x64/sharp.node',
+      '启动.bat',
+      '更新.bat',
+      '使用说明.txt',
+      'update.js',
       'data',
       'data/images/wallpaper.jpg',
       'data/logs/2026-09-15.jsonl',
@@ -99,66 +131,74 @@ describe('isPackagedPath', () => {
       'data/instance.json',
       'images/0001.jpg',
       'logs/run.jsonl',
-      '.env',
-      '.env.local',
-      '.git/config',
-      'build/server.js',
-      'web/dist/index.html',
-      'web/.console-cache/thumbnail.webp',
-      'node_modules/vite/package.json',
-      'run.log',
     ]) {
       expect(isPackagedPath(archivePath)).toBe(false)
     }
   })
 
-  it('refuses sources, tests and development tooling', () => {
+  it('refuses the repository documents, sources, tests, scripts and hidden development configuration', () => {
     for (const archivePath of [
+      'CHANGELOG.md',
+      'AGENTS.md',
+      'CONTEXT.md',
+      'CONTEXT-MAP.md',
+      'HISTORY.md',
+      'README.en.md',
       'core/main.ts',
       'web/src/App.vue',
       'web/server/console.ts',
+      'web/distx/index.html',
+      'web/vite.config.ts',
       'tests/scripts/package-layout.test.ts',
-      'scripts/build.ts',
+      'scripts/package.ts',
       'packaging/site.env',
+      'packaging/LICENSE.txt',
+      'packaging/使用说明.txt',
+      '.github/workflows/ci.yml',
       '.oxlintrc.json',
       '.oxfmtrc.json',
-      'README.md',
-      'package.json',
+      '.gitignore',
+      '.env.local',
       'pnpm-lock.yaml',
-      '启动.bat.orig',
+      'tsconfig.json',
+      'vitest.config.ts',
     ]) {
       expect(isPackagedPath(archivePath)).toBe(false)
     }
   })
 
-  it('refuses anything outside the allow-list even under app', () => {
-    for (const archivePath of [
-      'app/web/src/App.vue',
-      'app/core/main.ts',
-      'app/data/images/x.jpg',
-      'app/.env.local',
-      'app/node_modules/vite/package.json',
-      'app/node_modules/@img-evil/x.node',
-      'app/node_modules/.bin/semver',
-    ]) {
-      expect(isPackagedPath(archivePath)).toBe(false)
-    }
-  })
-
-  it('refuses relative escapes, Windows separators and empty paths', () => {
+  it('refuses relative escapes, Windows separators, directory-only paths and empty paths', () => {
     for (const archivePath of [
       '',
       '/',
-      '/app/server.js',
+      '/server.js',
       'C:/Windows/System32/node.exe',
-      'app\\server.js',
-      'app\\..\\data\\images\\x.jpg',
+      'server\\js',
       '../.env',
-      'app/../../.env',
-      'app/web/dist/',
-      'app//server.js',
+      'web/../../.env',
+      'web\\dist\\index.html',
+      'web/dist',
+      'web/dist/',
+      'web//dist/index.html',
+      'web/dist/../server.js',
     ]) {
       expect(isPackagedPath(archivePath)).toBe(false)
+    }
+  })
+})
+
+describe('archiveRequiredEntries', () => {
+  it('requires every named root entry and the page entry', () => {
+    const required = archiveRequiredEntries()
+
+    for (const archivePath of [...ARCHIVE_ROOT_FILES, 'web/dist/index.html']) {
+      expect(required).toContain(archivePath)
+    }
+  })
+
+  it('requires nothing the whitelist itself refuses, or no package could ever pass', () => {
+    for (const archivePath of archiveRequiredEntries()) {
+      expect(isPackagedPath(archivePath)).toBe(true)
     }
   })
 })
@@ -166,42 +206,38 @@ describe('isPackagedPath', () => {
 describe('packagePathOffenders', () => {
   it('names every path the whitelist refuses, and only those', () => {
     const collected = [
-      '启动.bat',
-      'app/server.js',
+      'README.md',
+      'server.js',
+      'web/dist/index.html',
       'data/images/leak.jpg',
-      'app/node_modules/sharp/package.json',
+      'node_modules/sharp/package.json',
       '.env',
     ]
 
-    expect(packagePathOffenders(collected)).toEqual(['data/images/leak.jpg', '.env'])
+    expect(packagePathOffenders(collected)).toEqual([
+      'data/images/leak.jpg',
+      'node_modules/sharp/package.json',
+    ])
   })
 
   it('assertPackagedPaths throws loudly, naming each offender, so a poisoned list cannot be zipped', () => {
-    expect(() => assertPackagedPaths(['启动.bat', 'data/user.env', '.git/config'])).toThrow(
+    expect(() => assertPackagedPaths(['README.md', 'data/user.env', '.git/config'])).toThrow(
       /data\/user\.env[\s\S]*\.git\/config/,
     )
-    expect(() => assertPackagedPaths(['启动.bat', 'app/server.js'])).not.toThrow()
+    expect(() =>
+      assertPackagedPaths(['README.md', 'server.js', 'web/dist/index.html']),
+    ).not.toThrow()
   })
 })
 
-describe('rootPackageFiles', () => {
-  it('takes every .bat and .txt directly in packaging/, so #87 and #89 need no packager change', () => {
-    const packaging = tempRoot('package-root-')
-    for (const name of ['启动.bat', '更新.bat', '使用说明.txt', 'site.env', '.hidden.bat']) {
-      fs.writeFileSync(path.join(packaging, name), `# ${name}\r\n`, 'utf8')
-    }
-    fs.mkdirSync(path.join(packaging, '文档.txt'))
-    fs.mkdirSync(path.join(packaging, 'nested'))
-    fs.writeFileSync(path.join(packaging, 'nested', 'deep.bat'), '@echo off\r\n', 'utf8')
-
-    expect(rootPackageFiles(packaging).toSorted()).toEqual(['使用说明.txt', '启动.bat', '更新.bat'])
-  })
-
-  it('does not mistake the site-constants template for a file the owner reads', () => {
-    const packaging = tempRoot('package-root-')
-    fs.writeFileSync(path.join(packaging, 'site.env'), 'BASE_ORIGIN=https://example.test\n', 'utf8')
-
-    expect(rootPackageFiles(packaging)).toEqual([])
+describe('NPMRC_TEXT', () => {
+  it('is the exact engine-strict configuration the archive carries, not just a file name', () => {
+    // The extracted copy is what a player's `npm install` obeys, so the text is
+    // the assertion: a root entry named `.npmrc` with different bytes would pass
+    // a presence check and enforce nothing.
+    expect(NPMRC_TEXT).toBe('engine-strict=true\n')
+    expect(ARCHIVE_ROOT_FILES).toContain(NPMRC_FILE_NAME)
+    expect(archiveRequiredEntries()).toContain(NPMRC_FILE_NAME)
   })
 })
 
@@ -228,28 +264,38 @@ describe('readSiteEnv', () => {
   })
 })
 
-describe('nodeRuntimeFile', () => {
-  it('uses the running Node by default', () => {
-    const runtime = path.join(tempRoot('package-node-'), 'node.exe')
-    fs.writeFileSync(runtime, 'node', 'utf8')
-
-    expect(nodeRuntimeFile({ execPath: runtime, env: {} })).toBe(path.resolve(runtime))
-  })
-
-  it('fails with the way in when the running Node has no executable to copy', () => {
-    // #88 will supply the official runtime; until then a local package either
-    // has the running Node's own binary or it does not build at all.
-    expect(() =>
-      nodeRuntimeFile({ execPath: path.join(os.tmpdir(), 'absent-node.exe'), env: {} }),
-    ).toThrow(/RE1999_NODE_EXE/)
-  })
-
-  it('takes an explicitly supplied runtime, which is the seam #88 uses', () => {
-    const runtime = path.join(tempRoot('package-node-'), 'official-node.exe')
-    fs.writeFileSync(runtime, 'node', 'utf8')
-
-    expect(nodeRuntimeFile({ execPath: 'not-the-one', env: { RE1999_NODE_EXE: runtime } })).toBe(
-      path.resolve(runtime),
+describe('the lockfile generation', () => {
+  it('resolves the shipped manifest into a lockfile only: no install, runtime dependencies only', () => {
+    // The spec's command: `npm install --package-lock-only --omit=dev
+    // --no-audit --no-fund`. A plain install would create `node_modules` in the
+    // seed directory and make packaging slower and noisier for nothing.
+    expect(lockfileCommand()).toBe(
+      'npm install --package-lock-only --omit=dev --no-audit --no-fund',
     )
+  })
+})
+
+describe('lockfileRefusal', () => {
+  it('accepts a lockfile npm generated from the shipped manifest', () => {
+    expect(lockfileRefusal(lockfile(), MANIFEST.dependencies)).toBeNull()
+  })
+
+  it('refuses a lockfile generated against a different manifest', () => {
+    const stale = lockfile({
+      '': { name: MANIFEST.name, version: MANIFEST.version, dependencies: { sharp: '^0.33.0' } },
+    })
+
+    expect(lockfileRefusal(stale, MANIFEST.dependencies)).toMatch(/sharp/)
+  })
+
+  it('refuses a lockfile that does not resolve the manifest dependency', () => {
+    const unresolved = lockfile({ 'node_modules/sharp': { license: 'Apache-2.0' } })
+
+    expect(lockfileRefusal(unresolved, MANIFEST.dependencies)).toMatch(/sharp/)
+  })
+
+  it('refuses text that is not a lockfile', () => {
+    expect(lockfileRefusal('not json at all', MANIFEST.dependencies)).not.toBeNull()
+    expect(lockfileRefusal(JSON.stringify({ packages: {} }), MANIFEST.dependencies)).not.toBeNull()
   })
 })

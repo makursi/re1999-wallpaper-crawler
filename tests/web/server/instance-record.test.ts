@@ -1,6 +1,6 @@
 // ── The running Console's address (#82) ─────────────────────────────
 //
-// Double-clicking the launcher twice must not start two services writing the
+// Starting the program twice must not start two services writing the
 // same Run log directory. So a start writes how to reach itself into the data
 // directory — the port it actually bound and this boot's token — and every later
 // start reads that record first and asks it whether it is still there.

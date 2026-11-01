@@ -11,33 +11,33 @@
 // receives it: the Console injects it into its configuration value and into the
 // Run child's environment, and the configuration reads take it as a parameter.
 //
-// `RE1999_APP_ROOT` is how a packaged launcher points at itself. Nothing in the
-// build sets it for you, so both shipped and source starts rely on the entry
-// point's explicit fallback — the process's working directory:
+// The shipped release is a flat install root (spec #116): `npm start` runs
+// `node server.js` with the package root as the working directory, so the entry
+// point's explicit fallback — the process's working directory — is the root
+// itself, with no environment variable set:
 //
-//   - the package's launcher `cd`s into `app\` and runs `node.exe` (#85);
-//   - `pnpm core:run` (`tsx core/main.ts`) runs at the repository root;
-//   - `pnpm webui` (`cd build && node server.js`) runs in the built tree, which
-//     is itself an application root (#84).
+//   - `npm start` in a program directory, and `pnpm webui` over `build/` (#84),
+//     both run in a tree that is its own application root;
+//   - `pnpm core:run` (`tsx core/main.ts`) runs at the repository root.
 //
-// Neither source is a module location: `core/version.ts` no longer reads a
-// bundle's own depth, and nothing else may start to.
+// `RE1999_APP_ROOT` / `RE1999_DATA_ROOT` remain the override for a caller that
+// has to point somewhere else (`pnpm webui` supplies both, as tests do); a
+// shipped start names neither. The root is never a module location:
+// `core/version.ts` no longer reads a bundle's own depth, and nothing else may
+// start to.
 //
-// The data directory is a second input rather than a deduction, because the two
-// layouts differ: a source tree keeps its data at `<repo>/data` (a child of the
-// root), while the package keeps it beside the program at `<install>/data` (a
-// sibling of `<install>/app`). One rule cannot serve both — "the sibling of the
-// application root" would put a source run's Mirror outside the repository.
-// So `RE1999_DATA_ROOT` is the package's answer, and the child of the root is
-// the source tree's default.
+// The data directory follows the same rule: `<appRoot>/data`, a child of the
+// root, in a source checkout and in the program directory alike — one rule
+// instead of two. `RE1999_DATA_ROOT` is only the override for a caller whose
+// data is elsewhere.
 
 import * as path from 'node:path'
 import process from 'node:process'
 
-/** The environment variable a packaged launcher sets to its own directory. */
+/** The environment variable a caller sets to override the application root. */
 export const APP_ROOT_ENV = 'RE1999_APP_ROOT'
 
-/** The environment variable a packaged launcher sets to the data directory. */
+/** The environment variable a caller sets to override the data directory. */
 export const DATA_ROOT_ENV = 'RE1999_DATA_ROOT'
 
 /**
@@ -57,14 +57,15 @@ export function resolveAppRoot(env: NodeJS.ProcessEnv = process.env, fallback?: 
 
 /**
  * The data directory: `RE1999_DATA_ROOT` when the environment names one, which
- * is how the package's `<install>\data` (a sibling of `<install>\app`) is
- * declared, otherwise a `data` child of the application root, which is where a
- * source tree keeps it.
+ * is how `pnpm webui` points the built tree at the repository's own `data/`,
+ * otherwise a `data` child of the application root — the default the source run
+ * and the program directory share.
  *
- * Never the sibling by deduction: a source run's root *is* the repository, so a
- * sibling rule would place the Mirror beside the checkout. The packaged tree
- * must therefore say where its data is; `<app>\data` would be inside the
- * directory an update replaces, which is the one place it must never be.
+ * The child-by-default rule is what makes the flat install root work: the
+ * program and its data sit in one directory, and `npm start`'s working directory
+ * names it (#117). The override exists because a development start has its
+ * program in `build\` and its data in the repository; a shipped start needs
+ * neither.
  *
  * The user's own configuration (`data/user.env`) has lived here since #78; #80
  * puts the Mirror, the Run logs and the thumbnail cache in the same place, under
