@@ -218,6 +218,9 @@ where the program runs from, its `package.json` is the shipped manifest, and
 `data\` is its `data` child — there is no `app\` level and no sibling directory
 for the program. The player extracted it and knows where it is, so nothing
 outside it records the address: the install pointer is retired.
+`install root` is the same folder's name in the build and packaging code: the
+folder the player unzipped, which is the program root, whose `data` child is the
+data directory.
 _Avoid_: app, program folder, install pointer, 安装指针
 
 **Data directory (数据目录)**:

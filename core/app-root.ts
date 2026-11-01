@@ -16,8 +16,8 @@
 // point's explicit fallback — the process's working directory — is the root
 // itself, with no environment variable set:
 //
-//   - `npm start` in a shipped root, and `pnpm webui` over `build/` (#84), both
-//     run in a tree that is its own application root;
+//   - `npm start` in a program directory, and `pnpm webui` over `build/` (#84),
+//     both run in a tree that is its own application root;
 //   - `pnpm core:run` (`tsx core/main.ts`) runs at the repository root.
 //
 // `RE1999_APP_ROOT` / `RE1999_DATA_ROOT` remain the override for a caller that
@@ -27,9 +27,9 @@
 // start to.
 //
 // The data directory follows the same rule: `<appRoot>/data`, a child of the
-// root, in a source checkout and in the shipped root alike — one rule instead of
-// two. `RE1999_DATA_ROOT` is only the override for a caller whose data is
-// elsewhere.
+// root, in a source checkout and in the program directory alike — one rule
+// instead of two. `RE1999_DATA_ROOT` is only the override for a caller whose
+// data is elsewhere.
 
 import * as path from 'node:path'
 import process from 'node:process'
@@ -59,7 +59,7 @@ export function resolveAppRoot(env: NodeJS.ProcessEnv = process.env, fallback?: 
  * The data directory: `RE1999_DATA_ROOT` when the environment names one, which
  * is how `pnpm webui` points the built tree at the repository's own `data/`,
  * otherwise a `data` child of the application root — the default the source run
- * and the shipped root share.
+ * and the program directory share.
  *
  * The child-by-default rule is what makes the flat install root work: the
  * program and its data sit in one directory, and `npm start`'s working directory

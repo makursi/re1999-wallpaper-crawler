@@ -330,9 +330,9 @@ async function main(options: ConsoleOptions): Promise<void> {
   // The one application root, resolved here and passed down (#78): the
   // environment's `RE1999_APP_ROOT` when a caller names one (`pnpm webui`, a
   // source Run), otherwise the process's working directory — the repository for
-  // `pnpm core:run`, and the shipped root itself for `npm start`, which npm runs
-  // with the package root as the working directory (#117). Nothing below this
-  // point derives the root.
+  // `pnpm core:run`, and the program directory itself for `npm start`, which npm
+  // runs with the package root as the working directory (#117). Nothing below
+  // this point derives the root.
   const appRoot = resolveAppRoot()
   const dataRoot = dataRootOf(appRoot)
 

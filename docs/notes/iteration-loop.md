@@ -193,3 +193,12 @@ Two smaller debts were paid in the same iteration:
 - **Changing the grilling skill's questioning technique.** Rejected: it gains a
   completion criterion, nothing else; the rounds, the frontier and the format
   stay as they are. (#107)
+
+**Updated — 2026-11-01, spec #116.** The claims that name the updater or the
+launchers as current practice are historical now: the updater, the two `.bat`
+launchers and the install pointer were removed (#119), so `update.js` is no
+longer the boot check's third case and the launchers are no longer uncovered
+surfaces. `pnpm smoke:boot`'s cases are now the complete tree, the second start
+and the missing artifact, and the release-only `pnpm package:check` covers
+install-and-boot of the real archive. See ADR 0024 and
+`docs/notes/flat-package-release.md`. (#116, #117–#122)

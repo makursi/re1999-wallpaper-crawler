@@ -112,10 +112,10 @@ layout does not change, so no migration code ships — only the paragraph in the
 README.
 
 This makes ADR 0019's "the program never deletes" stronger rather than weaker:
-there is no longer any module that deletes a player-visible directory. A
-recursive delete still exists in the packager and in test cleanup, but those
-remove temporary directories the packager created, never an installation or its
-data. Deleting the old folder is the player's own last step.
+the *program* has no recursive delete at all. The recursive deletes that remain
+regenerate the generated tree (`build/`), remove a scratch directory the packager
+or the checks created, or clean a test's temporary directory — never an
+installation or its data. Deleting the old folder is the player's own last step.
 
 ## The version, and the semver reading
 

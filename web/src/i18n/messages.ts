@@ -118,13 +118,16 @@ const zhCN = {
   // (#97).
   'run.siteUnreachable': '连不上官网,这次一张也没能拿到。检查网络后再抓一次。',
   // The setup notice (#60, #95): with no usable `.env` the panel says why a Run
-  // cannot start, and gives the one line to write — two lines, no more. The file
-  // is the `.env` **beside the program**, because a Portable package is unzipped
-  // anywhere and has no repository root; the file name is a data cell, so it
-  // travels as a parameter. Nothing here says "refresh the page": creating the
-  // file and reopening the panel (or returning to the window) is enough, because
-  // the page re-reads the status (#95). The line is the site's constant, not
-  // translatable prose, and is the same line README.md's quick start gives.
+  // cannot start, and gives the one line to write — two lines, no more. This is
+  // a source-checkout message: a release ships a generated `.env` at the program
+  // directory's root (`packaging/site.env`), so the notice cannot fire for a
+  // player; a developer whose checkout has none does see it. The file name is a
+  // data cell, so it travels as a parameter. Nothing here says "refresh the
+  // page": creating the file and reopening the panel (or returning to the
+  // window) is enough, because the page re-reads the status (#95). The line is
+  // the site's constant, not translatable prose; README.md is player-facing and
+  // no longer repeats it, because the archive already carries the same line as
+  // `.env`.
   'run.setup.body': '程序旁边没有可用的 {file},所以还不能开始运行;补上下面这一行就可以了。',
   'run.setup.lines': 'BASE_ORIGIN=https://re.bluepoch.com',
 

@@ -48,7 +48,7 @@ Release 的说明就是从这里对应版本的小节原样截取的，发版时
 
 ### 下载文件
 
-- `re1999-wallpaper-crawler-vX.Y.Z.zip` — Windows 10/11 64 位便携包，解压即用。
+- `re1999-wallpaper-crawler-vX.Y.Z.zip` — Windows 10/11 64 位，解压后用 npm 安装并启动。
 - `Source code (zip)` — GitHub 自动生成的源码归档。
 ```
 

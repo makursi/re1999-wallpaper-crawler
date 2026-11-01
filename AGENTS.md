@@ -186,6 +186,7 @@ core/                        — the crawler
 ├── config-read.ts           — the configuration schema's one home: parseConfig (strict) + readLayeredConfig (the Console's non-throwing read; app/.env over defaults, data/user.env over app), the data-relative defaults, the Gallery list URL, and the User-Agent default (no eager parse; re-exported by config.ts) (unit-tested)
 ├── data-layout.ts           — the arrangement inside the data directory: images/, logs/, cache/thumbnails/, the layout.json version marker, and the forward-only same-volume rename of a pre-#80 checkout (unit-tested; never deletes)
 ├── version.ts               — the one current version: the build-injected constant (`RE1999_VERSION`, ticket #84's define seam) with the app root's package metadata as the source run's fallback (unit-tested)
+├── node-floor.ts            — the Node floor's one check: `engines.node` reaches the bundles as the `RE1999_NODE_FLOOR` define, and the Console refuses to start below it in one Chinese sentence before the handshake or a bound port (unit-tested; #117)
 ├── logger.ts                — pino: pretty console + synchronous JSONL Run log (ADR 0007)
 ├── main.ts                  — orchestration: ask the gallery list → download its URLs → check the list → report
 ├── check-run.ts             — the verdict CLI: newest Run log + Gallery state + file probe → print, exit 0/1
@@ -233,6 +234,7 @@ tests/                       — mirrors the sources it tests
 │   ├── logger.test.ts
 │   ├── config-read.test.ts
 │   ├── version.test.ts
+│   ├── node-floor.test.ts
 │   ├── wallpaper-url.test.ts
 │   ├── run-log-file.test.ts
 │   ├── discovery/
@@ -251,9 +253,11 @@ tests/                       — mirrors the sources it tests
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
+│   ├── package-manifest.test.ts
 │   ├── readme-docs.test.ts   — the README's facts and the licence's agreement (#121)
 │   ├── release-notes.test.ts  — the changelog's extraction rule (#88)
 │   ├── release-tag.test.ts    — the tag/version agreement (#88)
+│   ├── unzip.test.ts
 │   └── zip.test.ts
 └── web/                     — the Console's tests
     ├── server/              — the service's tests (and their two helpers): the routes' surface, the exit's `409`/`202`s (`exit-api.test.ts`), the Run control and its lifetimes, the readers, the instance record and handshake
@@ -273,12 +277,17 @@ scripts/
 ├── check-branch.mjs  — pre-commit guard: refuse to commit on the default branch
 ├── build.ts          — the build: Vite's page + two esbuild entries (Console, Run) into `build/`, the `RE1999_VERSION` and `RE1999_NODE_FLOOR` defines, the tree's package.json, and a refusal when a bundle left an undeclared import
 ├── bundle-externals.ts — the build's two pure readings of esbuild's metafile: undeclared externals (`sharp` is the only allowed one) and the packages that did bundle (unit-tested)
+├── boot-probe.ts     — the two boot checks' shared driver: the printed address, the `npm start` spawn, the child-process handle whose stop kills the whole tree, the tokenised request, and the status/exit guards (called by `smoke-boot.ts` and `package-check.ts`)
+├── json.ts           — the one JSON-object predicate (`isRecord`) the scripts' readers share
 ├── package-version.ts — the one `package.json` version reader, shared by the build and the packager
 ├── package-layout.ts — the archive's whitelist and the packager's pure decisions: which root names may exist, the page's one wildcard, the required entries, the generated `.env`, and the lockfile's two decisions (unit-tested)
+├── package-manifest.ts — the shipped manifest's one shape: version, the ESM marker, `engines.node`, `scripts.start` and `sharp`, plus the dependency reader the packager compares the generated lockfile against (unit-tested; #117)
 ├── package.ts        — `pnpm package`: collect the built tree, the document, the licence, the generated lockfile and config into `dist-package/re1999-wallpaper-crawler-v<version>.zip`, asserting the whitelist before the zip is written
+├── package-check.ts  — `pnpm package:check` (#120): extracts the newest archive outside the repository, proves every path is the whitelist's and the extracted `.npmrc` is the generated one, `npm install`s it, boots it through `npm start` and probes `/api/status`
 ├── release-notes.ts  — the Release body: exactly one `## X.Y.Z` section of `CHANGELOG.md`, failing loudly when it is missing, empty or duplicated; CLI prints it or writes `--out` (#88, unit-tested)
 ├── release-tag.ts    — the tag/version agreement: a `vX.Y.Z` tag must equal `package.json`'s version, checked by function rather than inline YAML; CLI prints the version, `--package` is the dry run (#88, unit-tested)
 ├── smoke-boot.ts     — the boot check (#108, #119): stages a built tree into a temporary root, starts it through `npm start`, drives the page's own API with the boot token, proves a second start points back at the running page, and proves a tree missing an artifact refuses — `pnpm smoke:boot`
+├── unzip.ts          — the release check's reader for the zip `scripts/zip.ts` writes: central directory → local header → deflate/stored, UTF-8 names, no zip64, and a name that could escape is refused (unit-tested)
 ├── webui.ts          — `pnpm webui`: runs `build/` as the program with the repository's `data/` as its data, so the developer's own Mirror and Run logs are what the page shows
 └── zip.ts            — the hand-written zip writer (node:zlib, UTF-8 names, no zip64) (unit-tested)
 packaging/

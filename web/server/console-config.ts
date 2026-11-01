@@ -23,8 +23,8 @@ export interface ConsoleConfig {
   appRoot: string
   /**
    * The user's data directory, injected by the entry point and never the app
-   * root's child by deduction: the shipped root is the install root itself, so
-   * its data is the `data/` child of it (#117), while `pnpm webui` injects the
+   * root's child by deduction: the program directory is the install root itself,
+   * so its data is the `data/` child of it (#117), while `pnpm webui` injects the
    * repository's own `data/` instead.
    */
   dataRoot: string

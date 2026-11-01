@@ -38,11 +38,14 @@
   release carries, and the one request that says a newer release exists.
   Owns: `README.md` (the one product document), `packaging/` (the archive's
   licence and the site-constants template), `scripts/build.ts` +
-  `scripts/bundle-externals.ts` (the built tree, the shipped manifest, and the
-  version/Node-floor defines), `scripts/package.ts` + `scripts/package-layout.ts`
-  (the archive's whitelist and assembly), `core/node-floor.ts` (the floor's one
-  check), `web/server/update-check.ts` and `core/version.ts` (the one version and
-  the one outbound request). Vocabulary in CONTEXT.md → Distribution.
+  `scripts/bundle-externals.ts` (the built tree and the version/Node-floor
+  defines), `scripts/package-manifest.ts` (the shipped manifest's shape and its
+  dependency reader), `scripts/package.ts` + `scripts/package-layout.ts` (the
+  archive's whitelist and assembly), `scripts/package-check.ts` +
+  `scripts/unzip.ts` (the extracted archive's own install-and-boot check),
+  `core/node-floor.ts` (the floor's one check), `web/server/update-check.ts` and
+  `core/version.ts` (the one version and the one outbound request). Vocabulary
+  in CONTEXT.md → Distribution.
 - **Wallpaper URL set** (shared) — the vocabulary for what counts as a
   Wallpaper lives in `core/wallpaper-url.ts`; Download's input, the Console's
   tile check and the mirror check all read it, while Discovery's URL set comes
