@@ -10,6 +10,7 @@
     "check-run": "tsx core/check-run.ts",
     "build": "tsx scripts/build.ts",
     "package": "pnpm build && tsx scripts/package.ts",
+    "package:check": "tsx scripts/package-check.ts",
     "build:web": "vite build --config web/vite.config.ts",
     "smoke:boot": "tsx scripts/smoke-boot.ts",
     "webui": "tsx scripts/webui.ts",
