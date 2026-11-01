@@ -12,15 +12,12 @@
 //     them: start, first download, update, rollback, uninstall, where the data
 //     is, what to do when Windows/antivirus blocks the program, who to ask;
 //   - `LICENSE` is MIT, `package.json` declares the same licence, and the
-//     copyright and wallpaper-ownership statement are present;
-//   - the packager's generic root-file rule picks the manual up with no code.
+//     copyright and wallpaper-ownership statement are present.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
-
-import { rootPackageFiles } from '../../scripts/package-layout.js'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')
 const PACKAGING_DIR = path.join(REPO_ROOT, 'packaging')
@@ -50,9 +47,8 @@ describe('the packaged manual', () => {
     expect(text.replaceAll('\r\n', '')).not.toMatch(/[\r\n]/)
   })
 
-  it('travels at the archive root with no packager change', () => {
-    expect(rootPackageFiles(PACKAGING_DIR)).toContain('使用说明.txt')
-  })
+  // The manual is no longer an archive entry (#118): #119 deletes the file, and
+  // #121 rewrites this file for README.md.
 
   it('answers the questions the ticket lists, in the order a reader meets them', () => {
     const text = manualText()
