@@ -8,9 +8,10 @@
 // data directory, which is what keeps the Mirror gap — the one number the page
 // is for — independent of where the Console puts its files (ADR 0010). It moved
 // there from the program directory's `web/.console-cache/` in #80: the cache is
-// disposable, but leaving it beside the program would lose 1000+ thumbnails
-// whenever the program's files are replaced. The name is the key because a
-// Wallpaper's name embeds a content hash, so a cache hit needs no invalidation.
+// disposable, but leaving it among the program's files would lose 1000+
+// thumbnails on every update, which starts from a fresh extracted folder. The
+// name is the key because a Wallpaper's name embeds a content hash, so a cache
+// hit needs no invalidation.
 //
 // This is the image library's ONLY import site, and the import is dynamic on
 // purpose: the native addon loads during module evaluation in 0.35.5, so a

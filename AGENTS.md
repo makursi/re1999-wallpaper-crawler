@@ -24,8 +24,8 @@ notice says so when it is missing. `pnpm webui` runs the built program in
 `build/` but points the data root at the repository's `data/`
 (`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the
 page shows: the released root's own `data\\` child, reproduced. `pnpm build`
-recreates `build/`, and the README's developer section says so rather than
-implying the repository's `.env` is used.
+recreates `build/`; the developer commands and that caveat live in this file, and
+the player-facing `README.md` only points here rather than carrying a second copy.
 
 ## Commands
 
@@ -91,10 +91,11 @@ but no checkout, runs `npm install` and `npm start`, checks the page, the versio
 and a thumbnail — and only then publishes the draft. A failed smoke test means
 deleting the draft and the tag, not publishing a package nobody ran.
 
-The version discipline is semver with one deliberate reading (ADR 0021):
-**MAJOR** when the data layout or the configuration keys stop being compatible,
-**MINOR** for a new capability, **PATCH** for a fix — including a site redesign
-that broke the crawl. The first public release is `1.0.0`.
+The version discipline is semver with one deliberate reading (ADR 0021, extended
+by ADR 0024): **MAJOR** when the data layout, the configuration keys, or the way
+the program is installed and updated stop being compatible, **MINOR** for a new
+capability, **PATCH** for a fix — including a site redesign that broke the crawl.
+The first public release is `1.0.0`; the flat npm-delivered shape is `2.0.0`.
 
 ## Git Conventions (every iteration)
 
@@ -247,7 +248,7 @@ tests/                       — mirrors the sources it tests
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
-│   ├── packaging-docs.test.ts — the licence's agreement with package.json (#89)
+│   ├── readme-docs.test.ts   — the README's facts and the licence's agreement (#121)
 │   ├── release-notes.test.ts  — the changelog's extraction rule (#88)
 │   ├── release-tag.test.ts    — the tag/version agreement (#88)
 │   └── zip.test.ts
@@ -285,7 +286,7 @@ packaging/
 `LICENSE` at the root is MIT, with a plain statement that the wallpapers belong
 to the official site and that this project stores or distributes none;
 `package.json`'s `license` field is the same word rather than a second truth.
-`tests/scripts/packaging-docs.test.ts` pins that agreement.
+`tests/scripts/readme-docs.test.ts` pins that agreement.
 
 `build/` itself is generated, never source: `pnpm build` writes it and
 `.gitignore` keeps it out of the tree. It is a complete application root, which
@@ -314,7 +315,8 @@ the socket tests at `tests/web/server/`, which drive the bound service over a
 real socket. And a test whose subject is a committed document rather than source
 keeps the document's own name instead of a source path:
 `tests/docs/adr-index.test.ts` guards the index over `docs/adr/`, and
-`tests/scripts/packaging-docs.test.ts` guards the licence agreement.
+`tests/scripts/readme-docs.test.ts` guards the product document's facts and the
+licence agreement.
 
 **Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
 the site's own list endpoint returns every entry and every `pictureUrl` in one

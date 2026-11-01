@@ -14,7 +14,7 @@
 //
 // `cmd.exe` cannot print this: a `.bat` with Chinese text is at the mercy of the
 // console's code page, and a UTF-8 script with a BOM breaks its first line. The
-// launcher stays ASCII and the program says the words.
+// release carries no `.bat`, and the program says the words.
 
 import * as fs from 'node:fs'
 

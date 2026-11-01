@@ -154,8 +154,8 @@ function galleryListSource(endpoint: string | null): GalleryListSource {
  * itself.
  *
  * The cache lives under `<data>/cache/thumbnails` — never inside the Mirror
- * (ADR 0010), and not beside the program, whose files a new release replaces
- * wholesale (#80) — and the name that keys it is the Wallpaper's own, which
+ * (ADR 0010), and not among the program's own files, which a new release does
+ * not carry over (#80) — and the name that keys it is the Wallpaper's own, which
  * embeds a content hash, so a hit needs no invalidation.
  * `web/server/thumbnails.ts` is the image library's only import site, and the
  * import is dynamic on purpose: a broken or absent native addon arrives as a

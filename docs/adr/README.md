@@ -23,3 +23,4 @@
 - [0021](0021-the-release-is-one-portable-zip.md) `the-release-is-one-portable-zip` — The release is one Portable package for Windows x64 whose update replaces only `app\`, with the data layout, version rule and single outbound request fixed.
 - [0022](0022-the-page-owns-an-exit.md) `the-page-owns-an-exit` — The page owns one control, an exit of the whole program, which reuses the terminal's stop decision and asks first while a Run is in flight.
 - [0023](0023-the-release-body-is-one-fixed-template.md) `the-release-body-is-one-fixed-template` — The Release body is the changelog's section in one fixed seven-section template, refused before a tag builds anything when it breaks the shape.
+- [0024](0024-the-release-is-a-flat-install-folder.md) `the-release-is-a-flat-install-folder` — The release is a flat install folder whose root is the program root — `npm install` once, `npm start`, data in its `data\` child — and an update is a new folder with a hand-moved `data\`.

@@ -15,8 +15,8 @@
 // Every failure to read the record is a reason to start normally, never a reason
 // to fail: an absent file is a first start, a half-written one is a crash, an
 // unreadable one is someone else's business. The record lives under the data
-// directory — never among the program's own files, which a new release replaces
-// wholesale — and it is removed when the boot that wrote it shuts down cleanly.
+// directory — never among the program's own files, which a new release does not
+// carry over — and it is removed when the boot that wrote it shuts down cleanly.
 //
 // The network half (asking the recorded address whether it answers, and what
 // makes it the *same* service rather than a stranger on the port) lives in
