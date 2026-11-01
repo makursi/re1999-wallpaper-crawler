@@ -108,23 +108,10 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Resolve the runtime explicitly rather than assuming a PATH shim is the
-      # executable: the packager copies this exact file into `app\node.exe`.
-      - name: Resolve the Node runtime to ship
-        id: node
-        run: |
-          $exe = node -p "process.execPath"
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($exe)) {
-            throw 'cannot resolve the runner Node executable'
-          }
-          "exe=$exe" >> $env:GITHUB_OUTPUT
-
       # `pnpm package` = `pnpm build` + the packager. It asserts the whitelist
       # before writing the zip, so an archive carrying anything outside
       # scripts/package-layout.ts fails here with the offending paths named.
       - name: Package the portable release
-        env:
-          RE1999_NODE_EXE: ${{ steps.node.outputs.exe }}
         run: pnpm package
 
       # The packager names the archive after package.json, and the version step

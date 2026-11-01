@@ -20,8 +20,8 @@
 // dependency tree, a data directory, a source file, a test, a build script, a
 // repository document, a changelog, or a hidden development configuration has no
 // name here, so no collector can put one in by accident. `update.js` is refused
-// until #119 deletes the entry; a package root that carries one is a program that
-// still thinks it updates itself.
+// like any other unknown name: the flat package has no updater, and a program
+// that still thought it updated itself would have no place in it.
 //
 // The predicate works on **archive-relative paths** (`web/dist/index.html`).
 // That is the list `scripts/package.ts` actually collects, so asserting it is

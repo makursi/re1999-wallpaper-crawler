@@ -6,14 +6,13 @@
 //   build\
 //     server.js        the Console, bundled from web/server/console.ts
 //     run.js           a Run, bundled from core/main.ts
-//     update.js        the updater's entry, bundled from web/server/update-entry.ts
 //     package.json     the shipped manifest (#117): ESM, version, Node floor,
 //                      `npm start`, and `sharp` as its only dependency
 //     web\dist\**      the page, built by Vite (ADR 0011)
 //
-// Three entries and one page, and that is the whole program: the bundled files
-// are what a shipped tree runs, so a missing `node_modules`, `tsx` or `vite` on
-// the owner's machine changes nothing. `build\` is also the flat install root a
+// Two entries and one page, and that is the whole program: the bundled files
+// are what a shipped tree runs, so a missing `tsx`, `vite` or esbuild on the
+// owner's machine changes nothing. `build\` is also the flat install root a
 // release becomes (spec #116): copied out of the repository, `npm install` once
 // and `npm start` runs `server.js` with the package root as the working
 // directory, so both roots resolve to the tree itself — the page and the Run
@@ -49,11 +48,7 @@ import process from 'node:process'
 import { build as esbuild } from 'esbuild'
 import { build as buildPage } from 'vite'
 
-import {
-  RUN_ENTRY_FILE,
-  SERVER_ENTRY_FILE,
-  UPDATE_ENTRY_FILE,
-} from '../web/server/build-artifacts.js'
+import { RUN_ENTRY_FILE, SERVER_ENTRY_FILE } from '../web/server/build-artifacts.js'
 import type { BundleOutputImports } from './bundle-externals.js'
 import { ALLOWED_EXTERNALS, bundledPackages, undeclaredExternals } from './bundle-externals.js'
 import type { ShippedManifest } from './package-manifest.js'
@@ -86,11 +81,6 @@ interface Entry {
 const ENTRIES: readonly Entry[] = [
   { label: 'the Console', source: 'web/server/console.ts', output: SERVER_ENTRY_FILE },
   { label: 'a Run', source: 'core/main.ts', output: RUN_ENTRY_FILE },
-  // #87: `更新.bat` starts this one. It lives in the built tree for the same
-  // reason the other two do — a shipped package runs no transpiler — and it is
-  // the one entry whose failure has to roll a folder back, which is why its
-  // logic is a tested module rather than lines in the `.bat`.
-  { label: 'the updater', source: 'web/server/update-entry.ts', output: UPDATE_ENTRY_FILE },
 ]
 
 /**

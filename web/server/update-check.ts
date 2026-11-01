@@ -14,7 +14,7 @@
 //     boot, and the result rides on the status payload.
 //
 // There is no download, no replacement and no prompt. The link is the reader's
-// action; the launcher and updater are a different ticket (#87).
+// action.
 //
 // A draft or prerelease is never announced: the project publishes a draft
 // release while a human smoke-tests the zip, and a prerelease is not something

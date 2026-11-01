@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// ── Boot the built tree (#108, #117) ────────────────────────────────
+// ── Boot the built tree (#108, #117, #119) ──────────────────────────
 //
-// `pnpm build` writes `build/`, and `build/` is the program: the bundles, the
-// page and the shipped manifest, run by Node with no `node_modules`, no `tsx`
-// and no `vite`. Typecheck, lint and the unit tests never load that tree, which
-// is how an ESM bundle of a CommonJS package can import-fail after every one of
-// them passed: only booting the artifact catches that class
-// (`scripts/build.ts` › `CJS_INTEROP_BANNER`).
+// `pnpm build` writes `build/`, and `build/` is the program: the two bundles,
+// the page and the shipped manifest, run by Node with no `tsx` and no `vite`.
+// Typecheck, lint and the unit tests never load that tree, which is how an ESM
+// bundle of a CommonJS package can import-fail after every one of them passed:
+// only booting the artifact catches that class (`scripts/build.ts` ›
+// `CJS_INTEROP_BANNER`).
 //
 // This command is the check that does boot it, and since #117 it boots it in the
 // shipped shape: the copy of `build/` IS the install root (no `app/` level), no
@@ -24,20 +24,21 @@
 //   - `<root>/data/instance.json`, the record of the address this boot published
 //     (#82), which must name the bound port and this boot's token;
 //   - `<root>/data/layout.json`, which proves the boot created the data
-//     directory under its own root;
-//   - `POST /api/exit`, which must answer `202` and end the process with code 0.
+//     directory under its own root.
 //
-// Then it stages the same tree again with `run.js` removed and requires the boot
-// refusal: a non-zero exit before an address is printed, naming the artifact it
-// is missing. That refusal (`web/server/build-artifacts.ts`) is a rule only the
-// artifact can demonstrate — a unit test injects the missing file, this runs the
-// program.
+// While that program is still running, a **second start** goes through the same
+// script from the same root: the handshake must point back at the page that is
+// already up, print no new boot address and exit 0, and the first program must
+// still answer afterwards. That is the one behaviour the deleted updater used to
+// share with the handshake (#119), proven at the artifact level rather than by a
+// unit test. The check then exits the first program through `POST /api/exit`,
+// which must answer `202` and end it with code 0.
 //
-// Finally it runs the third entry, `update.js`, against the staged root with no
-// installation pointer in the redirected `%LOCALAPPDATA%`: the updater must
-// resolve no installation, refuse in Chinese and exit non-zero before it moves
-// anything. That is the updater's bundle proven to load; its real folder swap is
-// still not exercised here. (#119 removes this case with the updater.)
+// The second case stages the same tree again with `run.js` removed and requires
+// the boot refusal: a non-zero exit before an address is printed, naming the
+// artifact it is missing. That refusal (`web/server/build-artifacts.ts`) is a
+// rule only the artifact can demonstrate — a unit test injects the missing file,
+// this runs the program.
 //
 // **What "no network" means here.** The staged tree has no `.env`, so the status
 // read never asks the Gallery list, and `--no-open` keeps the browser shut. It
@@ -47,22 +48,21 @@
 // pretends it does not happen. So: no `.env`, no browser and no real Run; the
 // only outbound request is that bounded check.
 //
-// **What the CI claim covers.** The build compiles all three entries; this
-// command boots the Console and runs the updater's refusal. `run.js` is compiled
-// but never executed, so a bundling failure that only `run.js` has stays green —
-// named here rather than implied away.
+// **What the CI claim covers.** Both entries compile; this command boots the
+// Console, proves a second start points back at it, and proves a tree missing an
+// artifact refuses. `run.js` is compiled but never executed, so a bundling
+// failure that only `run.js` has stays green — named here rather than implied
+// away.
 //
-// **What it cannot cover, by design.** The Windows-only surfaces stay untested
-// here: `packaging/启动.bat`, `packaging/更新.bat`, and the updater's real-folder
-// moves. (`pnpm smoke:boot` itself runs on Linux in CI and on Windows here.)
+// **What it cannot cover, by design.** `run.js`'s own bundle is never executed,
+// the page's Windows rendering is not observed, and a real zip extracted with
+// `npm install` on a clean machine is a separate check. (`pnpm smoke:boot`
+// itself runs on Linux in CI and on Windows here.)
 //
 // **What it writes, and where.** Only inside the temporary root: the staged
-// program files at the root itself, the `data/` the boot creates under it, and a
-// redirected `%LOCALAPPDATA%` for the updater case. A flat root writes no
-// install pointer (`installRootOf` recognises only the old `<install>\app`
-// pair), so the redirect is for the updater's read, not the boot's write. The
-// root is removed on the way out, and its shape is deliberately not asserted: it
-// is scaffolding, not the subject.
+// program files at the root itself and the `data/` the boot creates under it.
+// The root is removed on the way out, and its shape is deliberately not
+// asserted: it is scaffolding, not the subject.
 //
 // **A port the fetch standard blocks.** `--port 0` lets the OS choose, and on
 // this machine the dynamic range (1024–15000) includes ports `fetch` refuses
@@ -102,7 +102,6 @@ const PACKAGE_FILE = path.join(REPO_ROOT, 'package.json')
 /** The entries this command starts or names by name. */
 const SERVER_ENTRY = 'server.js'
 const RUN_ENTRY = 'run.js'
-const UPDATE_ENTRY = 'update.js'
 
 /**
  * The arguments the check passes to the entry through the manifest's start
@@ -124,9 +123,6 @@ const BOOT_TIMEOUT_MS = 30_000
 
 /** An accepted exit answers on the spot and stops the process shortly after. */
 const EXIT_TIMEOUT_MS = 10_000
-
-/** The updater's refusal is immediate; this is only a bound on a hung process. */
-const UPDATER_TIMEOUT_MS = 10_000
 
 /** One API request's budget: loopback, so this is already generous. */
 const REQUEST_TIMEOUT_MS = 10_000
@@ -248,8 +244,7 @@ function rewriteStagedVersion(root: string): void {
 
 /**
  * The child's environment: this machine's, minus every `RE1999_*` variable and
- * minus the site configuration it could have inherited, plus a redirected
- * `%LOCALAPPDATA%` for the updater case.
+ * minus the site configuration it could have inherited.
  *
  * `RE1999_APP_ROOT` / `RE1999_DATA_ROOT` are exactly what a shipped start does
  * not set (#117): `npm start` runs `node server.js` with the package root as the
@@ -263,26 +258,13 @@ function rewriteStagedVersion(root: string): void {
  * does not make the boot request-free — the courtesy update check still runs —
  * so "no network" is not this command's claim; "no site request" is.
  */
-function childEnvironment(staged: Staged): NodeJS.ProcessEnv {
+function childEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const key of Object.keys(env)) {
     if (key.startsWith('RE1999_')) delete env[key]
   }
   for (const key of CONFIG_ENV_KEYS) delete env[key]
-  // The updater case reads `%LOCALAPPDATA%`'s install pointer; it must not find
-  // this machine's real one. The flat boot writes none (`installRootOf`
-  // recognises only the old `<install>\app` pair), so this redirect is for the
-  // updater's read alone.
-  env.LOCALAPPDATA = path.join(staged.root, 'localappdata')
   return env
-}
-
-/**
- * Stop the direct child only. The updater's own process exits at once; this is
- * only for a hung one, and it has no grandchildren to leave behind.
- */
-function killDirect(child: ChildProcess): void {
-  child.kill()
 }
 
 /**
@@ -335,7 +317,7 @@ function track(child: ChildProcess, killChild: (child: ChildProcess) => void): P
   })
 
   // Attached at spawn, so a process that exits before a case asks for its code
-  // cannot fire `close` into the void. The updater exits this fast.
+  // cannot fire `close` into the void. A refused second start exits this fast.
   const closed = new Promise<number | null>(resolve => {
     child.once('close', code => resolve(code))
   })
@@ -413,21 +395,6 @@ function track(child: ChildProcess, killChild: (child: ChildProcess) => void): P
 }
 
 /**
- * Start one entry with this Node runtime, for the case that still names an entry
- * directly (the updater's refusal). The working directory is the staged root, so
- * nothing can lean on where the driver was started from.
- */
-function startEntry(staged: Staged, entry: string, args: readonly string[] = []): Program {
-  const child = spawn(process.execPath, [path.join(staged.root, entry), ...args], {
-    cwd: staged.root,
-    env: childEnvironment(staged),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  })
-  return track(child, killDirect)
-}
-
-/**
  * Start the staged tree the way a user does: through the manifest's own
  * `scripts.start`, with the check's arguments after `--` (#117).
  *
@@ -442,14 +409,14 @@ function startShippedProgram(staged: Staged, args: readonly string[]): Program {
     process.platform === 'win32'
       ? spawn(['npm', ...startArgs].join(' '), {
           cwd: staged.root,
-          env: childEnvironment(staged),
+          env: childEnvironment(),
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
           shell: true,
         })
       : spawn('npm', startArgs, {
           cwd: staged.root,
-          env: childEnvironment(staged),
+          env: childEnvironment(),
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
           detached: true,
@@ -457,7 +424,7 @@ function startShippedProgram(staged: Staged, args: readonly string[]): Program {
   return track(child, killTree)
 }
 
-/** How a case starts the staged tree: the shipped start script, or one entry. */
+/** How a case starts the staged tree: the shipped start script. */
 type ProgramStarter = (staged: Staged) => Program
 
 /** Start the staged program, run one case against it, and always stop it. */
@@ -535,11 +502,6 @@ function exitingOf(body: unknown): boolean | null {
   return typeof body.exiting === 'boolean' ? body.exiting : null
 }
 
-/** Whether the text carries at least one CJK character, so "Chinese" is observed. */
-function hasChinese(text: string): boolean {
-  return /[\u4e00-\u9fff]/u.test(text)
-}
-
 /** What is directly under the data directory, for the check's own report. */
 function dataEntries(dataRoot: string): string {
   try {
@@ -611,6 +573,18 @@ async function caseCompleteTree(staged: Staged, expectedVersion: string): Promis
         `ok - data/ holds ${dataEntries(staged.dataRoot)} while the program runs\n`,
       )
 
+      // #119: the second start, while this program is still running. The
+      // handshake is the one behaviour the deleted updater shared with it, so it
+      // is proven here at the artifact level — same root, same command, no
+      // `RE1999_*` — and the first program has to survive it.
+      await caseSecondStart(staged, address)
+      const stillUp = await request(address, '/api/status')
+      assertAndReport(
+        stillUp.status === 200,
+        `the running program still answers after the second start (got ${stillUp.status})`,
+        stillUp.text,
+      )
+
       const exit = await request(address, '/api/exit', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -628,6 +602,35 @@ async function caseCompleteTree(staged: Staged, expectedVersion: string): Promis
         program.output(),
       )
       assertAndReport(!fs.existsSync(recordFile), 'the clean exit removed the instance record')
+    },
+  )
+}
+
+/**
+ * The second start, while the first program still runs (#119): the same staged
+ * root and the same `npm start`, so the instance handshake reads the record the
+ * first boot published, probes it, and answers with the page that is already up.
+ *
+ * Three things make it the handshake's proof rather than a happy path: it must
+ * exit 0, it must print the Chinese "already running" line naming the running
+ * page, and it must print no new boot address — a second service would have
+ * bound a port and printed one. The updater used to share this rule; it is gone,
+ * so the artifact is where the rule is proved now.
+ */
+async function caseSecondStart(staged: Staged, runningAddress: string): Promise<void> {
+  await withStartedProgram(
+    staged,
+    stagedTree => startShippedProgram(stagedTree, BOOT_ARGS),
+    async program => {
+      const code = await program.close(BOOT_TIMEOUT_MS)
+      const output = program.output()
+      assertAndReport(code === 0, `a second start exits 0 (got ${String(code)})`, output)
+      assertAndReport(
+        output.includes(`程序已在运行:${runningAddress}`),
+        'the second start names the page that is already running',
+        output,
+      )
+      assertAndReport(!BOOT_ADDRESS.test(output), 'it prints no new boot address', output)
     },
   )
 }
@@ -696,30 +699,6 @@ async function caseMissingArtifact(staged: Staged): Promise<void> {
   )
 }
 
-/**
- * The updater's third entry, exercised through its own refusal: the staged
- * package has no installation pointer in the redirected `%LOCALAPPDATA%`, so
- * `update.js` resolves no installation and says so in Chinese with a non-zero
- * exit — before it probes for a running service and before it moves a file. It
- * stays offline, immediate and inside the temporary root.
- */
-async function caseUpdaterRefusal(staged: Staged): Promise<void> {
-  await withStartedProgram(
-    staged,
-    stagedTree => startEntry(stagedTree, UPDATE_ENTRY, [stagedTree.root]),
-    async program => {
-      const code = await program.close(UPDATER_TIMEOUT_MS)
-      const output = program.output()
-      assertAndReport(
-        code !== 0,
-        `a tree with no installation pointer makes ${UPDATE_ENTRY} exit non-zero (got ${String(code)})`,
-        output,
-      )
-      assertAndReport(hasChinese(output), `${UPDATE_ENTRY} refuses in Chinese`, output)
-    },
-  )
-}
-
 /** Remove the temporary root; a failure here must not mask the boot's verdict. */
 function cleanup(root: string): void {
   try {
@@ -757,7 +736,6 @@ async function main(): Promise<void> {
       'the staged install root carries no data directory yet',
     )
     await caseCompleteTreeWithPortRetry(complete, expectedVersion)
-    await caseUpdaterRefusal(complete)
   } finally {
     cleanup(complete.root)
   }
