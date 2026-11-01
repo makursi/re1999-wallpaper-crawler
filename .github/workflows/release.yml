@@ -1,23 +1,24 @@
 name: Release
 
 # One tag, one downloadable artifact, and nothing public until a human has
-# looked at it (#88).
+# looked at it (#88, #122).
 #
-#   git tag v1.0.0 && git push origin v1.0.0
+#   git tag vX.Y.Z && git push origin vX.Y.Z
 #
-# builds the portable zip from a clean Windows checkout and creates a **draft**
-# GitHub Release named for the tag, with the matching `CHANGELOG.md` section as
-# its body. It never publishes: the draft is the last step, so a failure in any
-# earlier step leaves no Release at all.
+# builds the flat zip from a clean Windows checkout, installs and boots that
+# archive itself (`pnpm package:check`), and creates a **draft** GitHub Release
+# named for the tag with the matching `CHANGELOG.md` section as its body. It
+# never publishes: the draft is the last step, so a failure in any earlier step
+# — including the package check — leaves no Release at all.
 #
 # ── The human step (deliberately not automated) ─────────────────────
 #
 #   1. Open the draft Release on the repository's Releases page and download
 #      `re1999-wallpaper-crawler-vX.Y.Z.zip`.
-#   2. Extract it on a clean Windows machine (no Node, no pnpm, no checkout),
-#      double-click 启动.bat, let it bind, and check: the page opens, the
-#      version in the page's corner is the tag, a thumbnail renders, and a Run
-#      can start. The manual inside the package says what a player should see.
+#   2. Extract it on a Windows machine that has Node but no checkout, run
+#      `npm install` once and `npm start`, and check: the page opens, the
+#      version in the page's corner is the tag, and a thumbnail renders. The
+#      archive's own README says what a player should see.
 #   3. Only then publish the draft. If the smoke test fails, delete the draft
 #      and delete the tag — do not publish a package that has never been run.
 #
@@ -26,11 +27,11 @@ name: Release
 #
 # ── Why windows-latest ──────────────────────────────────────────────
 #
-# The artifact carries a win32-x64 `sharp` native module and a `node.exe`; a
-# Linux build would produce a package that cannot start on a player's machine
-# (#86, #87). The runtime that is packaged is the runner's own `node.exe` —
-# the same one the gates just ran on — passed through the packager's
-# `RE1999_NODE_EXE` seam instead of being guessed at.
+# The artifact carries no runtime: it is a flat install root whose `npm install`
+# resolves `sharp`, a native module, from the registry. The package check below
+# runs that install for real and boots the extracted tree on windows-latest, so
+# what it proves is the win32-x64 binary a player's machine will load — a Linux
+# build would prove a different one (#86, #87, #120).
 
 on:
   push:
@@ -50,14 +51,15 @@ permissions:
 
 jobs:
   release:
-    name: build the portable package
+    name: build the release package
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
 
       # Installs pnpm (version from `packageManager`), a Node.js runtime, and
-      # runs `pnpm install` — the same setup as ci.yml. Its node.exe is the
-      # portable runtime this job packages.
+      # runs `pnpm install` — the same setup as ci.yml. The runtime runs this
+      # job's gates and the package check's own `npm install` and `npm start`;
+      # the archive ships no runtime of its own.
       - uses: pnpm/setup@v2
         with:
           runtime: node@24
@@ -111,8 +113,24 @@ jobs:
       # `pnpm package` = `pnpm build` + the packager. It asserts the whitelist
       # before writing the zip, so an archive carrying anything outside
       # scripts/package-layout.ts fails here with the offending paths named.
-      - name: Package the portable release
+      - name: Package the release
         run: pnpm package
+
+      # #120, #122: a zip is only worth attaching if it installs, boots and
+      # answers. `pnpm package:check` extracts this job's archive into a
+      # temporary directory outside the checkout, runs a real `npm install` (the
+      # win32 `sharp` comes from the registry), starts it through the shipped
+      # manifest's own `npm start`, reads `/api/status` for the tag's version,
+      # exits it through `/api/exit` and requires code 0. It runs before the
+      # draft exists on purpose: a package that does not install and boot is
+      # never attached to a Release. The archive is named, not defaulted, so the
+      # check cannot pass on some other zip left in `dist-package/`.
+      - name: Install and boot the packaged release
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          pnpm package:check "dist-package/re1999-wallpaper-crawler-v$env:RELEASE_VERSION.zip"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The packager names the archive after package.json, and the version step
       # proved the tag agrees with it; this is the cheap last look before the
@@ -170,6 +188,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
-          Write-Output "Dry run: no Release was created. The archive is $env:RELEASE_ARCHIVE and the notes are at $notes."
+          Write-Output "Dry run: no Release was created. The archive is $env:RELEASE_ARCHIVE; it was installed and booted by the package check; the notes are at $notes."
         env:
           RELEASE_ARCHIVE: ${{ steps.archive.outputs.zip }}

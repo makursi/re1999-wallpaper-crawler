@@ -29,6 +29,7 @@ removed and requires the boot refusal.
 **What the CI claim covers.** Both entries compile; the check boots the Console
 and proves a second start points back at the running page. `run.js` is compiled
 but never executed, so a bundling failure that only `run.js` has stays green.
+The check runs on the build tree, not on the shipped archive.
 
 **What "no network" means.** No `.env`, no browser and no real Run: the staged
 tree has no configuration, so the status read never asks the Gallery list. The
@@ -40,9 +41,15 @@ pretends it does not happen.
 the dynamic range (1024–15000) includes ports `fetch` refuses (`bad port`), so
 the console case retries the whole boot with a fresh port twice before failing.
 
-**What it cannot cover.** `run.js`'s bundle is never executed, the page's Windows
-rendering is not observed, and a real zip extracted with `npm install` on a
-clean machine is a separate check.
+**What the two checks cannot cover.** The PR check (`pnpm smoke:boot`) proves
+the build tree boots. The release check (`pnpm package:check`, run by
+`.github/workflows/release.yml` and not by CI, because it needs the registry)
+takes the real zip, extracts it outside the checkout, runs a real `npm install`
+and `npm start`, and probes `/api/status`: that additionally proves the shipped
+manifest, the generated lockfile, `.npmrc`'s `engine-strict` and a real native
+install. Neither proves a player's clean machine, an offline install or a first
+crawl; the page's Windows rendering is not observed either, and `run.js`'s
+bundle is still never executed.
 
 ## The four lessons
 

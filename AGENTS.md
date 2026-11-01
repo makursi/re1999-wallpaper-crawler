@@ -36,6 +36,7 @@ the player-facing `README.md` only points here rather than carrying a second cop
 | Build the program | `pnpm build` (`tsx scripts/build.ts` → `build/`; needed before `webui`) |
 | Boot the built tree | `pnpm smoke:boot` (scope and limits: `docs/agents/branch-reference.md`) |
 | Package the release | `pnpm package` (`pnpm build` + `tsx scripts/package.ts` → `dist-package/re1999-wallpaper-crawler-v<version>.zip`; needs the npm registry for the generated lockfile) |
+| Check the packaged release | `pnpm package:check` (`tsx scripts/package-check.ts`; release-only and needs the registry — extracts the newest `dist-package/…zip`, `npm install`s it, boots it with `npm start` and probes `/api/status`: proves the shipped manifest, the generated lockfile, `.npmrc` and a real native `sharp` install) |
 | WebUI (local page) | `pnpm webui` (`tsx scripts/webui.ts` — build/ as the program, the repository's data/ as its data; flags `--port`, `--no-open`) |
 | Build the page only | `pnpm build:web` (`vite build --config web/vite.config.ts`) |
 | Tests | `pnpm test` (`vitest run`) |
@@ -72,9 +73,11 @@ A release is a tag and then a human decision. `git tag vX.Y.Z && git push
 origin vX.Y.Z` runs `.github/workflows/release.yml` on **windows-latest**: it
 checks the tag against `package.json` (`scripts/release-tag.ts`), cuts the
 matching section out of `CHANGELOG.md` (`scripts/release-notes.ts`), runs the
-same gates CI runs, packages the flat zip, and creates a **draft** GitHub Release
-named for the tag with the extracted notes as its body. It never publishes, and
-`workflow_dispatch` is the dry run that builds everything but creates no Release.
+same gates CI runs, packages the flat zip, installs and boots that archive
+(`pnpm package:check`), and only then creates a **draft** GitHub Release named
+for the tag with the extracted notes as its body. It never publishes, and
+`workflow_dispatch` is the dry run that builds everything, package check
+included, but creates no Release.
 
 `CHANGELOG.md` is the one user-readable record — Chinese, player-facing, with
 its extraction rule stated in its own header: each version is exactly
