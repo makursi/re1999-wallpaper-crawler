@@ -34,10 +34,10 @@
 import * as path from 'node:path'
 import process from 'node:process'
 
-/** The environment variable a packaged launcher sets to its own directory. */
+/** The environment variable a caller sets to override the application root. */
 export const APP_ROOT_ENV = 'RE1999_APP_ROOT'
 
-/** The environment variable a packaged launcher sets to the data directory. */
+/** The environment variable a caller sets to override the data directory. */
 export const DATA_ROOT_ENV = 'RE1999_DATA_ROOT'
 
 /**

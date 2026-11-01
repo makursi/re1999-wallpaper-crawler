@@ -20,11 +20,11 @@ import { DATA_LAYOUT_FILE_NAME, DataLayoutError, layoutRefusalOf } from './data-
 // `core/config-read.ts`, which is also what the Console reads without throwing —
 // importing *this* module is the strict parse, deliberately (#57).
 //
-// The two roots are inputs: `resolveAppRoot` reads the environment a packaged
-// launcher sets (`RE1999_APP_ROOT`) and falls back to the process's working
-// directory for a source run; `dataRootOf` reads `RE1999_DATA_ROOT` or the
-// source tree's `<root>/data`. Nothing here looks at its own module's location
-// (#78), and no data path is a child of the app root (#80).
+// The two roots are inputs: `resolveAppRoot` reads the environment a caller sets
+// (`RE1999_APP_ROOT`) and falls back to the process's working directory for a
+// source run or `npm start`; `dataRootOf` reads `RE1999_DATA_ROOT` or the
+// root's own `<root>/data`. Nothing here looks at its own module's location
+// (#78); the data directory is a child of the app root by default (#117).
 
 const APP_ROOT = resolveAppRoot()
 const DATA_ROOT = dataRootOf(APP_ROOT)

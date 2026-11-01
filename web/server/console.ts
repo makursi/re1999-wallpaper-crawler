@@ -12,8 +12,8 @@
 //
 // #84: this file is a build artifact. `scripts/build.ts` bundles it into
 // `build/server.js` beside the Run's `build/run.js` and the prebuilt page, and
-// the Console compiles nothing at boot — no Vite, no transpiler, no
-// `node_modules` in a shipped tree. Both non-Console artifacts are checked
+// the Console compiles nothing at boot — no Vite, no transpiler and no build
+// step in a shipped tree. Both non-Console artifacts are checked
 // before the port is bound (`web/server/build-artifacts.ts`): a tree that lacks
 // one is a broken build or a broken package, and saying so beats serving a blank
 // page and failing a click later.
@@ -26,18 +26,18 @@
 // ADR 0008: no dispatcher and no CLI framework. The Console takes `--port` and
 // `--no-open` and nothing more; the flags are parsed by Node's own parser.
 //
-// #82: this entry is also what a second double-click runs. Before it resolves
-// any of the boot's work it asks the record the previous start left behind
-// whether that service is still answering (`instance-handshake.ts`); if it is,
-// this start only reopens that page and exits, so one program cannot become two
-// processes writing the same Run log directory. The record it publishes once its
-// port is known is removed when the boot that wrote it exits.
+// #82: this entry is also what a second start runs — `npm start`, or another
+// start of the same release. Before it resolves any of the boot's work it asks
+// the record the previous start left behind whether that service is still
+// answering (`instance-handshake.ts`); if it is, this start only reopens that
+// page and exits, so one program cannot become two processes writing the same
+// Run log directory. The record it publishes once its port is known is removed
+// when the boot that wrote it exits.
 //
-// #85: the package's launcher (`packaging/启动.bat`) is ASCII-only and does
-// nothing but `cd` into `app\` and run this file, because cmd.exe renders a
-// `.bat`'s Chinese through the console's code page. Everything the person at the
-// window reads comes from here: the title (the stop instruction), the "do not
-// close" line, the unsafely-downloaded notice, and the pointer the updater reads.
+// #85: everything the person at the window reads comes from here: the title
+// (the stop instruction), the "do not close" line and the unsafely-downloaded
+// notice. A shipped start is `npm start` with npm's own output, so the program
+// is the only voice.
 //
 // #96: the page now owns an exit, and this file is its glue — the decision and
 // the tree kill live in `run-control.ts` (`createExitController`), but the
@@ -73,7 +73,6 @@ import { consoleConfigOf, DEFAULT_CONSOLE_PORT } from './console-config.js'
 import type { GalleryListSource } from './gallery-list-source.js'
 import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
-import { installPointerFile, installRootOf, writeInstallPointer } from './installation.js'
 import { runningInstanceUrl } from './instance-handshake.js'
 import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
 import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
@@ -100,10 +99,9 @@ import { markedAsUnsafe, unsafeDownloadNotice } from './unsafe-download.js'
 import { checkForUpdate } from './update-check.js'
 
 /**
- * The launcher's window title (#85, #96): both stops, because there are two now
- * — closing the window, and the page's Exit. Set with `process.title`, which on
- * Windows is a real console title write and therefore Unicode-safe, unlike
- * anything a `.bat` prints.
+ * The window title (#85, #96): both stops, because there are two — closing the
+ * window, and the page's Exit. Set with `process.title`, which on Windows is a
+ * real console title write and therefore Unicode-safe.
  */
 const WINDOW_TITLE = 're1999 壁纸下载器 - 关闭这个窗口或在页面上退出就是停止'
 
@@ -156,8 +154,8 @@ function galleryListSource(endpoint: string | null): GalleryListSource {
  * itself.
  *
  * The cache lives under `<data>/cache/thumbnails` — never inside the Mirror
- * (ADR 0010), and no longer under the program directory, which an update
- * replaces (#80) — and the name that keys it is the Wallpaper's own, which
+ * (ADR 0010), and not beside the program, whose files a new release replaces
+ * wholesale (#80) — and the name that keys it is the Wallpaper's own, which
  * embeds a content hash, so a hit needs no invalidation.
  * `web/server/thumbnails.ts` is the image library's only import site, and the
  * import is dynamic on purpose: a broken or absent native addon arrives as a
@@ -251,8 +249,8 @@ interface StopDeps {
  * and the next start must clear the interrupted record; a Run that was not this
  * Console's is not ours to kill, and only the service stops. Then the service
  * closes (the existing `process.once('exit')` handler removes the instance
- * record on the way out) and the program exits 0 — the launcher's `pause` keeps
- * the window open so these last lines can be read.
+ * record on the way out) and the program exits 0 — the two last lines stay on
+ * screen until the terminal or the window is closed.
  */
 function shutdownAndExit(outcome: ExitOutcome, service: ConsoleService | null): void {
   void (async () => {
@@ -340,10 +338,10 @@ async function main(options: ConsoleOptions): Promise<void> {
 
   // #82: one program, one service. Before anything is read, written or bound,
   // ask the record the previous start left behind whether that service is still
-  // answering. If it is, this start is a second double-click: it points the
-  // browser at the page that is already up and exits, so two processes can never
-  // write the same Run log directory. A record that is absent, unreadable or
-  // stale answers `null` and this boot proceeds normally.
+  // answering. If it is, this start is a second one: it points the browser at
+  // the page that is already up and exits, so two processes can never write the
+  // same Run log directory. A record that is absent, unreadable or stale answers
+  // `null` and this boot proceeds normally.
   const runningUrl = await runningInstanceUrl(dataRoot)
   if (runningUrl !== null) {
     process.stdout.write(`程序已在运行:${runningUrl}\n`)
@@ -352,11 +350,11 @@ async function main(options: ConsoleOptions): Promise<void> {
     process.exit(0)
   }
 
-  // #85: the window the user double-clicked into existence is one of the two
-  // stops (the page's Exit is the other, #96). The title names both, and the one
-  // line below says it again where the user is looking. `process.title` is a
-  // Unicode console-title write on Windows, which is why the words can be
-  // Chinese while the launcher stays ASCII.
+  // #85: the window the start opened is one of the two stops (the page's Exit
+  // is the other, #96). The title names both, and the one line below says it
+  // again where the user is looking. `process.title` is a Unicode console-title
+  // write on Windows, which is why the words can be Chinese without a launcher
+  // printing anything.
   process.title = WINDOW_TITLE
   process.stdout.write(`${STOP_INSTRUCTION}\n`)
 
@@ -415,34 +413,14 @@ async function main(options: ConsoleOptions): Promise<void> {
   // this turn will run are checked here, before the port is bound, and the
   // Chinese unblock instruction is printed. It is a notice, not a refusal: the
   // tree may well work, and refusing a working tree would be its own support
-  // case. `node.exe` is present only in the packaged tree, which is exactly the
-  // tree that can have arrived with the mark.
+  // case.
   const programFiles = [
-    path.join(config.appRoot, 'node.exe'),
     path.join(config.appRoot, SERVER_ENTRY_FILE),
     runEntryPath(config.appRoot),
     pageEntryFile(config.distDir),
   ].filter(file => fs.existsSync(file))
   const unsafeNotice = unsafeDownloadNotice(markedAsUnsafe(programFiles), config.appRoot)
   if (unsafeNotice !== null) process.stdout.write(`${unsafeNotice}\n`)
-
-  // #85: record where this installation is, for the updater (#87). Only the
-  // portable package has an installation root (a source checkout answers null),
-  // and the pointer is rewritten on every start so a moved folder heals on its
-  // next launch. A write that fails is said once and does not stop the program:
-  // the updater's memory is not worth a failed start.
-  const installRoot = installRootOf(config.appRoot, dataRoot)
-  if (installRoot !== null) {
-    const pointer = writeInstallPointer({ installRoot })
-    if (!pointer.written) {
-      const file = installPointerFile(process.env.LOCALAPPDATA)
-      process.stdout.write(
-        `无法记录安装位置(${pointer.reason}),更新时可能找不到这个安装。${
-          file === null ? '' : `\n  目标文件:${file}`
-        }\n`,
-      )
-    }
-  }
 
   // One cached read of the Gallery list serves both `/api/status` (its
   // `officialTotal` / `listAvailable`) and `/api/gallery` (the rows) — the page
@@ -516,7 +494,7 @@ async function main(options: ConsoleOptions): Promise<void> {
   })
 
   // #82: this boot's token, generated once because it is needed twice — by the
-  // service's guard and by the record the next double-click probes. It stays
+  // service's guard and by the record the next start probes. It stays
   // random per boot: the record is a handshake, not a credential, and a URL
   // saved from an earlier run is refused by this one (see `instance-record.ts`).
   const token = randomBytes(16).toString('hex')
@@ -559,7 +537,7 @@ async function main(options: ConsoleOptions): Promise<void> {
 
   // #82: publish this boot's address as soon as the port is known, and before
   // the boot's one network request is awaited. From here until shutdown a second
-  // double-click reuses this service instead of starting another; the record is
+  // start reuses this service instead of starting another; the record is
   // removed on the way out, so a clean shutdown leaves nothing to reconnect to.
   // A hard kill leaves a stale record, and staleness is proved at read time by
   // the probe, which is the same "start normally" answer.
