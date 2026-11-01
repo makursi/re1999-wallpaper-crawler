@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 // ── The build: the program, not the sources ─────────────────────────
 //
-// `pnpm build` writes the tree a packaged program is made of (#84):
+// `pnpm build` writes the tree a shipped program is made of (#84, #117):
 //
 //   build\
 //     server.js        the Console, bundled from web/server/console.ts
 //     run.js           a Run, bundled from core/main.ts
-//     package.json     names the tree ESM and its version
+//     update.js        the updater's entry, bundled from web/server/update-entry.ts
+//     package.json     the shipped manifest (#117): ESM, version, Node floor,
+//                      `npm start`, and `sharp` as its only dependency
 //     web\dist\**      the page, built by Vite (ADR 0011)
 //
-// Two entries and one page, and that is the whole program: the bundled files are
-// what a packaged tree runs, so a missing `node_modules`, `tsx` or `vite` on the
-// owner's machine changes nothing. `build\` is also a complete application root —
-// `node build\server.js` from a shell in that directory finds `.env`, the page
-// and the Run entry where `web/server/build-artifacts.ts` says they are.
+// Three entries and one page, and that is the whole program: the bundled files
+// are what a shipped tree runs, so a missing `node_modules`, `tsx` or `vite` on
+// the owner's machine changes nothing. `build\` is also the flat install root a
+// release becomes (spec #116): copied out of the repository, `npm install` once
+// and `npm start` runs `server.js` with the package root as the working
+// directory, so both roots resolve to the tree itself — the page and the Run
+// entry are found where `web/server/build-artifacts.ts` says they are, and the
+// data lands in `build\data\`.
 //
 // **What is external, and why exactly one thing is.** Everything bundles:
 // `hono`, `@hono/node-server`, `pino`, `pino-pretty`, `undici`, `zod`, `dotenv`
@@ -28,6 +33,10 @@
 // The version is one `define`, read from `package.json`: `core/version.ts` turns
 // `RE1999_VERSION` into the string a source run reads from the metadata, so a
 // bundled status payload reports the release's number and nothing else (#79).
+// The Node floor is a second: `package.json`'s `engines.node` reaches the
+// bundles as `RE1999_NODE_FLOOR`, and the Console refuses to start below it
+// (`core/node-floor.ts`, #117) — one source for the floor, so the shipped
+// manifest, the injected check and the esbuild target cannot disagree.
 //
 // The page is built here rather than on first start (which is what #84 removed):
 // a shipped program does not compile its own wheel, and the Console refuses to
@@ -47,6 +56,8 @@ import {
 } from '../web/server/build-artifacts.js'
 import type { BundleOutputImports } from './bundle-externals.js'
 import { ALLOWED_EXTERNALS, bundledPackages, undeclaredExternals } from './bundle-externals.js'
+import type { ShippedManifest } from './package-manifest.js'
+import { shippedManifestOf } from './package-manifest.js'
 import { packageVersion } from './package-version.js'
 
 /** The repository root: this script's parent, which is also a source app root. */
@@ -106,8 +117,8 @@ interface EntryBundle {
   inputs: string[]
 }
 
-/** One entry, bundled into the built tree. */
-async function bundleEntry(entry: Entry, version: string): Promise<EntryBundle> {
+/** One entry, bundled into the built tree with the manifest's two defines. */
+async function bundleEntry(entry: Entry, manifest: ShippedManifest): Promise<EntryBundle> {
   const result = await esbuild({
     // Absolute from the repository root: this script may be started from
     // anywhere, and nothing here may depend on the caller's working directory.
@@ -117,10 +128,14 @@ async function bundleEntry(entry: Entry, version: string): Promise<EntryBundle> 
     bundle: true,
     platform: 'node',
     format: 'esm',
-    // The runtime floor `package.json`'s `engines` names.
+    // The runtime floor `package.json`'s `engines` names, which the manifest
+    // prints and the Console enforces (#117).
     target: 'node22',
     external: [...ALLOWED_EXTERNALS],
-    define: { RE1999_VERSION: JSON.stringify(version) },
+    define: {
+      RE1999_VERSION: JSON.stringify(manifest.version),
+      RE1999_NODE_FLOOR: JSON.stringify(manifest.engines.node),
+    },
     banner: { js: CJS_INTEROP_BANNER },
     metafile: true,
     logLevel: 'warning',
@@ -137,23 +152,19 @@ async function bundleEntry(entry: Entry, version: string): Promise<EntryBundle> 
 }
 
 /**
- * `build\package.json`: the tree is ESM, and it says which version it is.
+ * `build\package.json`: the manifest the flat install root carries (#117).
  *
  * Without `"type": "module"` Node would read `server.js` as CommonJS and the
- * program would not start at all. The version is repeated rather than derived so
- * the tree is self-describing — the `define` is what the running program uses,
- * and `core/version.ts` reads this file only as a source run's fallback.
+ * program would not start at all; `scripts.start` is how a shipped root boots,
+ * and `sharp` is the one dependency the user's `npm install` has to resolve.
+ * The version is repeated rather than derived so the tree is self-describing —
+ * the `define` is what the running program uses, and `core/version.ts` reads
+ * this file only as a source run's fallback.
  */
-function writeTreePackageJson(version: string): void {
-  const treePackage = {
-    name: 're1999-wallpaper-crawler',
-    version,
-    private: true,
-    type: 'module',
-  }
+function writeShippedManifest(manifest: ShippedManifest): void {
   fs.writeFileSync(
     path.join(BUILD_DIR, 'package.json'),
-    `${JSON.stringify(treePackage, null, 2)}\n`,
+    `${JSON.stringify(manifest, null, 2)}\n`,
     'utf8',
   )
 }
@@ -172,13 +183,17 @@ function sizeOf(file: string): string {
 /** The build, in the order the tree needs: clean, page, entries, check, report. */
 async function main(): Promise<void> {
   const version = packageVersion(PACKAGE_FILE)
+  // The repository manifest is the source of the floor and of sharp's spec; the
+  // shipped manifest is the one decision `scripts/package-manifest.ts` owns.
+  const repository: unknown = JSON.parse(fs.readFileSync(PACKAGE_FILE, 'utf8'))
+  const manifest = shippedManifestOf(repository, version)
 
   fs.rmSync(BUILD_DIR, { recursive: true, force: true })
   fs.mkdirSync(BUILD_DIR, { recursive: true })
 
   await buildThePage()
-  const bundles = await Promise.all(ENTRIES.map(entry => bundleEntry(entry, version)))
-  writeTreePackageJson(version)
+  const bundles = await Promise.all(ENTRIES.map(entry => bundleEntry(entry, manifest)))
+  writeShippedManifest(manifest)
 
   const undeclared = undeclaredExternals(bundles.flatMap(bundle => bundle.externals))
   if (undeclared.length > 0) {
@@ -197,6 +212,10 @@ async function main(): Promise<void> {
     .readdirSync(path.join(BUILD_DIR, 'web', 'dist'), { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile()).length
   process.stdout.write(`build: version ${version}\n`)
+  process.stdout.write(
+    `build: shipped manifest — npm start, engines.node ${manifest.engines.node}, ` +
+      `dependency sharp@${manifest.dependencies.sharp}\n`,
+  )
   process.stdout.write(`build: the page — ${pageFiles} files in build/web/dist\n`)
   for (const entry of ENTRIES) {
     const file = path.join(BUILD_DIR, entry.output)

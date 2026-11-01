@@ -23,8 +23,9 @@ export interface ConsoleConfig {
   appRoot: string
   /**
    * The user's data directory, injected by the entry point and never the app
-   * root's child by deduction: the package's `<install>/data` is a sibling of
-   * `<install>/app`, so replacing the program leaves the data alone (#80).
+   * root's child by deduction: the shipped root is the install root itself, so
+   * its data is the `data/` child of it (#117), while `pnpm webui` injects the
+   * repository's own `data/` instead.
    */
   dataRoot: string
   /** The Mirror (`<data>/images`). The Console reads its names and writes nothing. */

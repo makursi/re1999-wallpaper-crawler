@@ -1,11 +1,11 @@
 // ── Start the built Console against the repository's own data ─────
 //
-// `build/` is a complete application root — that is what the package ships — so
+// `build/` is a complete application root — that is what a release ships — so
 // running it as-is makes the Console read `build/.env` and write `build/data/`,
 // which is not where a developer's Mirror and Run logs are. The two roots are
 // inputs (#78), so the developer's path supplies them: the program is the build
-// tree, the data is the repository's, exactly as `<install>\app` and
-// `<install>\data` sit beside each other in the package.
+// tree, the data is the repository's — one root holding the program and its
+// data, as the shipped flat root does (#117).
 //
 // A shell script cannot set both roots portably, which is why this is a program.
 //

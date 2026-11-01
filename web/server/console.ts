@@ -58,6 +58,7 @@ import { dataRootOf, resolveAppRoot } from '../../core/app-root.js'
 import { readLayeredConfig, siteConfig } from '../../core/config-read.js'
 import { ensureDataLayout } from '../../core/data-layout.js'
 import { fetchGalleryList } from '../../core/gallery/gallery-source.js'
+import { currentNodeFloorRefusal } from '../../core/node-floor.js'
 import { newestRunLogName } from '../../core/run-log-file.js'
 import { applicationVersion } from '../../core/version.js'
 import type { ConsoleRunState } from '../api-types.js'
@@ -316,10 +317,24 @@ function installStopHandlers(deps: StopDeps): void {
 }
 
 async function main(options: ConsoleOptions): Promise<void> {
-  // The one application root, resolved here and passed down (#78): a packaged
-  // launcher names it in `RE1999_APP_ROOT`; otherwise it is the process's
-  // working directory — the repository for `pnpm core:run`, and `build/` itself
-  // for `pnpm webui` (#84). Nothing below this point derives it.
+  // #117: the engine floor is the first thing this program checks. The floor's
+  // one source is `package.json`'s `engines.node`, injected into this bundle
+  // beside the version (`scripts/build.ts`); a source run has no injection and
+  // therefore no check. It runs before the instance handshake and before a port
+  // can be bound: a Node too old for the program is one Chinese sentence and
+  // exit 1, not a page that opens and then fails every thumbnail.
+  const floorRefusal = currentNodeFloorRefusal()
+  if (floorRefusal !== null) {
+    process.stderr.write(`${floorRefusal}\n`)
+    process.exit(1)
+  }
+
+  // The one application root, resolved here and passed down (#78): the
+  // environment's `RE1999_APP_ROOT` when a caller names one (`pnpm webui`, a
+  // source Run), otherwise the process's working directory — the repository for
+  // `pnpm core:run`, and the shipped root itself for `npm start`, which npm runs
+  // with the package root as the working directory (#117). Nothing below this
+  // point derives the root.
   const appRoot = resolveAppRoot()
   const dataRoot = dataRootOf(appRoot)
 
