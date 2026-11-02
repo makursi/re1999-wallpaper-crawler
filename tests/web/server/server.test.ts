@@ -5,7 +5,6 @@ import * as path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
-import { isUsablePort } from '../../../web/server/port-usable.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
@@ -467,6 +466,30 @@ describe('the built stylesheet', () => {
 })
 
 describe('startConsoleServer', () => {
+  it('treats a preferred port of 0 as the OS’s choice, not a fallback', async () => {
+    // #131: `0` means "the OS chooses", and the Console accepts it — but the
+    // fallback used to read it as an unusable port and print `端口 0 不可用`,
+    // a false statement about the caller's own request.
+    const service = await serve()
+
+    expect(service.fellBack).toBe(false)
+    expect(service.port).toBeGreaterThanOrEqual(1)
+    expect(service.port).toBeLessThanOrEqual(65535)
+    expect((await fetch(`${service.origin}/api/status?token=${TOKEN}`)).status).toBe(200)
+  })
+
+  it('moves off a preferred port the fetch standard blocks, and still answers', async () => {
+    // #130: 6000 is on the fetch standard's blocked list. Before #131 the
+    // service bound it happily and reported it, and this suite's own `fetch`
+    // failed with `bad port`. The real request below is the independent proof:
+    // no socket here would accept it on a blocked port.
+    const service = await serve({ port: 6000 })
+
+    expect(service.port).not.toBe(6000)
+    expect(service.fellBack).toBe(true)
+    expect((await fetch(`${service.origin}/api/status?token=${TOKEN}`)).status).toBe(200)
+  })
+
   it('binds another port when the preferred one is taken, and reports the one it bound', async () => {
     const taken = http.createServer()
     openServers.push(taken)
@@ -480,12 +503,6 @@ describe('startConsoleServer', () => {
 
     expect(service.fellBack).toBe(true)
     expect(service.port).not.toBe(takenPort)
-    // #131: the fallback is not allowed to settle on a port the fetch standard
-    // blocks — that is the address a browser (and this suite's own `fetch`)
-    // refuses to open, and the flake it used to read as.
-    expect(isUsablePort(service.port), 'the reported port must be one a browser will open').toBe(
-      true,
-    )
     expect(service.origin).toBe(`http://127.0.0.1:${service.port}`)
     expect(service.url).toBe(`http://127.0.0.1:${service.port}/?token=${TOKEN}`)
     expect((await fetch(`${service.origin}/api/status?token=${TOKEN}`)).status).toBe(200)

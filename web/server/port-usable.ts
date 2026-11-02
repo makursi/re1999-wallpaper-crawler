@@ -9,9 +9,10 @@
 //
 // So the decision is one predicate: a whole number in `1..65535` that the fetch
 // standard does not block. `web/server/server.ts` asks it before binding the
-// preferred port and again for every OS-assigned answer, and the one sentence
-// below is what a start that runs out of usable answers says — the same register
-// as `core/node-floor.ts`'s floor refusal, which is the family it belongs to.
+// preferred port and again for every OS-assigned answer, and the sentence below
+// is what a start that runs out of usable answers says. A preferred port of `0`
+// is not a failure at all: it is the caller asking the OS to choose, so the
+// OS-assigned path is the answer rather than a fallback.
 
 /**
  * The fetch standard's blocked ports, from its "port blocking" table:
@@ -30,11 +31,20 @@ export const FETCH_BLOCKED_PORTS: ReadonlySet<number> = new Set([
 ])
 
 /**
+ * How many OS-assigned answers the fallback inspects. The fetch standard blocks
+ * only a handful of the dynamic range, so one bad answer is rare and eight in a
+ * row is vanishingly so; a bound keeps a page that cannot start from becoming a
+ * loop that never ends (spec decision 3).
+ */
+export const FALLBACK_ATTEMPTS = 8
+
+/**
  * Whether a client will connect to `port`: a whole number in `1..65535` that the
  * fetch standard does not block.
  *
- * `0` is refused because it is not a port a page can name — it is the OS's
- * "assign me one" request, which the fallback makes and then checks the answer.
+ * `0` is refused here because it is not a port a page can name — it is the OS's
+ * "assign me one" request, which `startConsoleServer` treats as the OS-assigned
+ * path and whose answer it checks.
  */
 export function isUsablePort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65535 && !FETCH_BLOCKED_PORTS.has(port)
@@ -49,4 +59,22 @@ export function isUsablePort(port: number): boolean {
  */
 export function portUnavailableRefusal(preferredPort: number): string {
   return `找不到可用端口:首选端口 ${preferredPort} 不可用,请用 --port 指定 1 到 65535 之间、浏览器不会拒绝的端口,然后重新启动。`
+}
+
+/**
+ * The start could not find a usable port. `message` is the refusal sentence
+ * whole, so `web/server/console.ts` can print it alone.
+ *
+ * Thrown rather than returned, unlike the Node floor's refusal and the data
+ * layout's: those return a sentence the entry point prints inline, while
+ * `startConsoleServer` promises a listening service and has no refusal to
+ * return when there is none. `cause` is the last bind error the search
+ * discarded (`EADDRINUSE` / `EACCES`), kept so a reader that logs the exception
+ * still sees why every attempt failed.
+ */
+export class PortUnavailableError extends Error {
+  constructor(preferredPort: number, cause?: unknown) {
+    super(portUnavailableRefusal(preferredPort), { cause })
+    this.name = 'PortUnavailableError'
+  }
 }

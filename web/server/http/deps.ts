@@ -123,7 +123,7 @@ export interface ConsoleServerDeps {
   runConfigAvailable?: () => boolean
   /** This start's access token, generated per start and never persisted. */
   token: string
-  /** The port to prefer; `0` asks the OS for one (tests). */
+  /** The port to prefer; `0` asks the OS to choose. */
   port: number
   /**
    * The cached Gallery list `GET /api/gallery` reads (#33). The entry injects
@@ -169,7 +169,12 @@ export interface ConsoleService {
   origin: string
   /** The port actually bound, never the requested one (spec decision 3). */
   port: number
-  /** `true` when the preferred port was taken and the OS assigned another. */
+  /**
+   * `true` when the preferred port could not be used and the OS assigned
+   * another: it was taken, or unusable because the fetch standard blocks it.
+   * `--port 0` reports `false` — that is the caller asking the OS to choose,
+   * not a fallback, so no notice is printed.
+   */
   fellBack: boolean
   /** The page's URL with the token on it — what the entry prints and opens. */
   url: string

@@ -75,6 +75,7 @@ import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
 import { runningInstanceUrl } from './instance-handshake.js'
 import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
+import { PortUnavailableError } from './port-usable.js'
 import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
 import type { ExitOutcome, RunLauncher } from './run-control.js'
 import {
@@ -87,7 +88,7 @@ import {
 import { createRunLogSource } from './run-log-source.js'
 import { readNewestRunReport } from './run-report-source.js'
 import type { ConsoleServerDeps, ConsoleService, ThumbnailSource } from './server.js'
-import { PortUnavailableError, startConsoleServer } from './server.js'
+import { startConsoleServer } from './server.js'
 import { galleryFactsOf } from './status.js'
 import {
   ensureThumbnail,
@@ -570,7 +571,10 @@ async function main(options: ConsoleOptions): Promise<void> {
   deps.updateNotice = await updateCheck
 
   // Always the port the service reports, which is always one a browser will
-  // open: the preferred port is only a preference (spec decision 3, #131).
+  // open: the preferred port is only a preference (spec decision 3, #131). The
+  // notice is true in both cases `fellBack` covers — the preferred port was
+  // taken, or the fetch standard blocks it — and `--port 0` asked the OS to
+  // choose, so it reports `false` and prints nothing.
   if (service.fellBack) {
     process.stdout.write(`端口 ${options.port} 不可用,改用 ${service.port}。\n`)
   }

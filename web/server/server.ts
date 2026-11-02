@@ -34,7 +34,7 @@ import type { ConsoleConfig } from './console-config.js'
 import type { ConsoleServerDeps, ConsoleService, ServiceRuntime } from './http/deps.js'
 import { authGuard } from './http/guard.js'
 import { json } from './http/respond.js'
-import { isUsablePort, portUnavailableRefusal } from './port-usable.js'
+import { FALLBACK_ATTEMPTS, PortUnavailableError, isUsablePort } from './port-usable.js'
 import { registerExitRoute } from './routes/exit.js'
 import { registerGalleryRoute } from './routes/gallery.js'
 import { registerImageRoutes } from './routes/images.js'
@@ -63,10 +63,11 @@ const BIND_HOST = '127.0.0.1'
 
 /**
  * Bind the service. The preferred port is used only when a browser will open it
- * and it is free; otherwise an OS-assigned port is used — a page that refuses to
- * start because a port is busy is the worst available failure mode (spec
- * decision 3). The returned port is always one a browser will connect to, never
- * merely the one that was bound or requested.
+ * and it is free; a preferred `0` asks the OS to choose, so that start takes the
+ * OS-assigned path and is not a fallback; otherwise an OS-assigned port is used
+ * — a page that refuses to start because a port is busy is the worst available
+ * failure mode (spec decision 3). The returned port is always one a browser will
+ * connect to, never merely the one that was bound or requested.
  */
 export async function startConsoleServer(
   config: ConsoleConfig,
@@ -126,34 +127,19 @@ function createApp(runtime: ServiceRuntime): Hono {
 }
 
 /**
- * How many OS-assigned answers the fallback inspects. The fetch standard blocks
- * only a handful of the dynamic range, so one bad answer is rare and eight in a
- * row is vanishingly so; a bound keeps a page that cannot start from becoming a
- * loop that never ends (spec decision 3).
- */
-const FALLBACK_ATTEMPTS = 8
-
-/**
- * The start could not find a usable port. `message` is the refusal sentence
- * whole, so `web/server/console.ts` can print it alone — the same shape as the
- * Node floor's and the data layout's refusals.
- */
-export class PortUnavailableError extends Error {
-  constructor(preferredPort: number) {
-    super(portUnavailableRefusal(preferredPort))
-    this.name = 'PortUnavailableError'
-  }
-}
-
-/**
  * Listen on the preferred port, or on an OS-assigned one when the preferred port
- * is unusable or taken.
+ * is unusable or taken. A preferred `0` goes straight to the OS-assigned path
+ * and reports `fellBack: false`: the caller asked for the OS's choice, so there
+ * is nothing to announce as unavailable.
  *
- * The preferred port is never bound unless a browser would open it. Every
- * OS-assigned answer is checked the same way, and one that fails is closed
- * before the next attempt — a bound server that is merely abandoned would leak
- * its handle. Running out of attempts is the refusal above, never a port nobody
- * can reach.
+ * The preferred port is never bound unless a browser would open it, and the port
+ * the listener actually bound is checked too — a listener that rewrites the port
+ * is still not an address the JSDoc above promises. Every OS-assigned answer is
+ * checked the same way, and one that fails is closed before the next attempt — a
+ * bound server that is merely abandoned would leak its handle. A close that
+ * fails does not make the port usable, so it does not abort the search either.
+ * Running out of attempts is `PortUnavailableError` (`port-usable.ts`), never a
+ * port nobody can reach.
  *
  * `createAdaptorServer` rather than `serve`: the listen / error / listening
  * dance is the one place `EADDRINUSE` and `EACCES` have to be told apart from a
@@ -163,12 +149,24 @@ async function listenWithFallback(
   fetch: Hono['fetch'],
   preferredPort: number,
 ): Promise<{ server: ServerType; port: number; fellBack: boolean }> {
-  if (isUsablePort(preferredPort)) {
+  // `0` is a supported intent, not an unusable preference: the caller asked the
+  // OS to choose, so the OS-assigned path is the answer and nothing is reported
+  // as a fallback.
+  const asksTheOs = preferredPort === 0
+  let lastBindError: unknown = undefined
+
+  if (!asksTheOs && isUsablePort(preferredPort)) {
     try {
       const server = await listenOnce(fetch, preferredPort)
-      return { server, port: boundPortOf(server), fellBack: false }
+      const port = boundPortOf(server)
+      if (isUsablePort(port)) return { server, port, fellBack: false }
+      // The listener bound an address the predicate refuses — a future adapter
+      // that rewrites the port, say. Close it and let the OS-assigned path
+      // answer instead of returning an address no page can open.
+      await closeQuietly(server)
     } catch (error) {
       if (!isUnbindable(error)) throw error
+      lastBindError = error
     }
   }
 
@@ -178,17 +176,18 @@ async function listenWithFallback(
       server = await listenOnce(fetch, 0)
     } catch (error) {
       if (!isUnbindable(error)) throw error
+      lastBindError = error
       continue
     }
 
     const port = boundPortOf(server)
-    if (isUsablePort(port)) return { server, port, fellBack: true }
+    if (isUsablePort(port)) return { server, port, fellBack: !asksTheOs }
     // A blocked port is a successful bind and an unusable address: close it
     // before asking again, so nothing is left listening.
-    await closeServer(server)
+    await closeQuietly(server)
   }
 
-  throw new PortUnavailableError(preferredPort)
+  throw new PortUnavailableError(preferredPort, lastBindError)
 }
 
 function listenOnce(fetch: Hono['fetch'], port: number): Promise<ServerType> {
@@ -238,4 +237,17 @@ function closeServer(server: ServerType): Promise<void> {
     if ('closeAllConnections' in server) server.closeAllConnections()
     server.close(error => (error === undefined ? resolve() : reject(error)))
   })
+}
+
+/**
+ * Close a listener whose port was refused. A handle that will not close is still
+ * not a usable port, so the close error is swallowed: the search keeps counting
+ * attempts and exhaustion reports the refusal, never a leaked-handle failure.
+ */
+async function closeQuietly(server: ServerType): Promise<void> {
+  try {
+    await closeServer(server)
+  } catch {
+    // Deliberately swallowed — see above.
+  }
 }

@@ -66,11 +66,11 @@
 //
 // **A port the fetch standard blocks.** `--port 0` lets the OS choose, and on
 // this machine the dynamic range (1024–15000) includes ports `fetch` refuses
-// (`bad port`, 3659 among them). The server binds one happily and the driver's
-// own request then fails through no fault of the program, so the console case
-// retries the whole boot with a fresh port twice before letting the failure
-// through. Bounded and deterministic: at most three boots, and any other failure
-// is reported on the first attempt.
+// (`bad port`, 3659 among them). The service no longer settles on one: its
+// fallback checks every answer against the standard's list and reports only a
+// usable port, treating a preferred `0` as the OS's choice rather than a
+// fallback (#131). So the driver's own request cannot fail that way any more,
+// and this check needs no boot retry. One boot per case.
 //
 // Usage: `pnpm smoke:boot [built-tree]` — the tree defaults to `<repo>/build`,
 // and both cases stage it, which is why CI runs `pnpm build` first.
@@ -123,13 +123,6 @@ const EXIT_TIMEOUT_MS = 10_000
 
 /** One API request's budget: loopback, so this is already generous. */
 const REQUEST_TIMEOUT_MS = 10_000
-
-/**
- * How many more boots a port `fetch` refuses is worth. The OS assigns the port,
- * and a blocked one is the OS's pick, not the program's fault; two fresh boots
- * make the check's own probability of a false red effectively zero.
- */
-const PORT_RETRIES = 2
 
 /**
  * The staged tree's version metadata is rewritten to this, so a status payload
@@ -415,39 +408,6 @@ async function caseSecondStart(staged: Staged, runningAddress: string): Promise<
 }
 
 /**
- * Why the console case may run again with a fresh port: `fetch` refuses a
- * WHATWG-blocked port, which the OS can hand out through `--port 0` on this
- * machine. The program bound the port and answered the printed address; the
- * failure is the driver's, and a fresh boot is the fix.
- */
-function isBlockedPortFailure(error: unknown): boolean {
-  return (
-    error instanceof Error && error.cause instanceof Error && /bad port/i.test(error.cause.message)
-  )
-}
-
-/**
- * The console case, retried when the OS picks a port `fetch` refuses. Bounded by
- * `PORT_RETRIES`; every other failure is reported on the first attempt.
- */
-async function caseCompleteTreeWithPortRetry(
-  staged: Staged,
-  expectedVersion: string,
-): Promise<void> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await caseCompleteTree(staged, expectedVersion)
-      return
-    } catch (error) {
-      if (attempt >= PORT_RETRIES || !isBlockedPortFailure(error)) throw error
-      process.stdout.write(
-        `retry - the OS chose a port fetch refuses; booting again with a fresh port (retry ${attempt + 1}/${PORT_RETRIES})\n`,
-      )
-    }
-  }
-}
-
-/**
  * The broken tree: one artifact removed, so the boot must refuse before it binds
  * a port. The start is the same `npm start` as the complete case (#117), so the
  * refusal is proven in the shipped shape too: a non-zero exit (npm forwards the
@@ -504,7 +464,7 @@ async function main(): Promise<void> {
       !fs.existsSync(complete.dataRoot),
       'the staged install root carries no data directory yet',
     )
-    await caseCompleteTreeWithPortRetry(complete, expectedVersion)
+    await caseCompleteTree(complete, expectedVersion)
   } finally {
     cleanup(complete.root)
   }
