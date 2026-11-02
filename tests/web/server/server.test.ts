@@ -5,6 +5,7 @@ import * as path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { ConsoleConfig } from '../../../web/server/console-config.js'
+import { isUsablePort } from '../../../web/server/port-usable.js'
 import type { ConsoleServerDeps, ConsoleService } from '../../../web/server/server.js'
 import { startConsoleServer } from '../../../web/server/server.js'
 import { IDLE_RUN_FACTS, UNREAD_GALLERY_FACTS } from '../../../web/server/status.js'
@@ -479,6 +480,12 @@ describe('startConsoleServer', () => {
 
     expect(service.fellBack).toBe(true)
     expect(service.port).not.toBe(takenPort)
+    // #131: the fallback is not allowed to settle on a port the fetch standard
+    // blocks — that is the address a browser (and this suite's own `fetch`)
+    // refuses to open, and the flake it used to read as.
+    expect(isUsablePort(service.port), 'the reported port must be one a browser will open').toBe(
+      true,
+    )
     expect(service.origin).toBe(`http://127.0.0.1:${service.port}`)
     expect(service.url).toBe(`http://127.0.0.1:${service.port}/?token=${TOKEN}`)
     expect((await fetch(`${service.origin}/api/status?token=${TOKEN}`)).status).toBe(200)

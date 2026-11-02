@@ -34,6 +34,7 @@ import type { ConsoleConfig } from './console-config.js'
 import type { ConsoleServerDeps, ConsoleService, ServiceRuntime } from './http/deps.js'
 import { authGuard } from './http/guard.js'
 import { json } from './http/respond.js'
+import { isUsablePort, portUnavailableRefusal } from './port-usable.js'
 import { registerExitRoute } from './routes/exit.js'
 import { registerGalleryRoute } from './routes/gallery.js'
 import { registerImageRoutes } from './routes/images.js'
@@ -61,10 +62,11 @@ export type {
 const BIND_HOST = '127.0.0.1'
 
 /**
- * Bind the service. The preferred port is tried first and an OS-assigned one
- * is used when it is taken — a page that refuses to start because a port is
- * busy is the worst available failure mode (spec decision 3). The returned port
- * is always the one actually bound, never the requested one.
+ * Bind the service. The preferred port is used only when a browser will open it
+ * and it is free; otherwise an OS-assigned port is used — a page that refuses to
+ * start because a port is busy is the worst available failure mode (spec
+ * decision 3). The returned port is always one a browser will connect to, never
+ * merely the one that was bound or requested.
  */
 export async function startConsoleServer(
   config: ConsoleConfig,
@@ -124,7 +126,34 @@ function createApp(runtime: ServiceRuntime): Hono {
 }
 
 /**
- * Listen on the preferred port, or on an OS-assigned one if it is taken.
+ * How many OS-assigned answers the fallback inspects. The fetch standard blocks
+ * only a handful of the dynamic range, so one bad answer is rare and eight in a
+ * row is vanishingly so; a bound keeps a page that cannot start from becoming a
+ * loop that never ends (spec decision 3).
+ */
+const FALLBACK_ATTEMPTS = 8
+
+/**
+ * The start could not find a usable port. `message` is the refusal sentence
+ * whole, so `web/server/console.ts` can print it alone — the same shape as the
+ * Node floor's and the data layout's refusals.
+ */
+export class PortUnavailableError extends Error {
+  constructor(preferredPort: number) {
+    super(portUnavailableRefusal(preferredPort))
+    this.name = 'PortUnavailableError'
+  }
+}
+
+/**
+ * Listen on the preferred port, or on an OS-assigned one when the preferred port
+ * is unusable or taken.
+ *
+ * The preferred port is never bound unless a browser would open it. Every
+ * OS-assigned answer is checked the same way, and one that fails is closed
+ * before the next attempt — a bound server that is merely abandoned would leak
+ * its handle. Running out of attempts is the refusal above, never a port nobody
+ * can reach.
  *
  * `createAdaptorServer` rather than `serve`: the listen / error / listening
  * dance is the one place `EADDRINUSE` and `EACCES` have to be told apart from a
@@ -134,14 +163,32 @@ async function listenWithFallback(
   fetch: Hono['fetch'],
   preferredPort: number,
 ): Promise<{ server: ServerType; port: number; fellBack: boolean }> {
-  try {
-    const server = await listenOnce(fetch, preferredPort)
-    return { server, port: boundPortOf(server), fellBack: false }
-  } catch (error) {
-    if (!isUnbindable(error)) throw error
-    const server = await listenOnce(fetch, 0)
-    return { server, port: boundPortOf(server), fellBack: true }
+  if (isUsablePort(preferredPort)) {
+    try {
+      const server = await listenOnce(fetch, preferredPort)
+      return { server, port: boundPortOf(server), fellBack: false }
+    } catch (error) {
+      if (!isUnbindable(error)) throw error
+    }
   }
+
+  for (let attempt = 0; attempt < FALLBACK_ATTEMPTS; attempt += 1) {
+    let server: ServerType
+    try {
+      server = await listenOnce(fetch, 0)
+    } catch (error) {
+      if (!isUnbindable(error)) throw error
+      continue
+    }
+
+    const port = boundPortOf(server)
+    if (isUsablePort(port)) return { server, port, fellBack: true }
+    // A blocked port is a successful bind and an unusable address: close it
+    // before asking again, so nothing is left listening.
+    await closeServer(server)
+  }
+
+  throw new PortUnavailableError(preferredPort)
 }
 
 function listenOnce(fetch: Hono['fetch'], port: number): Promise<ServerType> {
