@@ -1,4 +1,4 @@
-// ── The steering file's pointers, and its budget (#134, #135) ───────
+// ── The steering file's two pointers, and its budget (#134, #135) ───
 //
 // `AGENTS.md` is the file every turn loads first, so whatever it carries is paid
 // for by every session. It is a map: a pointer names the document that holds the
@@ -7,13 +7,10 @@
 // standards review's one source, `CODING_STANDARDS.md`, is named there for the
 // same reason (#135).
 //
-// Every reachability check has two halves: the pointer in `AGENTS.md`, and the
-// file the pointer names. A text-only assertion would pass on a link to
-// nothing, so the existence check is the other half.
-//
-// The ceiling test is a budget, not a target: what regrows is length, and no
-// parser catches that. Its failure message states the disclosure rule, so a
-// session that hits it knows where the material goes instead.
+// The budget is not a target: the map silently becomes a manual again, and only
+// its length regrows, so no parser catches it. Its failure message states the
+// disclosure rule, so a session that hits it knows where the material goes
+// instead.
 //
 // The style guide's own pointer stays in `readme-styleguide.test.ts`: that
 // file's subject is the guide, and this one's subject is the steering file.
@@ -28,38 +25,35 @@ const AGENTS_FILE = path.join(REPO_ROOT, 'AGENTS.md')
 const ARCHITECTURE_FILE = path.join(REPO_ROOT, 'docs', 'agents', 'architecture.md')
 const STANDARDS_FILE = path.join(REPO_ROOT, 'CODING_STANDARDS.md')
 
-// The retrospective measured 33.5 KB before the tree moved and projected about
-// 15 KB after it; 24 KB is the budget that leaves roughly 9 KB of headroom.
-// A kilobyte is 1000 bytes here, as in the measurement the budget came from.
+// A kilobyte is 1000 bytes here.
 const STEERING_CEILING_BYTES = 24_000
+
+/**
+ * One pointer's two halves: `AGENTS.md` names the document, and the document it
+ * names exists. A text-only assertion would pass on a link to nothing, so the
+ * existence check is the other half.
+ */
+function pointerResolves(needle: string, file: string, message: string): void {
+  const agents = fs.readFileSync(AGENTS_FILE, 'utf8')
+  expect(agents, `AGENTS.md does not point at ${message}`).toContain(needle)
+  expect(fs.existsSync(file), `${message} does not exist`).toBe(true)
+}
 
 describe('the steering document', () => {
   it('points at the annotated architecture, and the document exists', () => {
     // The tree is the authority the standards review cites for module ownership,
     // so it must stay reachable from the map even though it is no longer in it.
-    const agents = fs.readFileSync(AGENTS_FILE, 'utf8')
-    expect(agents, 'AGENTS.md does not point at docs/agents/architecture.md').toContain(
-      'docs/agents/architecture.md',
-    )
-    expect(fs.existsSync(ARCHITECTURE_FILE), 'docs/agents/architecture.md does not exist').toBe(
-      true,
-    )
+    pointerResolves('docs/agents/architecture.md', ARCHITECTURE_FILE, 'docs/agents/architecture.md')
   })
 
   it('points at the coding standards, and the document exists', () => {
     // The Standards axis of a review reads one document instead of a list the
     // parent rewrites each round; if the map does not name it, the axis has
-    // nowhere to start. The existence check is the other half of the pointer.
-    const agents = fs.readFileSync(AGENTS_FILE, 'utf8')
-    expect(agents, 'AGENTS.md does not point at CODING_STANDARDS.md').toContain(
-      'CODING_STANDARDS.md',
-    )
-    expect(fs.existsSync(STANDARDS_FILE), 'CODING_STANDARDS.md does not exist').toBe(true)
+    // nowhere to start.
+    pointerResolves('CODING_STANDARDS.md', STANDARDS_FILE, 'CODING_STANDARDS.md')
   })
 
   it('stays inside its size budget', () => {
-    // The budget exists because the map silently becomes a manual again; only
-    // its length regrows, and no parser catches that.
     const bytes = fs.statSync(AGENTS_FILE).size
     expect(
       bytes,

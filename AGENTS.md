@@ -185,9 +185,12 @@ Run never got there".
 
 ## Architecture
 
-`core/` is the crawler, `web/` is the Console, and `scripts/` and `packaging/` hold what does not travel with the program — the pre-commit guard, the build, the packager, the licence and site-constants template that becomes the root `.env`.
-
-Open `docs/agents/architecture.md` before moving a module or before deciding which file owns a rule: it carries the annotated tree — one line per module, with what it owns and what is unit-tested — and the standards review cites it as the authority for module ownership.
+Open `docs/agents/architecture.md` before moving a module, before deciding which
+file owns a rule, and before changing what the archive carries or where the data
+lives: it holds the annotated tree — one line per module, with what it owns and
+what is unit-tested — along with the licence agreement, the built tree, the
+package layout and the data layout, and the standards review cites it as the
+authority for module ownership.
 
 ## Standards review
 

@@ -11,6 +11,11 @@ drifts.
   language and module shape, the page's file buckets and naming, and the
   service's transport adapter. The toolchain's configuration is the source of
   truth beneath it, and this document does not repeat what it enforces.
+- **The steering file's ceiling** — `tests/docs/steering-file.test.ts`, which
+  enforces the 24,000-byte budget and states the disclosure rule its failure
+  message carries: `AGENTS.md` is a map, not a manual. It stays inside that
+  budget, and material that does not fit belongs in a document the map points
+  at.
 - **Module ownership** — `docs/agents/architecture.md`, the annotated tree: one
   line per module with what it owns and whether it is unit-tested. Open it before
   moving a module or deciding which file owns a rule; the standards review cites

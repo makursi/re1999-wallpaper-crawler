@@ -5,8 +5,9 @@ and `scripts/` and `packaging/` for what does not travel with the program. Each
 module gets one line — what it owns, and whether it is unit-tested — so this is
 the authority the standards review cites for module ownership: open it before
 moving a module, or before deciding which file owns a rule. The steering file
-(`AGENTS.md`) keeps the orientation and the pointer to this document; the tree
-moved here verbatim and is not summarised.
+(`AGENTS.md`) keeps the orientation and the pointer to this document. The tree
+moved here whole — no entry was dropped or condensed — and its lines are kept
+current as the modules and tests change.
 
 ```
 core/                        — the crawler
@@ -81,7 +82,7 @@ tests/                       — mirrors the sources it tests
 ├── docs/                    — the tests whose subject is a committed document, not source
 │   ├── adr-index.test.ts    — every ADR in docs/adr/ has an index line, and every line names one (#109)
 │   ├── readme-styleguide.test.ts — the README style guide is committed and the steering file points at it (#125)
-│   └── steering-file.test.ts — the steering file's pointers resolve and its size stays inside its budget (#134)
+│   └── steering-file.test.ts — the two pointers AGENTS.md must keep, at docs/agents/architecture.md and CODING_STANDARDS.md, resolve, and its size stays inside its budget (#134, #135)
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
@@ -156,13 +157,16 @@ Tests mirror the source tree under `tests/` (`core/report/report.ts` →
 two deliberate exceptions. The service's surface has no per-file tests, because
 what `routes/` and `http/` are is only meaningful as a whole — their tests are
 the socket tests at `tests/web/server/`, which drive the bound service over a
-real socket. And a test whose subject is a committed document rather than source
-keeps the document's own name instead of a source path:
-`tests/docs/adr-index.test.ts` guards the index over `docs/adr/`,
-`tests/docs/readme-styleguide.test.ts` guards the README guide and its pointer
-from `AGENTS.md`, `tests/docs/steering-file.test.ts` guards the steering file's
-own pointers and size budget, and `tests/scripts/readme-docs.test.ts` guards the
-product document's facts and the licence agreement.
+real socket. And a test whose subject is a committed document rather than
+source follows the document, never a feature or a source path. It keeps the
+document's basename — `tests/docs/readme-styleguide.test.ts` guards
+`docs/readme-styleguide.md` and the steering file's pointer at it — or, where
+the prose has its own word for the document, the repository's name for it:
+`tests/docs/adr-index.test.ts` guards the index over `docs/adr/`, and
+`tests/docs/steering-file.test.ts` guards the steering file's two pointers — at
+`docs/agents/architecture.md` and `CODING_STANDARDS.md` — and its size budget
+(#134, #135). `tests/scripts/readme-docs.test.ts` guards the product document's
+facts and the licence agreement.
 
 **Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
 the site's own list endpoint returns every entry and every `pictureUrl` in one

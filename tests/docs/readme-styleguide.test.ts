@@ -1,4 +1,4 @@
-// ── The README style guide is reachable from the steering file (#128) ─
+// ── The README style guide is reachable from the steering file (#125) ─
 //
 // `AGENTS.md` is the file every turn loads first, so a guide nothing points at
 // is a guide the next edit never reads. The guide exists in `docs/`, and the
