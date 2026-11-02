@@ -84,7 +84,7 @@ for the tag with the extracted notes as its body. It never publishes, and
 `workflow_dispatch` is the dry run that builds everything, package check
 included, but creates no Release.
 
-`CHANGELOG.md` is the one user-readable record — Chinese, player-facing, with
+`CHANGELOG.md` is the one user-readable record — Chinese, plain language, with
 its extraction rule stated in its own header: each version is exactly
 `## X.Y.Z`, and its body runs to the next `## ` heading. The section is an
 instance of the template that header states — up to seven `###` sections in a

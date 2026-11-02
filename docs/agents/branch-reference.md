@@ -51,7 +51,7 @@ the build tree boots. The release check (`pnpm package:check`, run by
 takes the real zip, extracts it outside the checkout, runs a real `npm install`
 and `npm start`, and probes `/api/status`: that additionally proves the shipped
 manifest, the generated lockfile, `.npmrc`'s `engine-strict` and a real native
-install. Neither proves a player's clean machine, an offline install or a first
+install. Neither proves a clean machine, an offline install or a first
 crawl; the page's Windows rendering is not observed either, and `run.js`'s
 bundle is still never executed.
 

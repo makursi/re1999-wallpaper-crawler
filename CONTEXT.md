@@ -37,9 +37,9 @@ _Avoid_: scraping, crawling
 **Site asset (站点资源)**:
 A resource the page or the CDN serves alongside the gallery that is not a
 Wallpaper: the page's own HTML document, analytics pixels, and the site's UI
-art (page background, music-player covers, icons). Marked by the rules in
-`core/wallpaper-url.ts`. Since #76 nothing captures those URLs, so the rules no
-longer sit on the Run's path; they remain the vocabulary for "is this a
+art (page background, cover art for the in-game music, icons). Marked by the
+rules in `core/wallpaper-url.ts`. Since #76 nothing captures those URLs, so the
+rules no longer sit on the Run's path; they remain the vocabulary for "is this a
 Wallpaper" (ADR 0004, ADR 0018).
 _Avoid_: junk, noise, non-image (a Site asset can be an image)
 
@@ -205,10 +205,10 @@ _Avoid_: header, preamble
 ### Distribution
 
 **Portable package (便携包)**:
-The folder a player gets from the release zip: the program root itself — its one
+The folder the release zip unpacks to: the program root itself — its one
 document, the licence, the manifest with its generated lockfile, the npm
 configuration, the generated site configuration, the two entries and the page —
-plus the player's own `data\` child, created on the first start. There is no
+plus its own `data\` child, created on the first start. There is no
 runtime, no launcher, no updater and no installer in it.
 _Avoid_: installer, app, 安装包
 
@@ -216,18 +216,18 @@ _Avoid_: installer, app, 安装包
 The install folder itself: the directory the release zip extracted to. It is
 where the program runs from, its `package.json` is the shipped manifest, and
 `data\` is its `data` child — there is no `app\` level and no sibling directory
-for the program. The player extracted it and knows where it is, so nothing
+for the program. Whoever extracted it knows where it is, so nothing
 outside it records the address: the install pointer is retired.
 `install root` is the same folder's name in the build and packaging code: the
-folder the player unzipped, which is the program root, whose `data` child is the
+folder that was unzipped, which is the program root, whose `data` child is the
 data directory.
 _Avoid_: app, program folder, install pointer, 安装指针
 
 **Data directory (数据目录)**:
-The program directory's `data\` child, which belongs to the player: the Mirror
+The program directory's `data\` child: the Mirror
 (`images\`), the Run logs (`logs\`), the thumbnail cache (`cache\`) and
 `user.env`. A release never carries it, no update touches it, and moving it is
-the player's own act in the update's second step.
+the update's second step, done by hand.
 _Avoid_: storage, workspace, user folder
 
 **Artifact (制品)**:
@@ -248,11 +248,11 @@ _Avoid_: launcher, starter, shortcut, .bat, 启动器
 **Update (更新)**:
 The three documented steps: extract the new zip into a new folder, move the old
 `data\` into it, delete the old folder. The program never replaces itself and
-nothing in it deletes a player-visible directory; the updater is retired.
+nothing in it deletes a user-visible directory; the updater is retired.
 _Avoid_: updater, patcher, in-place update, 更新器
 
 **Fallback point (回退点)**:
-The previous install folder the player still has, kept until the new one has run
+The previous install folder still on disk, kept until the new one has run
 at least once; rolling back is moving `data\` back and starting the old folder.
 There is no `app.old\`, no automatic rollback and no generation counter.
 _Avoid_: backup, snapshot, rollback generation, app.old
