@@ -23,7 +23,10 @@
       { "allow": ["dotenv/config", "virtual:uno.css", "@fontsource-variable/*"] }
     ],
     "typescript/no-floating-promises": "error",
-    "typescript/no-misused-promises": "warn"
+    "typescript/no-misused-promises": "warn",
+    // The two pointer checks share one asserting helper, `pointerResolves`, so
+    // the rule has to know it by name or both test bodies read as assertionless.
+    "vitest/expect-expect": ["error", { "assertFunctionNames": ["expect", "pointerResolves"] }]
   },
   // `web/dist` (the built page) and `web/.console-cache` (the thumbnail cache)
   // are deliberately NOT listed below: `.gitignore` owns both exclusions and

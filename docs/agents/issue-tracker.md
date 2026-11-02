@@ -10,6 +10,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
+- **Close from a pull request body**: one keyword per line — `Closes #124` on its own line, then `Closes #125` on the next — because GitHub honours only the first keyword of a comma-separated list, so `Closes #124, #125` closes #124 and leaves #125 open.
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
