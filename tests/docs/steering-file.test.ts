@@ -1,9 +1,11 @@
-// ── The steering file's pointers, and its budget (#134) ─────────────
+// ── The steering file's pointers, and its budget (#134, #135) ───────
 //
 // `AGENTS.md` is the file every turn loads first, so whatever it carries is paid
 // for by every session. It is a map: a pointer names the document that holds the
 // detail, and the annotated architecture — one line per module — lives in
-// `docs/agents/architecture.md` rather than in the map itself (#134).
+// `docs/agents/architecture.md` rather than in the map itself (#134). The
+// standards review's one source, `CODING_STANDARDS.md`, is named there for the
+// same reason (#135).
 //
 // Every reachability check has two halves: the pointer in `AGENTS.md`, and the
 // file the pointer names. A text-only assertion would pass on a link to
@@ -24,6 +26,7 @@ import { describe, expect, it } from 'vitest'
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')
 const AGENTS_FILE = path.join(REPO_ROOT, 'AGENTS.md')
 const ARCHITECTURE_FILE = path.join(REPO_ROOT, 'docs', 'agents', 'architecture.md')
+const STANDARDS_FILE = path.join(REPO_ROOT, 'CODING_STANDARDS.md')
 
 // The retrospective measured 33.5 KB before the tree moved and projected about
 // 15 KB after it; 24 KB is the budget that leaves roughly 9 KB of headroom.
@@ -41,6 +44,17 @@ describe('the steering document', () => {
     expect(fs.existsSync(ARCHITECTURE_FILE), 'docs/agents/architecture.md does not exist').toBe(
       true,
     )
+  })
+
+  it('points at the coding standards, and the document exists', () => {
+    // The Standards axis of a review reads one document instead of a list the
+    // parent rewrites each round; if the map does not name it, the axis has
+    // nowhere to start. The existence check is the other half of the pointer.
+    const agents = fs.readFileSync(AGENTS_FILE, 'utf8')
+    expect(agents, 'AGENTS.md does not point at CODING_STANDARDS.md').toContain(
+      'CODING_STANDARDS.md',
+    )
+    expect(fs.existsSync(STANDARDS_FILE), 'CODING_STANDARDS.md does not exist').toBe(true)
   })
 
   it('stays inside its size budget', () => {

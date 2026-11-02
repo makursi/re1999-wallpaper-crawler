@@ -183,6 +183,10 @@ Run never got there".
 
 Open `docs/agents/architecture.md` before moving a module or before deciding which file owns a rule: it carries the annotated tree — one line per module, with what it owns and what is unit-tested — and the standards review cites it as the authority for module ownership.
 
+## Standards review
+
+The Standards axis of a review reads `CODING_STANDARDS.md`, its one source. It points at the code-style section below, the architecture document, the context map and glossary, and the ADRs rather than restating them, and it states the live-prose rule no guardrail can enforce.
+
 ## Gotchas
 
 ### 403 CDN retry
