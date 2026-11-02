@@ -60,9 +60,10 @@ is written and does not reopen that.
   `AGENTS.md` is clean, and so are the two product documents. `CONTEXT.md`,
   `CONTEXT-MAP.md`, `CHANGELOG.md`, `HISTORY.md`, `docs/notes/` and the remaining
   `AGENTS.md` wording — including its description of `CHANGELOG.md` — still use
-  the retired population labels and wait for their own issue. Its fallback, if it
-  cannot be scheduled, is this state: the rule binds the product documents only,
-  and the guide says so.
+  the retired population labels; #129 sweeps them and decides the replacement
+  shape per occurrence, the boundary for the dated records and the changelog's
+  register. Its fallback, if it cannot be scheduled, is this state: the rule
+  binds the product documents only, and the guide says so.
 
 ## Rejected
 
