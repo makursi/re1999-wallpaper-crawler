@@ -80,7 +80,8 @@ tests/                       — mirrors the sources it tests
 │       └── run-log.test.ts
 ├── docs/                    — the tests whose subject is a committed document, not source
 │   ├── adr-index.test.ts    — every ADR in docs/adr/ has an index line, and every line names one (#109)
-│   └── readme-styleguide.test.ts — the style guide is committed and the steering file points at it (#125)
+│   ├── readme-styleguide.test.ts — the README style guide is committed and the steering file points at it (#125)
+│   └── steering-file.test.ts — the steering file's pointers resolve and its size stays inside its budget (#134)
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
@@ -158,9 +159,10 @@ the socket tests at `tests/web/server/`, which drive the bound service over a
 real socket. And a test whose subject is a committed document rather than source
 keeps the document's own name instead of a source path:
 `tests/docs/adr-index.test.ts` guards the index over `docs/adr/`,
-`tests/docs/readme-styleguide.test.ts` guards the guide's pointer from
-`AGENTS.md`, and `tests/scripts/readme-docs.test.ts` guards the product
-document's facts and the licence agreement.
+`tests/docs/readme-styleguide.test.ts` guards the README guide and its pointer
+from `AGENTS.md`, `tests/docs/steering-file.test.ts` guards the steering file's
+own pointers and size budget, and `tests/scripts/readme-docs.test.ts` guards the
+product document's facts and the licence agreement.
 
 **Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
 the site's own list endpoint returns every entry and every `pictureUrl` in one
