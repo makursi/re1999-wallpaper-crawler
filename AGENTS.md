@@ -9,23 +9,25 @@ downloads them in parallel. There is no browser in the pipeline: no Chrome, no
 
 ## Prerequisites
 
-**Players install one thing: Node.** The release is a flat directory — unzip it,
-run `npm install` once and `npm start` — and `README.md` is its one document. The
-zip ships no runtime, no launcher and no manual; the Node floor is enforced both
-by npm's `engine-strict` at install time and by the program's first Chinese
-sentence (#117).
+**Installing the release takes one thing: Node.** The release is a flat
+directory — unzip it, run `npm install` once and `npm start` — and `README.md` is
+its one document. The zip ships no runtime, no launcher and no manual; the Node
+floor is enforced both by npm's `engine-strict` at install time and by the
+program's first Chinese sentence (#117).
 
-**Developers and agents** need Node 22 and pnpm, then `pnpm install` for project
-dependencies. A worktree's `node_modules` is a junction onto the parent checkout:
-never run `pnpm install` there, and `verifyDepsBeforeRun: false` in
+**Working in this repository** takes Node 22 and pnpm, then `pnpm install` for
+project dependencies. A worktree's `node_modules` is a junction onto the parent
+checkout: never run `pnpm install` there, and `verifyDepsBeforeRun: false` in
 `pnpm-workspace.yaml` means its scripts install nothing. A source Run needs one
 line in `.env` — `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup
 notice says so when it is missing. `pnpm webui` runs the built program in
 `build/` but points the data root at the repository's `data/`
-(`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the
-page shows: the released root's own `data\\` child, reproduced. `pnpm build`
-recreates `build/`; the developer commands and that caveat live in this file, and
-the player-facing `README.md` only points here rather than carrying a second copy.
+(`scripts/webui.ts`), so your Mirror and Run logs are the ones the page shows:
+the released root's own `data\\` child, reproduced. `pnpm build` recreates
+`build/`; the development commands and that caveat live in this file, and the
+product `README.md` only points here rather than carrying a second copy.
+Before editing `README.md` or `README.en.md`, read `docs/readme-styleguide.md`:
+it is the standard the change is held to.
 
 ## Commands
 
@@ -249,7 +251,8 @@ tests/                       — mirrors the sources it tests
 │       ├── list-run-report.test.ts
 │       └── run-log.test.ts
 ├── docs/                    — the tests whose subject is a committed document, not source
-│   └── adr-index.test.ts    — every ADR in docs/adr/ has an index line, and every line names one (#109)
+│   ├── adr-index.test.ts    — every ADR in docs/adr/ has an index line, and every line names one (#109)
+│   └── readme-styleguide.test.ts — the style guide is committed and the steering file points at it (#125)
 ├── scripts/                 — the build's and the packager's own readings
 │   ├── bundle-externals.test.ts
 │   ├── package-layout.test.ts
@@ -326,9 +329,10 @@ what `routes/` and `http/` are is only meaningful as a whole — their tests are
 the socket tests at `tests/web/server/`, which drive the bound service over a
 real socket. And a test whose subject is a committed document rather than source
 keeps the document's own name instead of a source path:
-`tests/docs/adr-index.test.ts` guards the index over `docs/adr/`, and
-`tests/scripts/readme-docs.test.ts` guards the product document's facts and the
-licence agreement.
+`tests/docs/adr-index.test.ts` guards the index over `docs/adr/`,
+`tests/docs/readme-styleguide.test.ts` guards the guide's pointer from
+`AGENTS.md`, and `tests/scripts/readme-docs.test.ts` guards the product
+document's facts and the licence agreement.
 
 **Discovery is the Gallery list** (ADR 0018, closing the gate ADR 0006 opened):
 the site's own list endpoint returns every entry and every `pictureUrl` in one

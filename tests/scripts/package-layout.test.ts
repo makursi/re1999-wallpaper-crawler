@@ -137,6 +137,9 @@ describe('isPackagedPath', () => {
   })
 
   it('refuses the repository documents, sources, tests, scripts and hidden development configuration', () => {
+    // `docs/readme-styleguide.md` is here for the same reason as the rest: the
+    // guide governs the one shipped document from the repository only, and the
+    // whitelist has no name a `docs/` path could enter under.
     for (const archivePath of [
       'CHANGELOG.md',
       'AGENTS.md',
@@ -144,6 +147,7 @@ describe('isPackagedPath', () => {
       'CONTEXT-MAP.md',
       'HISTORY.md',
       'README.en.md',
+      'docs/readme-styleguide.md',
       'core/main.ts',
       'web/src/App.vue',
       'web/server/console.ts',

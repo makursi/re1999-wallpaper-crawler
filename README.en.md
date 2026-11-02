@@ -4,6 +4,8 @@
 
 Fetches the complete wallpaper list from the [official gallery](https://re.bluepoch.com/home/detail.html#wallpaper) in one request, downloads every wallpaper to this computer, and shows them on a local page. The program runs only on this machine; other devices cannot reach it.
 
+Current version `2.0.0`
+
 ![The wallpaper wall](https://raw.githubusercontent.com/makursi/re1999-wallpaper-crawler/main/docs/screenshots/console-en.webp)
 
 ## Installation
@@ -19,7 +21,7 @@ If Node is too old, `npm install` fails during installation (`engine-strict` is 
 
 ## Starting and stopping
 
-Run `npm start` in the install folder each time. If the program is already running, another `npm start` only points the browser at the running page; it does not start a second service.
+Run `npm start` in the program directory each time. If the program is already running, another `npm start` only points the browser at the running page; it does not start a second service.
 
 Two ways to stop, with the same effect:
 
@@ -30,7 +32,7 @@ Closing only the browser tab does not stop the program.
 
 ## Where the data lives
 
-Wallpapers, logs and settings all live under `data\` in the install folder, created on the first start:
+Wallpapers, logs and settings all live in the program directory under `data\`, created on the first start:
 
 | Location | Contents |
 |----------|----------|
@@ -39,7 +41,7 @@ Wallpapers, logs and settings all live under `data\` in the install folder, crea
 | `data\cache\` | the thumbnail cache; deleting it only makes the next visit slower |
 | `data\user.env` | optional local configuration overrides, rarely needed |
 
-The program itself writes nothing outside this folder: no registry entry, no system service, no pointer file recording where the installation is. The npm that runs `npm install` keeps its own download cache in the user profile; that belongs to npm, not to this program.
+The program itself writes nothing outside the program directory: no registry entry, no system service, no uninstaller, and no pointer file recording where the installation is. The npm that runs `npm install` keeps its own download cache in the user profile; that belongs to npm, not to this program.
 
 ## Updating
 
@@ -49,17 +51,15 @@ Three steps; the program never replaces itself:
 2. Stop the running program, then move the whole `data\` from the old folder into the new one, next to `README.md` and `package.json`.
 3. Run `npm install` once in the new folder, check the page with `npm start`, then delete the old folder.
 
-There is no in-place overwrite: the old folder is the fallback point.
+There is no in-place overwrite: the old folder is the fallback point. Do not delete the old folder until the new version has worked properly once.
 
-## Rolling back
+### Rolling back
 
 If the new version misbehaves, the old folder is enough: stop the new version, move `data\` from the new folder back into the old one, and run `npm start` there. The old folder still has its program and dependencies, so nothing has to be reinstalled.
 
-Do not delete the old folder until the new version has run at least once.
-
 ## Uninstalling
 
-Delete the one install folder; the program and `data\` are both gone. No uninstaller, service or registry entry is left in the system, so there is nothing else to clean up.
+Delete the one program directory; the program and `data\` disappear with it, and there is nothing else to clean up. Why nothing outside it needs cleaning up is in “Where the data lives”.
 
 ## What the first scrape looks like
 
@@ -69,7 +69,7 @@ On the first visit, click “运行” in the page's top navigation, then “开
 
 Failures are almost always about the dependency source or the Node version; check in this order:
 
-1. **Node version**: `node -v` must be 22.22.1 or newer. Below that, npm reports `EBADENGINE` and exits non-zero; install a newer Node and run the command again.
+1. **Node version**: `node -v` must meet the requirement in [Installation](#installation). When the version is too old, npm reports `EBADENGINE` and exits non-zero; install a newer Node and run the command again.
 2. **Registry reachability**: run `npm ping` on the same machine. Corporate networks, campus networks or proxies can block `registry.npmjs.org`.
 3. **Proxy and registry settings**: read `npm config get registry` and `npm config get proxy`; when a mirror or proxy address is wrong, point npm at a reachable one with `npm config set registry <address>` and run `npm install` again.
 
@@ -77,12 +77,12 @@ The program itself makes no network request during installation: the whole chain
 
 ## Copyright
 
-The wallpapers are the property of the official site (Bluepoch). This project does not store or distribute them: neither the repository nor the release ships an image, and the program only saves the images the official site serves onto the computer of the person running it. The licence is MIT: [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE) in the repository, and the same text ships as `LICENSE.txt` in the release.
+The wallpapers are the property of the official site (Bluepoch). This project does not store or distribute them: neither the repository nor the release ships an image, and the program only saves the images the official site serves onto the computer it runs on. The licence is MIT: [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE) in the repository, and the same text ships as `LICENSE.txt` in the release.
 
 ## Reporting a problem
 
-Open an [issue](https://github.com/makursi/re1999-wallpaper-crawler/issues). Include the version shown in the page's top navigation and the newest run log under `data\logs\`; that makes the problem much faster to locate.
+Open an [issue](https://github.com/makursi/re1999-wallpaper-crawler/issues). Include the version shown in the page's top navigation and the newest run log under `data\logs\`.
 
-## Developers
+## Source
 
-Commands, layout and every convention live in [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md); this README is about using the program.
+The source code, the development commands, the directory layout and all conventions live in [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md) at the repository root; this README is about using the program.
