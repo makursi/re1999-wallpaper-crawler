@@ -18,16 +18,19 @@ program's first Chinese sentence (#117).
 **Working in this repository** takes Node 22 and pnpm, then `pnpm install` for
 project dependencies. A worktree's `node_modules` is a junction onto the parent
 checkout: never run `pnpm install` there, and `verifyDepsBeforeRun: false` in
-`pnpm-workspace.yaml` means its scripts install nothing. A source Run needs one
-line in `.env` — `BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup
-notice says so when it is missing. `pnpm webui` runs the built program in
-`build/` but points the data root at the repository's `data/`
-(`scripts/webui.ts`), so your Mirror and Run logs are the ones the page shows:
-the released root's own `data\\` child, reproduced. `pnpm build` recreates
-`build/`; the development commands and that caveat live in this file, and the
-product `README.md` only points here rather than carrying a second copy.
-Before editing `README.md` or `README.en.md`, read `docs/readme-styleguide.md`:
-it is the standard the change is held to.
+`pnpm-workspace.yaml` means its scripts install nothing. When a `pnpm` script
+fails with `vitest` (or another bin) not recognised, the parent's store or bin
+links are broken, not the worktree — the junction only exposes what the parent
+owns — so run `pnpm install --frozen-lockfile --force` in the parent checkout
+and leave the worktree alone. A source Run needs one line in `.env` —
+`BASE_ORIGIN=https://re.bluepoch.com` — and the Console's setup notice says so
+when it is missing. `pnpm webui` runs the built program in `build/` but points
+the data root at the repository's `data/` (`scripts/webui.ts`), so your Mirror
+and Run logs are the ones the page shows: the released root's own `data\\`
+child, reproduced. `pnpm build` recreates `build/`; the development commands
+and that caveat live in this file, and the product `README.md` only points here
+rather than carrying a second copy. Before editing `README.md` or `README.en.md`,
+read `docs/readme-styleguide.md`: it is the standard the change is held to.
 
 ## Commands
 
@@ -117,7 +120,10 @@ installs the hooks — `pnpm install` runs it, and `pnpm prepare` re-runs it.
 `git commit --no-verify` bypasses it — if you ever use it, say why in the PR.
 
 Pre-push runs `pnpm typecheck && pnpm test`; that is a **subset** of CI, which
-also runs `pnpm lint`. Push only after all three pass.
+also runs `pnpm lint`. Push only after all three pass. **Before a pull request is
+called ready, read CI's verdict for its head commit** (`gh pr checks <number>`):
+the local gate is the subset, so a green local run says nothing about the page
+bundle build, `pnpm build` and `pnpm smoke:boot` that CI also runs.
 
 Every iteration ships via this exact flow, in order:
 
