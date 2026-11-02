@@ -22,6 +22,8 @@ const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')
 const README_FILE = path.join(REPO_ROOT, 'README.md')
 const README_EN_FILE = path.join(REPO_ROOT, 'README.en.md')
 const LICENCE_FILE = path.join(REPO_ROOT, 'LICENSE')
+const AGENTS_FILE = path.join(REPO_ROOT, 'AGENTS.md')
+const STYLEGUIDE_FILE = path.join(REPO_ROOT, 'docs', 'readme-styleguide.md')
 
 /** The one Node floor: `package.json`'s `engines.node` without its `>=`. */
 function repoNodeFloor(): string {
@@ -101,6 +103,20 @@ describe('the product document', () => {
       }
       expect(text, `${name} does not point at AGENTS.md`).toContain('AGENTS.md')
     }
+  })
+})
+
+describe('the README style guide', () => {
+  it('is committed, and the steering document points at it', () => {
+    // A guide nothing links is a guide the next edit never reads. The steering
+    // document is the first file a session opens, so the pointer lives there;
+    // the path is the assertion, and the existence check is the other half of
+    // the pointer: a link to nothing would pass a text-only assertion.
+    const agents = fs.readFileSync(AGENTS_FILE, 'utf8')
+    expect(agents, 'AGENTS.md does not point at docs/readme-styleguide.md').toContain(
+      'docs/readme-styleguide.md',
+    )
+    expect(fs.existsSync(STYLEGUIDE_FILE), 'docs/readme-styleguide.md does not exist').toBe(true)
   })
 })
 

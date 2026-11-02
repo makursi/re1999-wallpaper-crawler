@@ -9,11 +9,11 @@ downloads them in parallel. There is no browser in the pipeline: no Chrome, no
 
 ## Prerequisites
 
-**Players install one thing: Node.** The release is a flat directory — unzip it,
-run `npm install` once and `npm start` — and `README.md` is its one document. The
-zip ships no runtime, no launcher and no manual; the Node floor is enforced both
-by npm's `engine-strict` at install time and by the program's first Chinese
-sentence (#117).
+**Installing the release takes one thing: Node.** The release is a flat
+directory — unzip it, run `npm install` once and `npm start` — and `README.md` is
+its one document. The zip ships no runtime, no launcher and no manual; the Node
+floor is enforced both by npm's `engine-strict` at install time and by the
+program's first Chinese sentence (#117).
 
 **Developers and agents** need Node 22 and pnpm, then `pnpm install` for project
 dependencies. A worktree's `node_modules` is a junction onto the parent checkout:
@@ -24,8 +24,10 @@ notice says so when it is missing. `pnpm webui` runs the built program in
 `build/` but points the data root at the repository's `data/`
 (`scripts/webui.ts`), so the developer's Mirror and Run logs are the ones the
 page shows: the released root's own `data\\` child, reproduced. `pnpm build`
-recreates `build/`; the developer commands and that caveat live in this file, and
-the player-facing `README.md` only points here rather than carrying a second copy.
+recreates `build/`; the development commands and that caveat live in this file,
+and the product `README.md` only points here rather than carrying a second copy.
+Before editing `README.md` or `README.en.md`, read `docs/readme-styleguide.md`:
+it is the standard the change is held to.
 
 ## Commands
 

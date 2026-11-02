@@ -167,6 +167,14 @@ describe('isPackagedPath', () => {
     }
   })
 
+  it('refuses the README style guide — a development document never ships', () => {
+    // The guide governs the one shipped document from the repository only. The
+    // whitelist has no name it could enter under, so "development document" is a
+    // property the packager enforces rather than a note beside it.
+    expect(isPackagedPath('docs/readme-styleguide.md')).toBe(false)
+    expect(archiveRequiredEntries()).not.toContain('docs/readme-styleguide.md')
+  })
+
   it('refuses relative escapes, Windows separators, directory-only paths and empty paths', () => {
     for (const archivePath of [
       '',
