@@ -37,9 +37,13 @@ boot does make one outbound request — the Console's own courtesy update check,
 bounded at three seconds and never fatal — and the check neither silences it nor
 pretends it does not happen.
 
-**The blocked-port retry.** `--port 0` lets the OS choose, and on this machine
-the dynamic range (1024–15000) includes ports `fetch` refuses (`bad port`), so
-the console case retries the whole boot with a fresh port twice before failing.
+**The blocked-port guarantee.** `--port 0` lets the OS choose, and on this
+machine the dynamic range (1024–15000) includes ports `fetch` refuses
+(`bad port`). The service never reports one: its fallback checks every
+OS-assigned answer against the fetch standard's blocked list, and treats a
+preferred `0` as the OS's choice rather than a fallback. So the boot's own
+`/api/status` request cannot fail that way, and the check needs no retry
+(`web/server/port-usable.ts`, #131).
 
 **What the two checks cannot cover.** The PR check (`pnpm smoke:boot`) proves
 the build tree boots. The release check (`pnpm package:check`, run by

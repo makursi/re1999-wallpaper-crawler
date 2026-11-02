@@ -75,6 +75,7 @@ import { createGalleryListSource } from './gallery-list-source.js'
 import { createImageSizeCache } from './image-sizes.js'
 import { runningInstanceUrl } from './instance-handshake.js'
 import { forgetInstanceRecord, instanceRecordPath, writeInstanceRecord } from './instance-record.js'
+import { PortUnavailableError } from './port-usable.js'
 import { missingPrerequisites, runEnvFileAvailable } from './prerequisites.js'
 import type { ExitOutcome, RunLauncher } from './run-control.js'
 import {
@@ -533,7 +534,18 @@ async function main(options: ConsoleOptions): Promise<void> {
     port: options.port,
   }
 
-  service = await startConsoleServer(config, deps)
+  // #131: no usable port is the third of the boot's refusals, after the Node
+  // floor and the data layout: one Chinese sentence on stderr and exit 1,
+  // printed alone rather than under the generic `致命错误:` line, which would
+  // name an exception class where the reader needs the sentence. Every other
+  // failure still reaches that catch.
+  try {
+    service = await startConsoleServer(config, deps)
+  } catch (error) {
+    if (!(error instanceof PortUnavailableError)) throw error
+    process.stderr.write(`${error.message}\n`)
+    process.exit(1)
+  }
 
   // #82: publish this boot's address as soon as the port is known, and before
   // the boot's one network request is awaited. From here until shutdown a second
@@ -558,10 +570,13 @@ async function main(options: ConsoleOptions): Promise<void> {
   // it up on the next read.
   deps.updateNotice = await updateCheck
 
-  // Always the port actually bound: the preferred one is only a preference
-  // (spec decision 3).
+  // Always the port the service reports, which is always one a browser will
+  // open: the preferred port is only a preference (spec decision 3, #131). The
+  // notice is true in both cases `fellBack` covers — the preferred port was
+  // taken, or the fetch standard blocks it — and `--port 0` asked the OS to
+  // choose, so it reports `false` and prints nothing.
   if (service.fellBack) {
-    process.stdout.write(`端口 ${options.port} 被占用,改用 ${service.port}。\n`)
+    process.stdout.write(`端口 ${options.port} 不可用,改用 ${service.port}。\n`)
   }
   process.stdout.write(`WebUI: ${service.url}\n`)
 

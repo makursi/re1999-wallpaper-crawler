@@ -466,6 +466,30 @@ describe('the built stylesheet', () => {
 })
 
 describe('startConsoleServer', () => {
+  it('treats a preferred port of 0 as the OS’s choice, not a fallback', async () => {
+    // #131: `0` means "the OS chooses", and the Console accepts it — but the
+    // fallback used to read it as an unusable port and print `端口 0 不可用`,
+    // a false statement about the caller's own request.
+    const service = await serve()
+
+    expect(service.fellBack).toBe(false)
+    expect(service.port).toBeGreaterThanOrEqual(1)
+    expect(service.port).toBeLessThanOrEqual(65535)
+    expect((await fetch(`${service.origin}/api/status?token=${TOKEN}`)).status).toBe(200)
+  })
+
+  it('moves off a preferred port the fetch standard blocks, and still answers', async () => {
+    // #130: 6000 is on the fetch standard's blocked list. Before #131 the
+    // service bound it happily and reported it, and this suite's own `fetch`
+    // failed with `bad port`. The real request below is the independent proof:
+    // no socket here would accept it on a blocked port.
+    const service = await serve({ port: 6000 })
+
+    expect(service.port).not.toBe(6000)
+    expect(service.fellBack).toBe(true)
+    expect((await fetch(`${service.origin}/api/status?token=${TOKEN}`)).status).toBe(200)
+  })
+
   it('binds another port when the preferred one is taken, and reports the one it bound', async () => {
     const taken = http.createServer()
     openServers.push(taken)
