@@ -16,7 +16,7 @@
 // The style guide (#125) adds three points to the same contract: a status line
 // naming the manifest's version, a link to the issue tracker, and none of the
 // retired vocabulary. Each document entry turns them on for its own variant, so
-// the English document adopts them without an assertion changing (#126).
+// the English document adopts them without an assertion changing (#126, #127).
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -105,9 +105,17 @@ const DOCUMENTS: readonly DocumentEntry[] = [
     issueTracker: ISSUE_TRACKER,
     retiredWords: RETIRED_WORDS.zh,
   },
-  // The English variant adopts the three guide points in the ticket that
-  // rewrites it; until then its entry simply does not carry them.
-  { name: 'README.en.md', file: README_EN_FILE, updateHeading: 'Updating' },
+  // The English variant carries its own names for the same three guide points
+  // (#127): the label its status line starts with, the same tracker, and the
+  // retired words of English.
+  {
+    name: 'README.en.md',
+    file: README_EN_FILE,
+    updateHeading: 'Updating',
+    statusLabel: 'Current version',
+    issueTracker: ISSUE_TRACKER,
+    retiredWords: RETIRED_WORDS.en,
+  },
 ]
 
 /** The lines under one `## ` heading, up to the next one. */
