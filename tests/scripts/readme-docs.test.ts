@@ -10,6 +10,8 @@
 //   - both documents are UTF-8 without a replacement character;
 //   - both name the two commands, the Node floor and the data folder;
 //   - the update is the same three steps, in a section of its own;
+//   - the two variants are one document: the same heading levels, position by
+//     position (#137);
 //   - the repository's command set stays in the steering file, not here;
 //   - the licence agreement the package also carries (#89).
 //
@@ -17,6 +19,11 @@
 // naming the manifest's version, a link to the issue tracker, and none of the
 // retired vocabulary. Each document entry turns them on for its own variant, so
 // the English document adopts them without an assertion changing (#126, #127).
+//
+// The guide's landing rule — a change to one variant is a change to both — is
+// the mirror assertion (#137). It compares the two documents' heading levels
+// and nothing else: two languages share no prose to compare, and a translation
+// table would be a second copy of both documents to keep in step.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -143,6 +150,33 @@ function section(markdown: string, heading: string): string {
   return end === -1 ? rest : rest.slice(0, end)
 }
 
+/**
+ * One document's heading structure: the level of each ATX heading, in order.
+ * The heading text is deliberately dropped, because two languages share no
+ * prose to compare (#137). A fenced block is skipped, so a `#` line inside a
+ * shell snippet is not read as a heading.
+ */
+function headingLevels(markdown: string): readonly number[] {
+  const levels: number[] = []
+  let fenced = false
+  for (const line of markdown.split(/\r?\n/)) {
+    if (line.startsWith('```')) {
+      fenced = !fenced
+      continue
+    }
+    if (fenced) continue
+    const heading = /^(#{1,6})\s+\S/.exec(line)
+    if (heading) levels.push(heading[1].length)
+  }
+  return levels
+}
+
+/** One side of a differing position, worded for the failure message. */
+function headingAt(levels: readonly number[], index: number): string {
+  const level = levels[index]
+  return level === undefined ? 'no heading' : `a level-${level} heading`
+}
+
 describe('the product document', () => {
   it('is UTF-8 without a replacement character', () => {
     for (const { name, file } of DOCUMENTS) {
@@ -231,6 +265,30 @@ describe('the product document', () => {
         expect(text, `${name} teaches the repository command ${command}`).not.toContain(command)
       }
       expect(text, `${name} does not point at AGENTS.md`).toContain('AGENTS.md')
+    }
+  })
+
+  it('keeps one heading structure in both variants, position by position', () => {
+    // The style guide's landing rule: a change to one variant is a change to
+    // both, so the two documents must carry the same sections in the same order
+    // (#137). The comparison is the sequence of levels only — a gain, a loss or
+    // a reorder that moves a heading across a level boundary shows up as a
+    // position that differs. Two sibling headings of one level are
+    // interchangeable in a structure-only reading; telling them apart would mean
+    // reading the prose. The first entry is the reference the others meet.
+    const [reference, ...variants] = DOCUMENTS
+    const referenceLevels = headingLevels(fs.readFileSync(reference.file, 'utf8'))
+    for (const variant of variants) {
+      const levels = headingLevels(fs.readFileSync(variant.file, 'utf8'))
+      // Walk the longer sequence, so a heading gained or lost at the end is
+      // still reached and named rather than silently passing.
+      const positions = Math.max(referenceLevels.length, levels.length)
+      for (let index = 0; index < positions; index += 1) {
+        expect(
+          levels[index],
+          `${variant.name} differs from ${reference.name} at heading position ${index + 1} of ${positions}: ${reference.name} has ${headingAt(referenceLevels, index)}, ${variant.name} has ${headingAt(levels, index)}`,
+        ).toBe(referenceLevels[index])
+      }
     }
   })
 })
