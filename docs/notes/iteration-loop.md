@@ -2,12 +2,12 @@
 
 ## The question
 
-An iteration of this project is two things: the player's change, and the loop
+An iteration of this project is two things: the change, and the loop
 that produces it. The loop that produced #107 (18 sessions, 929 steps, 1,330 tool
 calls) delivered a correct change and still paid the same three debts on every
 run. None of them was a judgement error, which is why no amount of care fixed
 them. What structure pays each debt once, for every future iteration, without
-changing anything a player sees?
+changing anything visible?
 
 The three debts that recurred on every run:
 
@@ -50,10 +50,10 @@ Two smaller debts were paid in the same iteration:
 
 ## Settled
 
-- **One maintenance iteration pays all five.** Nothing a player sees changes:
+- **One maintenance iteration pays all five.** Nothing visible changes:
   no version bump, no changelog section, no new file in the Portable package.
-  The release workflow, the package layout, the updater and player-facing copy
-  are untouched. The iteration is recorded as one `HISTORY.md` entry and rides
+  The release workflow, the package layout, the updater and the copy the page
+  shows are untouched. The iteration is recorded as one `HISTORY.md` entry and rides
   along with the next release that has something to say. (#107, #114)
 - **Every PR proves the Console boots, from a build of all three entries.** One
   script stages a built tree into a temporary root, starts the program on port 0

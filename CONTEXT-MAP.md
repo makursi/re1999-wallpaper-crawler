@@ -32,10 +32,11 @@
   that tree. The thumbnail cache is not a Console artifact any more: it is
   `<data>/cache/thumbnails/` (ADR 0019).
   Vocabulary in CONTEXT.md → Console.
-- **Distribution** — how the program reaches a player: one flat install folder
-  whose root is the program, the npm-installed runtime dependency, the data
-  directory in its `data\` child, the update's three manual steps, the version a
-  release carries, and the one request that says a newer release exists.
+- **Distribution** — how the program reaches the machine it runs on: one flat
+  install folder whose root is the program, the npm-installed runtime dependency,
+  the data directory in its `data\` child, the update's three manual steps, the
+  version a release carries, and the one request that says a newer release
+  exists.
   Owns: `README.md` (the one product document), `packaging/` (the archive's
   licence and the site-constants template), `scripts/build.ts` +
   `scripts/bundle-externals.ts` (the built tree and the version/Node-floor
@@ -90,7 +91,7 @@
   the rollback (ADR 0019, ADR 0024).
 - **Distribution ↔ Release**: the version is one number from the tag through the
   build to the page, the archive carries the README that documents it, and the
-  page's notice is the only thing that tells a player a newer release exists.
+  page's notice is the only thing that says a newer release exists.
 
 ## Where things live
 

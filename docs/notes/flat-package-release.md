@@ -1,16 +1,16 @@
-# The release is a flat folder the player installs with npm
+# The release is a flat folder installed with npm
 
 ## The question
 
 Spec #116's trigger was the shape of the release, not anything the crawler did.
 The archive was a self-contained Windows portable package: a zip carrying
 `node.exe` (92.5 MB), `sharp` and the four packages its loader loads, two `.bat`
-launchers and a manual, with `app\` (the program) and `data\` (the player's) as
+launchers and a manual, with `app\` (the program) and `data\` (the data) as
 siblings. Every cost followed from that one choice. The size duplicated a runtime
 the machine already had. The launcher existed only to change directory, set two
 root variables and exec, and its ASCII-only, logic-free constraint pushed every
 decision back into the program. The in-place updater was the repository's only
-module to recursively delete a player-visible directory, so it needed an install
+module to recursively delete a user-visible directory, so it needed an install
 pointer outside the folder, a liveness probe, a path whitelist and a
 one-generation `app.old\` rollback. The dependency closure in `node_modules` was
 picked by hand in the packager.
@@ -65,7 +65,7 @@ parts of the old shape are actually load-bearing? (#116)
 - **The README is the one product document.** It ships at the archive root, covers
   install, both stops, where the data lives, the update's three steps, rolling
   back, uninstalling, the first scrape's size and duration, what to check when
-  `npm install` fails, the copyright statement and where to ask; the developer
+  `npm install` fails, the copyright statement and where to ask; the repository's
   command set stays in `AGENTS.md` behind one pointer. `tests/scripts/readme-docs.test.ts`
   pins the facts a reader acts on, not the prose. (#121)
 - **The vocabulary and the record moved with the shape.** ADR 0024 records the
@@ -108,8 +108,8 @@ parts of the old shape are actually load-bearing? (#116)
   the archive should also carry `README.en.md` and the screenshots is a whitelist
   change nobody has argued yet; today the document is correct and one click
   online, and dead offline.
-- **The hand-move is documentation, not a check.** No test can prove a player
-  moved `data\` before deleting the old folder. The three steps are short and the
+- **The hand-move is documentation, not a check.** No test can prove `data\` was
+  moved before the old folder was deleted. The three steps are short and the
   old folder is harmless if kept; a tool that did the move would be an updater
   again, which this shape deliberately does not have.
 
@@ -128,7 +128,7 @@ parts of the old shape are actually load-bearing? (#116)
   guarantees. A second entry point with no decision in it is a seam with no job.
   (#116)
 - **An in-place updater with an install pointer and a rollback generation.**
-  Rejected: it was the only module that recursively deleted a player-visible
+  Rejected: it was the only module that recursively deleted a user-visible
   directory, and to be safe it needed a pointer outside the folder (a file that
   moves with the folder cannot say where the folder went), a liveness handshake,
   a path whitelist, a rollback that can itself fail, and a one-generation
@@ -142,7 +142,7 @@ parts of the old shape are actually load-bearing? (#116)
 - **Ship `node_modules`.** Rejected: resolution rules, platform binaries and size
   travel with it, and every dependency change becomes a manual whitelist edit —
   the maintenance cost this iteration removes. `sharp` is the one native module
-  the program loads, and `npm install` is the player's one dependency step.
+  the program loads, and `npm install` is the one dependency step.
   (#116, #118)
 - **Distribute through `npm i -g` or `npx`.** Rejected for this release: a global
   install writes outside the folder, so "uninstall = delete one folder" stops
@@ -151,5 +151,5 @@ parts of the old shape are actually load-bearing? (#116)
   (#116)
 - **Keep the in-package manual beside the README.** Rejected: two documents that
   describe the same install drift, and the manual was one of the files the
-  launcher's removal took with it. One product document, one developer document
+  launcher's removal took with it. One product document, one repository document
   (`AGENTS.md`). (#119, #121)

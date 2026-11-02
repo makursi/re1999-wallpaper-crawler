@@ -121,7 +121,7 @@ scripts/
 ├── release-tag.ts    — the tag/version agreement: a `vX.Y.Z` tag must equal `package.json`'s version, checked by function rather than inline YAML; CLI prints the version, `--package` is the dry run (#88, unit-tested)
 ├── smoke-boot.ts     — the boot check (#108, #119): stages a built tree into a temporary root, starts it through `npm start`, drives the page's own API with the boot token, proves a second start points back at the running page, and proves a tree missing an artifact refuses — `pnpm smoke:boot`
 ├── unzip.ts          — the release check's reader for the zip `scripts/zip.ts` writes: central directory → local header → deflate/stored, UTF-8 names, no zip64, and a name that could escape is refused (unit-tested)
-├── webui.ts          — `pnpm webui`: runs `build/` as the program with the repository's `data/` as its data, so the developer's own Mirror and Run logs are what the page shows
+├── webui.ts          — `pnpm webui`: runs `build/` as the program with the repository's `data/` as its data, so your Mirror and Run logs are what the page shows
 └── zip.ts            — the hand-written zip writer (node:zlib, UTF-8 names, no zip64) (unit-tested)
 packaging/
 ├── LICENSE.txt       — the MIT licence the packager ships at the archive root
