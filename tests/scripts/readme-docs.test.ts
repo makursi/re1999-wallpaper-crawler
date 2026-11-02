@@ -10,7 +10,7 @@
 //   - both documents are UTF-8 without a replacement character;
 //   - both name the two commands, the Node floor and the data folder;
 //   - the update is the same three steps, in a section of its own;
-//   - the developer command set stays in `AGENTS.md`, not here;
+//   - the repository's command set stays in the steering file, not here;
 //   - the licence agreement the package also carries (#89).
 //
 // The style guide (#125) adds three points to the same contract: a status line
@@ -27,7 +27,7 @@ const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')
 const README_FILE = path.join(REPO_ROOT, 'README.md')
 const README_EN_FILE = path.join(REPO_ROOT, 'README.en.md')
 const LICENCE_FILE = path.join(REPO_ROOT, 'LICENSE')
-const AGENTS_FILE = path.join(REPO_ROOT, 'AGENTS.md')
+/** The guide is the retired vocabulary's only home; this contract reads it as data. */
 const STYLEGUIDE_FILE = path.join(REPO_ROOT, 'docs', 'readme-styleguide.md')
 
 /** The one Node floor: `package.json`'s `engines.node` without its `>=`. */
@@ -67,32 +67,47 @@ const VERSION = repoVersion()
 const ISSUE_TRACKER = 'https://github.com/makursi/re1999-wallpaper-crawler/issues'
 
 /**
- * The retired vocabulary of the style guide, per language, as whole words.
+ * The retired vocabulary of the style guide, read from its `## Retired
+ * vocabulary` rule: the guide is the list's only home, so a word added there is
+ * enforced here without a second edit.
  *
- * `user` is deliberately absent: `data\user.env` is a path the document must
- * keep naming, so retiring it would put the document and its contract in
- * conflict. Chinese has no boundaries to anchor, so its words match as written.
+ * A token that is all Han script is Chinese; every other token is English,
+ * matched as a whole word. `user` is deliberately absent from the guide's list:
+ * `data\user.env` is a path the document must keep naming, so retiring it would
+ * put the document and its contract in conflict.
  */
-const RETIRED_WORDS = {
-  zh: ['玩家', '使用者', '开发者'],
-  en: ['player', 'players', 'developer', 'developers'],
-} as const
+function retiredWordsFromGuide(): { zh: readonly string[]; en: readonly string[] } {
+  const rule = section(fs.readFileSync(STYLEGUIDE_FILE, 'utf8'), 'Retired vocabulary')
+  const tokens = [...rule.matchAll(/`([^`]+)`/g)]
+    .map(match => match[1].trim())
+    .filter(token => token !== '')
+  const zh = tokens.filter(token => /^\p{Script=Han}+$/u.test(token))
+  const en = tokens.filter(token => !/^\p{Script=Han}+$/u.test(token))
+  // An empty list would pass every document without checking one word, so it
+  // fails here instead of silently enforcing nothing.
+  if (zh.length === 0) throw new Error('the style guide retires no Chinese words')
+  if (en.length === 0) throw new Error('the style guide retires no English words')
+  return { zh, en }
+}
+
+const RETIRED_WORDS = retiredWordsFromGuide()
 
 /**
- * One product document and the guide's points its variant has adopted. The last
- * three fields are turned on by filling them in — no assertion reads a document
- * name — so the English variant adopts them without rewriting an assertion.
+ * One product document and the guide's points its variant carries. Every field
+ * is required, so dropping one is a typecheck error rather than a silently
+ * disabled assertion. No assertion reads a document name, so both variants run
+ * the same checks.
  */
 type DocumentEntry = {
   name: string
   file: string
   updateHeading: string
   /** The status line's opening text; the same line names `VERSION`. */
-  statusLabel?: string
+  statusLabel: string
   /** The issue tracker the document links. */
-  issueTracker?: string
+  issueTracker: string
   /** The retired words of the document's language. */
-  retiredWords?: readonly string[]
+  retiredWords: readonly string[]
 }
 
 /** The documents, their own names for the update section, and the points they carry. */
@@ -167,7 +182,6 @@ describe('the product document', () => {
     // from `package.json`, so a forgotten bump fails here instead of shipping a
     // document that describes an older release than the archive beside it.
     for (const { name, file, statusLabel } of DOCUMENTS) {
-      if (statusLabel === undefined) continue
       const statusLine = fs
         .readFileSync(file, 'utf8')
         .split(/\r?\n/)
@@ -185,7 +199,6 @@ describe('the product document', () => {
     // "Where to ask" is one of the guide's five points (#126): the reader must
     // reach the repository's tracker from the document, not guess the address.
     for (const { name, file, issueTracker } of DOCUMENTS) {
-      if (issueTracker === undefined) continue
       expect(fs.readFileSync(file, 'utf8'), `${name} does not link ${issueTracker}`).toContain(
         issueTracker,
       )
@@ -198,7 +211,6 @@ describe('the product document', () => {
     // heading such as "Developers" fails; `data\user.env` survives because
     // `user` is not on the list.
     for (const { name, file, retiredWords } of DOCUMENTS) {
-      if (retiredWords === undefined) continue
       const text = fs.readFileSync(file, 'utf8')
       for (const word of retiredWords) {
         const pattern = /^\p{Script=Han}+$/u.test(word)
@@ -209,30 +221,17 @@ describe('the product document', () => {
     }
   })
 
-  it('leaves the developer command set to AGENTS.md', () => {
-    // One document for players, one command table for developers (#121): the
-    // README may point at AGENTS.md, but it may not become a second copy of it.
+  it('leaves the repository command set to the steering file', () => {
+    // One document for the product, one command table in the steering file
+    // (#121): the README may point at `AGENTS.md`, but it may not become a
+    // second copy of it.
     for (const { name, file } of DOCUMENTS) {
       const text = fs.readFileSync(file, 'utf8')
       for (const command of ['pnpm lint', 'pnpm typecheck', 'pnpm test', 'pnpm build']) {
-        expect(text, `${name} teaches the developer command ${command}`).not.toContain(command)
+        expect(text, `${name} teaches the repository command ${command}`).not.toContain(command)
       }
       expect(text, `${name} does not point at AGENTS.md`).toContain('AGENTS.md')
     }
-  })
-})
-
-describe('the README style guide', () => {
-  it('is committed, and the steering document points at it', () => {
-    // A guide nothing links is a guide the next edit never reads. The steering
-    // document is the first file a session opens, so the pointer lives there;
-    // the path is the assertion, and the existence check is the other half of
-    // the pointer: a link to nothing would pass a text-only assertion.
-    const agents = fs.readFileSync(AGENTS_FILE, 'utf8')
-    expect(agents, 'AGENTS.md does not point at docs/readme-styleguide.md').toContain(
-      'docs/readme-styleguide.md',
-    )
-    expect(fs.existsSync(STYLEGUIDE_FILE), 'docs/readme-styleguide.md does not exist').toBe(true)
   })
 })
 

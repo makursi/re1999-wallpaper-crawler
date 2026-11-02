@@ -1,9 +1,9 @@
 # README Style Guide
 
 This guide governs the repository's product documents, `README.md` and
-`README.en.md`. It is read from [Google's README style guide](https://google.github.io/styleguide/docguide/READMEs.html)
-as principles, not as a template: no section skeleton and no section order is
-prescribed here.
+`README.en.md`. It applies [Google's README style guide](https://google.github.io/styleguide/docguide/READMEs.html)
+as principles, not as a template: it prescribes no section skeleton and no
+section order.
 
 ## Name and location
 
@@ -37,7 +37,7 @@ manifest; this guide states no literal.
 
 - `README.md` and `README.en.md` carry the same facts, the same sections and the
   same order.
-- A change to one variant is a change to both, in the same commit.
+- Both variants land together: neither is merged without the other.
 
 ## Retired vocabulary
 
@@ -48,19 +48,17 @@ manifest; this guide states no literal.
 
 ## Where this reading departs from the source
 
-- Google's guide names one file `README.md`; here the English variant is
-  `README.en.md`, so the name rule covers both root files.
-- `docs/notes/README.md` and `docs/adr/README.md` are indexes governed by their
-  own conventions, not product documents, so this guide does not govern them.
-- The five points are enforced by the document contract
-  (`tests/scripts/readme-docs.test.ts`) and are not restated in the documents as
-  a template.
+- The English variant's name is `README.en.md`, beside `README.md` at the root;
+  Google's guide names one file.
+- `docs/notes/README.md` and `docs/adr/README.md` are indexes under their own
+  conventions, so these rules do not govern them.
+- The document contract holds the status version against the manifest, the
+  tracker link, the retired words and the commands the reader runs; the rest of
+  the five points stays a review rule.
 
 ## The check a README change is held to
 
-- All five information points are present or pointed to.
-- Every command copies and runs verbatim.
-- The status line names the release, and its version equals `package.json`'s
-  `version`.
-- Both language variants changed together.
+- The five points are present or pointed to.
+- The status line's version equals `package.json`'s `version`.
+- Both language variants land together.
 - `pnpm test` is green.

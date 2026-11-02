@@ -41,7 +41,7 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 | `data\cache\` | 缩略图缓存，删掉只会让下次打开变慢 |
 | `data\user.env` | 可选的本地配置覆盖，一般用不到 |
 
-程序不在这个文件夹之外写任何东西：没有注册表项、没有系统服务、没有卸载程序，也没有记下安装位置的指针文件。`npm install` 用的 npm 会在用户目录里保留自己的下载缓存，那属于 npm，不属于这个程序。
+程序本身不在程序目录之外写任何东西：没有注册表项、没有系统服务、没有卸载程序，也没有记下安装位置的指针文件。`npm install` 用的 npm 会在用户目录里保留自己的下载缓存，那属于 npm，不属于这个程序。
 
 ## 更新
 
@@ -69,7 +69,7 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 
 `npm install` 失败几乎都出在依赖来源或 Node 版本上，按顺序查：
 
-1. **Node 版本**：`node -v` 必须不低于 `22.22.1`。低于这个版本时 npm 会报 `EBADENGINE` 并以非零码退出；按提示装好新版 Node 后重新运行。
+1. **Node 版本**：`node -v` 要满足[安装](#安装)一节的要求。版本不够时 npm 会报 `EBADENGINE` 并以非零码退出；按提示装好新版 Node 后重新运行。
 2. **registry 可达性**：在同一台机器上运行 `npm ping`。公司网络、校园网或代理可能挡掉 `registry.npmjs.org`。
 3. **代理与 registry 设置**：用 `npm config get registry` 和 `npm config get proxy` 看当前值；镜像或代理地址不对时，用 `npm config set registry <地址>` 改到能访问的那一个，再运行 `npm install`。
 

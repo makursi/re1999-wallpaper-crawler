@@ -45,17 +45,24 @@ is written and does not reopen that.
   pointer line to `docs/readme-styleguide.md`, and the document contract asserts
   both the pointer and the file's existence, so a session about to edit the
   product document finds the standard in the first file it reads. (#125)
+- **The two variants landed as two commits, so the rule binds landing.** Tickets
+  #126 and #127 landed the variants in separate commits on one branch. The guide
+  therefore requires both variants to land together and neither to be merged
+  without the other, instead of requiring one commit to carry both. (#126, #127)
+- **The English rollback condition uses the stricter model.** The English
+  variant says not to delete the old folder until the new version "has worked
+  properly once", not the weaker "has run at least once": a reader who deletes
+  the fallback after one failed launch has lost it. (#127)
 
 ## Open
 
-- **The repository-wide vocabulary change.** The other documents still use the
-  retired population labels, and the two sentences this ticket touched in
-  `AGENTS.md` were only the local exception. The change needs its own issue and
-  one pass over `CONTEXT.md`, `CONTEXT-MAP.md`, `CHANGELOG.md`, `HISTORY.md`,
-  `docs/notes/` and the rest of `AGENTS.md`; until then the product documents
-  stay clean while those keep their wording. Its fallback, if it cannot be
-  scheduled, is this state: the rule binds the product documents only, and the
-  guide says so.
+- **The repository-wide vocabulary change.** The Prerequisites section of
+  `AGENTS.md` is clean, and so are the two product documents. `CONTEXT.md`,
+  `CONTEXT-MAP.md`, `CHANGELOG.md`, `HISTORY.md`, `docs/notes/` and the remaining
+  `AGENTS.md` wording — including its description of `CHANGELOG.md` — still use
+  the retired population labels and wait for their own issue. Its fallback, if it
+  cannot be scheduled, is this state: the rule binds the product documents only,
+  and the guide says so.
 
 ## Rejected
 
@@ -80,3 +87,7 @@ is written and does not reopen that.
   contract reads the Node floor from `engines.node` today and reads the status
   line's version from `version` after this change; the guide states neither.
   (#125)
+- **The old "locate the problem much faster" promise.** Rejected: the guide bans
+  an adjective that promises, and a speed claim is exactly that. The actionable
+  half — attach the version and the newest run log — survived in both documents,
+  and saying what to attach shortens a diagnosis without promising anything.

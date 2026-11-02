@@ -69,7 +69,7 @@ On the first visit, click “运行” in the page's top navigation, then “开
 
 Failures are almost always about the dependency source or the Node version; check in this order:
 
-1. **Node version**: `node -v` must be 22.22.1 or newer. Below that, npm reports `EBADENGINE` and exits non-zero; install a newer Node and run the command again.
+1. **Node version**: `node -v` must meet the requirement in [Installation](#installation). When the version is too old, npm reports `EBADENGINE` and exits non-zero; install a newer Node and run the command again.
 2. **Registry reachability**: run `npm ping` on the same machine. Corporate networks, campus networks or proxies can block `registry.npmjs.org`.
 3. **Proxy and registry settings**: read `npm config get registry` and `npm config get proxy`; when a mirror or proxy address is wrong, point npm at a reachable one with `npm config set registry <address>` and run `npm install` again.
 
