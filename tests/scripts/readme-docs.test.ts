@@ -1,6 +1,6 @@
 // ── The one product document (#121) ─────────────────────────────────
 //
-// A player who unzips the release never opens this repository, so `README.md`
+// A reader who unzips the release never opens this repository, so `README.md`
 // is the one document they read — `scripts/package.ts` carries it at the archive
 // root. The manual that used to sit there went with the launcher and the updater
 // (#119), and `README.en.md` is the same document in English.
@@ -12,6 +12,11 @@
 //   - the update is the same three steps, in a section of its own;
 //   - the developer command set stays in `AGENTS.md`, not here;
 //   - the licence agreement the package also carries (#89).
+//
+// The style guide (#125) adds three points to the same contract: a status line
+// naming the manifest's version, a link to the issue tracker, and none of the
+// retired vocabulary. Each document entry turns them on for its own variant, so
+// the English document adopts them without an assertion changing (#126).
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -43,11 +48,67 @@ function repoNodeFloor(): string {
 /** The floor the documents must name, read from the same manifest the floor lives in. */
 const NODE_FLOOR = repoNodeFloor()
 
-/** The documents, and their own names for the update section. */
-const DOCUMENTS = [
-  { name: 'README.md', file: README_FILE, updateHeading: '更新' },
+/** The release the status line must name, read from the manifest a release is cut from. */
+function repoVersion(): string {
+  const parsed: unknown = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'))
+  if (typeof parsed === 'object' && parsed !== null && 'version' in parsed) {
+    const { version } = parsed
+    if (typeof version === 'string' && /^\d+\.\d+\.\d+([-+][\w.-]+)?$/.test(version.trim())) {
+      return version.trim()
+    }
+  }
+  throw new Error('the repository package.json declares no X.Y.Z version')
+}
+
+/** The status line's version: the manifest's, never a literal repeated here. */
+const VERSION = repoVersion()
+
+/** The repository's issue tracker, the document's "where to ask" point (#126). */
+const ISSUE_TRACKER = 'https://github.com/makursi/re1999-wallpaper-crawler/issues'
+
+/**
+ * The retired vocabulary of the style guide, per language, as whole words.
+ *
+ * `user` is deliberately absent: `data\user.env` is a path the document must
+ * keep naming, so retiring it would put the document and its contract in
+ * conflict. Chinese has no boundaries to anchor, so its words match as written.
+ */
+const RETIRED_WORDS = {
+  zh: ['玩家', '使用者', '开发者'],
+  en: ['player', 'players', 'developer', 'developers'],
+} as const
+
+/**
+ * One product document and the guide's points its variant has adopted. The last
+ * three fields are turned on by filling them in — no assertion reads a document
+ * name — so the English variant adopts them without rewriting an assertion.
+ */
+type DocumentEntry = {
+  name: string
+  file: string
+  updateHeading: string
+  /** The status line's opening text; the same line names `VERSION`. */
+  statusLabel?: string
+  /** The issue tracker the document links. */
+  issueTracker?: string
+  /** The retired words of the document's language. */
+  retiredWords?: readonly string[]
+}
+
+/** The documents, their own names for the update section, and the points they carry. */
+const DOCUMENTS: readonly DocumentEntry[] = [
+  {
+    name: 'README.md',
+    file: README_FILE,
+    updateHeading: '更新',
+    statusLabel: '当前版本',
+    issueTracker: ISSUE_TRACKER,
+    retiredWords: RETIRED_WORDS.zh,
+  },
+  // The English variant adopts the three guide points in the ticket that
+  // rewrites it; until then its entry simply does not carry them.
   { name: 'README.en.md', file: README_EN_FILE, updateHeading: 'Updating' },
-] as const
+]
 
 /** The lines under one `## ` heading, up to the next one. */
 function section(markdown: string, heading: string): string {
@@ -90,6 +151,53 @@ describe('the product document', () => {
       expect(update, `${name} does not delete the old folder`).toMatch(
         /delete the old folder|删除旧文件夹/,
       )
+    }
+  })
+
+  it('names the release the manifest declares', () => {
+    // The status line is the document's status point (#126). Its version comes
+    // from `package.json`, so a forgotten bump fails here instead of shipping a
+    // document that describes an older release than the archive beside it.
+    for (const { name, file, statusLabel } of DOCUMENTS) {
+      if (statusLabel === undefined) continue
+      const statusLine = fs
+        .readFileSync(file, 'utf8')
+        .split(/\r?\n/)
+        .find(line => line.startsWith(statusLabel))
+      expect(statusLine, `${name} has no "${statusLabel}" status line`).toBeDefined()
+      // The backticks make the version whole: only the full version satisfies
+      // the assertion, never a fragment of a larger number.
+      expect(statusLine, `${name}'s status line does not name \`${VERSION}\``).toContain(
+        `\`${VERSION}\``,
+      )
+    }
+  })
+
+  it('links the issue tracker', () => {
+    // "Where to ask" is one of the guide's five points (#126): the reader must
+    // reach the repository's tracker from the document, not guess the address.
+    for (const { name, file, issueTracker } of DOCUMENTS) {
+      if (issueTracker === undefined) continue
+      expect(fs.readFileSync(file, 'utf8'), `${name} does not link ${issueTracker}`).toContain(
+        issueTracker,
+      )
+    }
+  })
+
+  it('uses none of the retired vocabulary in its language', () => {
+    // The document names the product and its operations, never a population
+    // (#126). English words are matched whole and case-insensitively, so a
+    // heading such as "Developers" fails; `data\user.env` survives because
+    // `user` is not on the list.
+    for (const { name, file, retiredWords } of DOCUMENTS) {
+      if (retiredWords === undefined) continue
+      const text = fs.readFileSync(file, 'utf8')
+      for (const word of retiredWords) {
+        const pattern = /^\p{Script=Han}+$/u.test(word)
+          ? new RegExp(word, 'u')
+          : new RegExp(`\\b${word}\\b`, 'iu')
+        expect(text, `${name} uses the retired word "${word}"`).not.toMatch(pattern)
+      }
     }
   })
 

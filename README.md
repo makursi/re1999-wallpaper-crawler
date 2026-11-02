@@ -4,6 +4,8 @@
 
 从[官网](https://re.bluepoch.com/home/detail.html#wallpaper)一次读取完整壁纸清单，下载到本地，再在一个本地页面里浏览。程序只在这台电脑上运行，其他设备无法访问。
 
+当前版本 `2.0.0`
+
 ![壁纸墙](https://raw.githubusercontent.com/makursi/re1999-wallpaper-crawler/main/docs/screenshots/console-zh.webp)
 
 ## 安装
@@ -39,7 +41,7 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 | `data\cache\` | 缩略图缓存，删掉只会让下次打开变慢 |
 | `data\user.env` | 可选的本地配置覆盖，一般用不到 |
 
-程序本身不在这个文件夹之外写任何东西：没有注册表项、没有系统服务，也没有记下安装位置的指针文件。`npm install` 用的 npm 会在用户目录里保留自己的下载缓存，那属于 npm，不属于这个程序。
+程序不在这个文件夹之外写任何东西：没有注册表项、没有系统服务、没有卸载程序，也没有记下安装位置的指针文件。`npm install` 用的 npm 会在用户目录里保留自己的下载缓存，那属于 npm，不属于这个程序。
 
 ## 更新
 
@@ -49,17 +51,15 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 2. 关闭正在运行的程序，把旧文件夹里的 `data\` 整个移到新文件夹里，与 `README.md`、`package.json` 放在同一层。
 3. 在新文件夹里运行一次 `npm install`，再用 `npm start` 确认页面能打开，然后删除旧文件夹。
 
-没有原地覆盖这一步：旧文件夹就是回退点。
+没有原地覆盖这一步：旧文件夹就是回退点。新版正常工作过一次之前，先不要删除旧文件夹。
 
-## 回退
+### 回退
 
 新版用着不对时，旧文件夹还在就能退回去：关掉新版，把新文件夹里的 `data\` 移回旧文件夹，在旧文件夹里运行 `npm start`。旧文件夹里的程序和依赖都还在，不需要重新安装。
 
-新版正常工作过一次之前，先不要删除旧文件夹。
-
 ## 卸载
 
-删掉程序目录这一个文件夹即可，程序和 `data\` 一起消失。程序没有在系统里留下卸载程序、服务或注册表项，所以没有别的要清理。
+删掉程序目录这一个文件夹即可，程序和 `data\` 一起消失，没有别的要清理。为什么别处不需要清理，见「数据位置」一节。
 
 ## 首次抓取预期
 
@@ -77,12 +77,12 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 
 ## 版权
 
-壁纸版权归官方（Bluepoch）所有。本项目不存储、也不分发任何壁纸：仓库和发布包里都没有图片，程序只把官网提供的图片下载到使用者自己的电脑上。许可证是 MIT：仓库根有 [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE)，发布包里是同一份 `LICENSE.txt`。
+壁纸版权归官方（Bluepoch）所有。本项目不存储、也不分发任何壁纸：仓库和发布包里都没有图片，程序只把官网提供的图片下载到运行它的这台电脑上。许可证是 MIT：仓库根有 [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE)，发布包里是同一份 `LICENSE.txt`。
 
 ## 反馈与问题
 
-遇到问题时，到 [Issues](https://github.com/makursi/re1999-wallpaper-crawler/issues) 提问或报告。附上页面顶部显示的版本号和 `data\logs\` 里最新一次运行的日志，定位会快很多。
+遇到问题时，到 [Issues](https://github.com/makursi/re1999-wallpaper-crawler/issues) 提问或报告。附上页面顶部显示的版本号和 `data\logs\` 里最新一次运行的日志。
 
-## 开发者
+## 源码
 
-开发命令、目录结构与全部约定见仓库根的 [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md)；这份 README 只讲使用。
+源码、开发命令、目录结构与全部约定见仓库根的 [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md)；这份 README 只讲使用。
