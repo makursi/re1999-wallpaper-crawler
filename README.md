@@ -4,13 +4,13 @@
 
 从[官网](https://re.bluepoch.com/home/detail.html#wallpaper)一次读取完整壁纸清单，下载到本地，再在一个本地页面里浏览。程序只在这台电脑上运行，其他设备无法访问。
 
-当前版本 `2.0.0`
+当前版本 `2.0.0`，维护中。
 
 ![壁纸墙](https://raw.githubusercontent.com/makursi/re1999-wallpaper-crawler/main/docs/screenshots/console-zh.webp)
 
 ## 安装
 
-需要 [Node.js](https://nodejs.org/) **22.22.1 或更高版本**：在命令行里运行 `node -v` 确认。除此之外不需要别的运行环境。
+发布包面向 64 位 Windows 10/11。需要 [Node.js](https://nodejs.org/) **22.22.1 或更高版本**：在命令行里运行 `node -v` 确认。除此之外不需要别的运行环境。
 
 1. 到 [Releases](https://github.com/makursi/re1999-wallpaper-crawler/releases) 下载最新的 `re1999-wallpaper-crawler-v<版本号>.zip`。
 2. 解压到任意文件夹——路径里有中文、有空格都没关系。解压出来的这个文件夹就是程序目录，不要拆开这个文件夹，也不要把里面的文件单独挪走。
@@ -63,7 +63,7 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 
 ## 首次抓取预期
 
-首次打开页面后，点顶部导航条里的「运行」，再点「开始运行」。大约 1000+ 张、共约 2 GB，视网速需要 10–40 分钟。中途关掉也没关系：下次点「开始运行」会跳过已经下载好的，只补没下完的。
+首次打开页面后，点页面上的「开始抓取」。1000 多张、共约 2 GB，视网速需要 10–40 分钟。中途关掉也没关系：下次打开点「继续抓取」，已经下载好的会跳过，只补没下完的。
 
 ## 装依赖失败时查什么
 
@@ -71,13 +71,13 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 
 1. **Node 版本**：`node -v` 要满足[安装](#安装)一节的要求。版本不够时 npm 会报 `EBADENGINE` 并以非零码退出；按提示装好新版 Node 后重新运行。
 2. **registry 可达性**：在同一台机器上运行 `npm ping`。公司网络、校园网或代理可能挡掉 `registry.npmjs.org`。
-3. **代理与 registry 设置**：用 `npm config get registry` 和 `npm config get proxy` 看当前值；镜像或代理地址不对时，用 `npm config set registry <地址>` 改到能访问的那一个，再运行 `npm install`。
+3. **代理与 registry 设置**：用 `npm config get registry` 和 `npm config get proxy` 看当前值；镜像或代理地址不对时，用 `npm config set registry https://registry.npmjs.org` 改回官方源（公司镜像则填镜像地址），再运行 `npm install`。
 
 程序自己不在安装阶段联网：整条安装链路只用到 npm。
 
 ## 版权
 
-壁纸版权归官方（Bluepoch）所有。本项目不存储、也不分发任何壁纸：仓库和发布包里都没有图片，程序只把官网提供的图片下载到运行它的这台电脑上。许可证是 MIT：仓库根有 [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE)，发布包里是同一份 `LICENSE.txt`。
+壁纸版权归官方（Bluepoch）所有。本项目不存储、也不分发壁纸文件：仓库和发布包里都没有壁纸原图，程序只把官网提供的图片下载到运行它的这台电脑上。许可证是 MIT：仓库根有 [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE)，发布包里是同一份 `LICENSE.txt`。
 
 ## 反馈与问题
 
@@ -85,4 +85,4 @@ Node 版本不够时，`npm install` 会在安装阶段报错退出（包里的 
 
 ## 源码
 
-源码、开发命令、目录结构与全部约定见仓库根的 [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md)；这份 README 只讲使用。
+源码、开发命令、目录结构、贡献流程与全部约定见仓库根的 [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md)；这份 README 只讲使用。

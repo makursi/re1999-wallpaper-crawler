@@ -4,13 +4,13 @@
 
 Fetches the complete wallpaper list from the [official gallery](https://re.bluepoch.com/home/detail.html#wallpaper) in one request, downloads every wallpaper to this computer, and shows them on a local page. The program runs only on this machine; other devices cannot reach it.
 
-Current version `2.0.0`
+Current version `2.0.0`, maintained.
 
 ![The wallpaper wall](https://raw.githubusercontent.com/makursi/re1999-wallpaper-crawler/main/docs/screenshots/console-en.webp)
 
 ## Installation
 
-[Node.js](https://nodejs.org/) **22.22.1 or newer** is required — check with `node -v` on a terminal. Nothing else has to be installed.
+The release targets 64-bit Windows 10/11. [Node.js](https://nodejs.org/) **22.22.1 or newer** is required — check with `node -v` on a terminal. Nothing else has to be installed.
 
 1. Download the latest `re1999-wallpaper-crawler-v<version>.zip` from [Releases](https://github.com/makursi/re1999-wallpaper-crawler/releases).
 2. Extract it into any folder — Chinese characters and spaces in the path are fine. The extracted folder is the program directory: do not split it up or move files out of it.
@@ -63,7 +63,7 @@ Delete the one program directory; the program and `data\` disappear with it, and
 
 ## What the first scrape looks like
 
-On the first visit, click “运行” in the page's top navigation, then “开始运行” (“Start a Run” after switching the page to English). Expect roughly 1,000+ wallpapers, about 2 GB in total, and 10–40 minutes depending on the connection. Stopping halfway is fine: the next “开始运行” skips what is already downloaded and fetches only the rest.
+On the first visit, click “Start the fetch” on the page. Expect 1,000+ wallpapers, about 2 GB in total, and 10–40 minutes depending on the connection. Stopping halfway is fine: “Continue the fetch” next time skips what is already downloaded and fetches only the rest.
 
 ## If `npm install` fails
 
@@ -71,13 +71,13 @@ Failures are almost always about the dependency source or the Node version; chec
 
 1. **Node version**: `node -v` must meet the requirement in [Installation](#installation). When the version is too old, npm reports `EBADENGINE` and exits non-zero; install a newer Node and run the command again.
 2. **Registry reachability**: run `npm ping` on the same machine. Corporate networks, campus networks or proxies can block `registry.npmjs.org`.
-3. **Proxy and registry settings**: read `npm config get registry` and `npm config get proxy`; when a mirror or proxy address is wrong, point npm at a reachable one with `npm config set registry <address>` and run `npm install` again.
+3. **Proxy and registry settings**: read `npm config get registry` and `npm config get proxy`; when a mirror or proxy address is wrong, point npm back at the official registry with `npm config set registry https://registry.npmjs.org` (or at the mirror's own address) and run `npm install` again.
 
 The program itself makes no network request during installation: the whole chain uses only npm.
 
 ## Copyright
 
-The wallpapers are the property of the official site (Bluepoch). This project does not store or distribute them: neither the repository nor the release ships an image, and the program only saves the images the official site serves onto the computer it runs on. The licence is MIT: [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE) in the repository, and the same text ships as `LICENSE.txt` in the release.
+The wallpapers are the property of the official site (Bluepoch). This project does not store or distribute wallpaper files: neither the repository nor the release ships an original wallpaper, and the program only saves the images the official site serves onto the computer it runs on. The licence is MIT: [`LICENSE`](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/LICENSE) in the repository, and the same text ships as `LICENSE.txt` in the release.
 
 ## Reporting a problem
 
@@ -85,4 +85,4 @@ Open an [issue](https://github.com/makursi/re1999-wallpaper-crawler/issues). Inc
 
 ## Source
 
-The source code, the development commands, the directory layout and all conventions live in [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md) at the repository root; this README is about using the program.
+The source code, the development commands, the directory layout, the contribution flow and all conventions live in [AGENTS.md](https://github.com/makursi/re1999-wallpaper-crawler/blob/main/AGENTS.md) at the repository root; this README is about using the program.
